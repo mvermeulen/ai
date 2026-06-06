@@ -1,0 +1,29 @@
+# CMake build directories
+build/
+
+# Compiled executables
+wc
+wc_tests
+
+# Model data and calibration outputs
+data/model_coefficients.csv
+
+# Temporary logs and test outputs
+*.log
+simulate.log
+
+# IDE files
+.vscode/
+.idea/
+CMakeSettings.json
+CMakeUserPresets.json
+.cache/
+compile_commands.json
+
+# Python caches
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db

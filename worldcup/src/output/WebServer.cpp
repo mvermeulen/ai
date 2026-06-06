@@ -1,0 +1,1614 @@
+#include "WebServer.h"
+#include "model/MonteCarlo.h"
+#include "util/CsvParser.h"
+#include "model/Tournament.h"
+#include "model/Tiebreaker.h"
+
+#include <algorithm>
+#include <arpa/inet.h>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <map>
+#include <netinet/in.h>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <vector>
+#include <set>
+
+namespace {
+
+std::string urlDecodeLocal(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '%' && i + 2 < value.size()) {
+            const std::string hex = value.substr(i + 1, 2);
+            const char decoded = static_cast<char>(std::strtol(hex.c_str(), nullptr, 16));
+            out += decoded;
+            i += 2;
+        } else if (value[i] == '+') {
+            out += ' ';
+        } else {
+            out += value[i];
+        }
+    }
+    return out;
+}
+
+std::map<std::string, std::string> parseUrlEncoded(const std::string& body) {
+    std::map<std::string, std::string> values;
+    std::stringstream ss(body);
+    std::string part;
+    while (std::getline(ss, part, '&')) {
+        const size_t eq = part.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string key = urlDecodeLocal(part.substr(0, eq));
+        const std::string value = urlDecodeLocal(part.substr(eq + 1));
+        values[key] = value;
+    }
+    return values;
+}
+
+std::string statusText(int statusCode) {
+    switch (statusCode) {
+        case 200: return "OK";
+        case 400: return "Bad Request";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 500: return "Internal Server Error";
+        default: return "OK";
+    }
+}
+
+std::string readFullRequest(int clientFd) {
+    std::string request;
+    char buffer[4096];
+    ssize_t bytesRead = 0;
+    do {
+        bytesRead = recv(clientFd, buffer, sizeof(buffer), 0);
+        if (bytesRead > 0) {
+            request.append(buffer, static_cast<size_t>(bytesRead));
+        }
+        if (bytesRead <= 0) break;
+
+        const size_t headerEnd = request.find("\r\n\r\n");
+        if (headerEnd == std::string::npos) continue;
+
+        const std::string headers = request.substr(0, headerEnd);
+        const size_t contentLengthPos = headers.find("Content-Length:");
+        size_t expectedBody = 0;
+        if (contentLengthPos != std::string::npos) {
+            const size_t lineEnd = headers.find("\r\n", contentLengthPos);
+            std::string lenField = headers.substr(
+                contentLengthPos + std::strlen("Content-Length:"),
+                lineEnd == std::string::npos ? std::string::npos : lineEnd - contentLengthPos - std::strlen("Content-Length:"));
+            expectedBody = static_cast<size_t>(std::max(0, std::stoi(lenField)));
+        }
+
+        const size_t currentBody = request.size() - (headerEnd + 4);
+        if (currentBody >= expectedBody) break;
+    } while (bytesRead > 0);
+    return request;
+}
+
+std::string buildDashboardHtml() {
+    return R"rawhtml(<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 World Cup Tracker & Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #080c14;
+      --bg-secondary: #0f172a;
+      --bg-surface: rgba(15, 23, 42, 0.65);
+      --bg-surface-opaque: #0f172a;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --accent-color: #6366f1;
+      --accent-gradient: linear-gradient(135deg, #4f46e5, #8b5cf6);
+      --accent-glow: 0 0 15px rgba(99, 102, 241, 0.4);
+      --success-color: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.15);
+      --danger-color: #f43f5e;
+      --danger-bg: rgba(244, 63, 94, 0.15);
+      --warning-color: #f59e0b;
+      --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+      --font-display: 'Outfit', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      background-image: radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
+                        radial-gradient(circle at 10% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+      background-attachment: fixed;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    header {
+      background: rgba(8, 12, 20, 0.75);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 1rem 2rem;
+    }
+
+    .header-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-decoration: none;
+    }
+
+    .logo-text {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 1.5rem;
+      background: linear-gradient(135deg, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.04em;
+    }
+
+    .logo-sub {
+      font-family: var(--font-display);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: var(--text-secondary);
+      border-left: 1px solid var(--border-color);
+      padding-left: 0.5rem;
+    }
+
+    nav {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .nav-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-display);
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease-in-out;
+      font-size: 0.95rem;
+    }
+
+    .nav-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .nav-btn.active {
+      color: var(--text-primary);
+      background: rgba(99, 102, 241, 0.2);
+      border-color: rgba(99, 102, 241, 0.4);
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+    }
+
+    main {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 1.5rem 4rem 1.5rem;
+    }
+
+    .view-section {
+      display: none;
+      animation: fadeIn 0.3s ease-in-out forwards;
+    }
+
+    .view-section.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .dashboard-header {
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .page-title {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .page-desc {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      margin-top: 0.25rem;
+    }
+
+    .control-panel {
+      background: var(--bg-surface);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .form-input {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent-color);
+      box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 0.9rem;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: white;
+      box-shadow: var(--accent-glow);
+    }
+
+    .btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-primary);
+      border-color: var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .group-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.25rem;
+      box-shadow: var(--card-shadow);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(99, 102, 241, 0.2);
+    }
+
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.5rem;
+      color: #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      padding: 0.4rem 0.5rem;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    th {
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      font-weight: 500;
+    }
+
+    .team-badge {
+      font-family: var(--font-display);
+      font-weight: 700;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      background: rgba(255,255,255,0.06);
+    }
+
+    .qualify-top2 {
+      border-left: 3px solid var(--success-color);
+    }
+
+    .qualify-3rd {
+      border-left: 3px solid var(--warning-color);
+    }
+
+    .progress-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .progress-bar-bg {
+      width: 60px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+    }
+
+    .fill-success { background: linear-gradient(90deg, #10b981, #34d399); }
+    .fill-accent { background: linear-gradient(90deg, #6366f1, #818cf8); }
+
+    .loading-overlay {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem;
+      text-align: center;
+      gap: 1rem;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(99, 102, 241, 0.1);
+      border-top-color: var(--accent-color);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .matchup-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .matchup-card {
+      background: var(--bg-surface);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.25rem;
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      position: relative;
+    }
+
+    .matchup-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; width: 4px; height: 100%;
+      background: var(--accent-gradient);
+    }
+
+    .sandbox-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .sandbox-grid { grid-template-columns: 1fr; }
+    }
+
+    .sandbox-games-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 70vh;
+      overflow-y: auto;
+      padding-right: 0.5rem;
+    }
+
+    .sandbox-game-card {
+      background: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .sandbox-team-btn {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.5rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-family: var(--font-display);
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .sandbox-team-btn.active {
+      background: var(--accent-gradient);
+      color: white;
+      border-color: transparent;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(8px);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      max-width: 400px;
+      width: 100%;
+      padding: 1.5rem;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-container">
+      <a href="/" class="logo-area">
+        <span class="logo-text">wc26</span>
+        <span class="logo-sub">simulator</span>
+      </a>
+      <nav>
+        <button id="nav-standings" class="nav-btn" onclick="switchTab('standings')">Group Tables</button>
+        <button id="nav-matches" class="nav-btn" onclick="switchTab('matches')">Matches</button>
+        <button id="nav-simulation" class="nav-btn" onclick="switchTab('simulation')">Tournament Sim</button>
+        <button id="nav-impact" class="nav-btn" onclick="switchTab('impact')">Match Importance</button>
+        <button id="nav-sandbox" class="nav-btn" onclick="switchTab('sandbox')">What-If Sandbox</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- STANDINGS TAB -->
+    <section id="standings-section" class="view-section">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="page-title">World Cup Group Standings</h1>
+          <p class="page-desc">Official standings for Groups A through L. Top 2 and best 8 third-place teams advance.</p>
+        </div>
+        <button class="btn btn-primary" onclick="openManualUpdate()">Enter Result</button>
+      </div>
+      <div id="standings-container" class="group-grid"></div>
+    </section>
+
+    <!-- MATCHES TAB -->
+    <section id="matches-section" class="view-section">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="page-title">Fixtures & Results</h1>
+          <p class="page-desc">Complete schedule of the tournament. Search by team and filter by stage. Click "Enter Score" on any scheduled match to update its result.</p>
+        </div>
+      </div>
+      <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+        <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap; justify-content: space-between; align-items: center;">
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <input type="text" id="match-search" placeholder="Search by team (e.g. MEX)..." class="form-input" style="max-width: 300px; padding: 0.5rem 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;" oninput="filterMatches()">
+            <select id="match-filter-stage" class="form-input" style="max-width: 200px; padding: 0.5rem 0.75rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px; cursor: pointer;" onchange="filterMatches()">
+              <option value="all">All Stages</option>
+              <option value="group">Group Stage</option>
+              <option value="knockout">Knockout Stage</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); padding: 0.5rem 1rem; border-radius: 8px;">
+            <span style="font-size: 0.8rem; color: var(--text-secondary); font-weight: 500;">Sync ESPN by Date:</span>
+            <input type="date" id="sync-date-picker" class="form-input" style="max-width: 150px; padding: 0.35rem 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px; font-size: 0.8rem; cursor: pointer;">
+            <button class="btn btn-primary" onclick="syncScoresFromApi()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">Sync</button>
+            <div id="sync-status-msg" style="font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem;"></div>
+          </div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Stage/Group</th>
+                <th>Date</th>
+                <th>Matchup</th>
+                <th>Score</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="matches-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SIMULATION TAB -->
+    <section id="simulation-section" class="view-section">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="page-title">Monte Carlo Tournament Forecaster</h1>
+          <p class="page-desc">Runs 100,000 simulations using the Elo-based Poisson goals model to calculate advancement odds.</p>
+        </div>
+      </div>
+      <div class="control-panel">
+        <button class="btn btn-primary" onclick="runSimulation()">Run Forecast</button>
+      </div>
+      <div id="sim-loading" class="loading-overlay">
+        <div class="spinner"></div>
+        <p class="loading-text">Simulating remaining fixtures...</p>
+      </div>
+      <div id="sim-results" class="card" style="display:none">
+        <table id="sim-table">
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th>Adv R32 %</th>
+              <th>Reach R16 %</th>
+              <th>Reach QF %</th>
+              <th>Reach SF %</th>
+              <th>Reach Final %</th>
+              <th>Champion %</th>
+            </tr>
+          </thead>
+          <tbody id="sim-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- IMPACT TAB -->
+    <section id="impact-section" class="view-section">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="page-title">Match Progression Impact</h1>
+          <p class="page-desc">Analyzes how upcoming Group Stage matches impact each team's odds of reaching the Round of 32.</p>
+        </div>
+      </div>
+      <div id="impact-loading" class="loading-overlay">
+        <div class="spinner"></div>
+        <p class="loading-text">Analyzing matchups...</p>
+      </div>
+      <div id="impact-container" class="matchup-grid"></div>
+    </section>
+
+    <!-- SANDBOX TAB -->
+    <section id="sandbox-section" class="view-section">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="page-title">What-If Sandbox</h1>
+          <p class="page-desc">Lock specific scores or outcomes for unplayed matches and forecast updated odds.</p>
+        </div>
+      </div>
+      <div class="sandbox-grid">
+        <div>
+          <h2>Unplayed Fixtures</h2>
+          <div id="sandbox-list" class="sandbox-games-list"></div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="card-title">Sandboxed Progression Odds</div>
+            <button class="btn btn-primary" onclick="runSandboxSim()" style="width:100%;margin-bottom:1rem">Run Sandbox Forecast</button>
+            <div id="sandbox-loading" class="loading-overlay" style="padding:1rem">
+              <div class="spinner" style="width:24px;height:24px"></div>
+            </div>
+            <table id="sandbox-table">
+              <thead>
+                <tr>
+                  <th>Team</th>
+                  <th>Adv R32 %</th>
+                  <th>Champion %</th>
+                </tr>
+              </thead>
+              <tbody id="sandbox-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- UPDATE RESULT MODAL -->
+  <div id="update-modal" class="modal-backdrop">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h2 style="font-family:var(--font-display); margin-bottom: 0.25rem;">Enter Score</h2>
+          <div id="modal-match-title" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-color);"></div>
+        </div>
+        <button class="modal-close" onclick="closeUpdateModal()">&times;</button>
+      </div>
+      <form id="update-form" onsubmit="submitScore(event)">
+        <div style="margin-bottom:1rem">
+          <label class="form-input" style="display:block;margin-bottom:0.5rem">Match ID</label>
+          <input type="number" id="form-match-id" class="form-input" style="width:100%" required>
+        </div>
+        <div style="display:flex;gap:1rem;margin-bottom:1rem">
+          <div style="flex:1">
+            <label class="form-input" style="display:block;margin-bottom:0.5rem">Home Score</label>
+            <input type="number" id="form-home-score" class="form-input" style="width:100%" min="0" required>
+          </div>
+          <div style="flex:1">
+            <label class="form-input" style="display:block;margin-bottom:0.5rem">Away Score</label>
+            <input type="number" id="form-away-score" class="form-input" style="width:100%" min="0" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%">Save Result</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let activeTab = 'standings';
+    let locks = {}; // matchId -> outcome ("home", "draw", "away")
+    let allMatchesData = [];
+
+    function switchTab(tab) {
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+      
+      document.getElementById('nav-' + tab).classList.add('active');
+      document.getElementById(tab + '-section').classList.add('active');
+      activeTab = tab;
+
+      if (tab === 'standings') loadStandings();
+      else if (tab === 'matches') loadMatchesList();
+      else if (tab === 'simulation') runSimulation();
+      else if (tab === 'impact') runImpactAnalysis();
+      else if (tab === 'sandbox') loadSandboxFixtures();
+    }
+
+    async function loadMatchesList() {
+      const res = await fetch('/api/games');
+      const data = await res.json();
+      allMatchesData = data.games || [];
+      renderMatchesTable(allMatchesData);
+    }
+
+    async function syncScoresFromApi() {
+      const dateVal = document.getElementById('sync-date-picker').value; // YYYY-MM-DD
+      const statusMsg = document.getElementById('sync-status-msg');
+      
+      statusMsg.innerText = 'Syncing...';
+      statusMsg.style.color = 'var(--text-secondary)';
+      
+      try {
+        let url = '/api/sync-scores';
+        if (dateVal) {
+          url += '?date=' + dateVal;
+        }
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.ok) {
+          statusMsg.innerText = 'Sync OK!';
+          statusMsg.style.color = 'var(--success-color)';
+          loadStandings();
+          if (activeTab === 'matches') loadMatchesList();
+          setTimeout(() => { statusMsg.innerText = ''; }, 3000);
+        } else {
+          statusMsg.innerText = 'Error';
+          statusMsg.style.color = 'var(--danger-color)';
+          alert("Sync error: " + data.error);
+        }
+      } catch (e) {
+        statusMsg.innerText = 'Failed';
+        statusMsg.style.color = 'var(--danger-color)';
+      }
+    }
+
+    function renderMatchesTable(matches) {
+      const tbody = document.getElementById('matches-table-body');
+      tbody.innerHTML = '';
+      matches.forEach(m => {
+        let row = document.createElement('tr');
+        
+        let scoreStr = '-';
+        let actionBtn = '';
+        
+        if (m.status === 'final') {
+          scoreStr = `${m.home_score} - ${m.away_score}`;
+        } else {
+          actionBtn = `<button class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="triggerUpdateScore(${m.match_id}, '${m.home_team}', '${m.away_team}')">Enter Score</button>`;
+        }
+        
+        let stageDisplay = m.stage.replace('_', ' ');
+        let groupDisplay = m.group !== 'N/A' ? `Group ${m.group}` : '';
+        
+        row.innerHTML = `
+          <td><strong>#${m.match_id}</strong></td>
+          <td><span style="text-transform: uppercase; font-size: 0.75rem; color: var(--text-secondary);">${stageDisplay} ${groupDisplay}</span></td>
+          <td>${m.date}<br><small style="color: var(--text-secondary); font-size: 0.7rem;">${m.host_city || ''}</small></td>
+          <td><span class="team-badge">${m.home_team}</span> vs <span class="team-badge">${m.away_team}</span></td>
+          <td><strong>${scoreStr}</strong></td>
+          <td><span style="font-size: 0.75rem; text-transform: uppercase; color: ${m.status === 'final' ? 'var(--success-color)' : 'var(--text-secondary)'}">${m.status}</span></td>
+          <td>${actionBtn}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function filterMatches() {
+      const query = document.getElementById('match-search').value.toLowerCase().trim();
+      const stage = document.getElementById('match-filter-stage').value;
+      
+      const filtered = allMatchesData.filter(m => {
+        const matchesQuery = query === '' || 
+                             m.home_team.toLowerCase().includes(query) || 
+                             m.away_team.toLowerCase().includes(query);
+                             
+        let matchesStage = true;
+        if (stage === 'group') {
+          matchesStage = m.stage === 'group';
+        } else if (stage === 'knockout') {
+          matchesStage = m.stage !== 'group';
+        }
+        
+        return matchesQuery && matchesStage;
+      });
+      
+      renderMatchesTable(filtered);
+    }
+
+    async function loadStandings() {
+      const res = await fetch('/api/standings');
+      const data = await res.json();
+      const container = document.getElementById('standings-container');
+      container.innerHTML = '';
+
+      for (const [group, teams] of Object.entries(data.groups)) {
+        let card = document.createElement('div');
+        card.className = 'card';
+        let rowsHtml = teams.map((t, idx) => {
+          let styleClass = idx < 2 ? 'qualify-top2' : (t.adv_3rd ? 'qualify-3rd' : '');
+          return `<tr class="${styleClass}">
+            <td><span class="team-badge">${t.abbr}</span></td>
+            <td>${t.pts}</td>
+            <td>${t.gd}</td>
+            <td>${t.gf}</td>
+          </tr>`;
+        }).join('');
+
+        card.innerHTML = `<div class="card-title">Group ${group}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Team</th>
+                <th>Pts</th>
+                <th>GD</th>
+                <th>GF</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>`;
+        container.appendChild(card);
+      }
+    }
+
+    async function runSimulation() {
+      const loading = document.getElementById('sim-loading');
+      const results = document.getElementById('sim-results');
+      loading.style.display = 'flex';
+      results.style.display = 'none';
+
+      const res = await fetch('/api/simulation?iterations=20000');
+      const data = await res.json();
+      loading.style.display = 'none';
+      results.style.display = 'block';
+
+      const tbody = document.getElementById('sim-table-body');
+      tbody.innerHTML = '';
+
+      let teams = Object.keys(data.r32).map(abbr => ({
+        abbr,
+        r32: data.r32[abbr],
+        r16: data.r16[abbr],
+        qf: data.qf[abbr],
+        sf: data.sf[abbr],
+        final: data.final[abbr],
+        champion: data.champion[abbr]
+      }));
+
+      // Sort by champion odds, then R32 odds
+      teams.sort((a, b) => b.champion - a.champion || b.r32 - a.r32);
+
+      teams.forEach(t => {
+        let row = document.createElement('tr');
+        row.innerHTML = `
+          <td><strong>${t.abbr}</strong></td>
+          <td>${(t.r32 * 100).toFixed(1)}%</td>
+          <td>${(t.r16 * 100).toFixed(1)}%</td>
+          <td>${(t.qf * 100).toFixed(1)}%</td>
+          <td>${(t.sf * 100).toFixed(1)}%</td>
+          <td>${(t.final * 100).toFixed(1)}%</td>
+          <td><span class="team-badge" style="background:var(--success-bg);color:var(--success-color)">${(t.champion * 100).toFixed(1)}%</span></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function runImpactAnalysis() {
+      const loading = document.getElementById('impact-loading');
+      const container = document.getElementById('impact-container');
+      loading.style.display = 'flex';
+      container.innerHTML = '';
+
+      const res = await fetch('/api/impact?iterations=10000');
+      const data = await res.json();
+      loading.style.display = 'none';
+
+      data.impacts.forEach(imp => {
+        let card = document.createElement('div');
+        card.className = 'matchup-card';
+        card.innerHTML = `
+          <div style="font-family:var(--font-display);font-size:0.85rem;color:var(--text-secondary)">ID #${imp.match_id} &bull; ${imp.date}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:1.2rem;font-weight:700">${imp.home_team}</span>
+            <span style="color:var(--text-secondary)">vs</span>
+            <span style="font-size:1.2rem;font-weight:700">${imp.away_team}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--text-secondary)">
+            <span>${imp.home_team} win: R32 Delta <strong>+${(imp.home_delta * 100).toFixed(1)}%</strong></span>
+            <span>${imp.away_team} win: R32 Delta <strong>+${(imp.away_delta * 100).toFixed(1)}%</strong></span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    async function loadSandboxFixtures() {
+      const res = await fetch('/api/games');
+      const data = await res.json();
+      const list = document.getElementById('sandbox-list');
+      list.innerHTML = '';
+
+      // Only display scheduled group matches
+      const unplayed = data.games.filter(g => g.stage === 'group' && g.status === 'scheduled');
+
+      unplayed.forEach(g => {
+        let card = document.createElement('div');
+        card.className = 'sandbox-game-card';
+        let lockHome = locks[g.match_id] === 'home' ? 'active' : '';
+        let lockDraw = locks[g.match_id] === 'draw' ? 'active' : '';
+        let lockAway = locks[g.match_id] === 'away' ? 'active' : '';
+
+        card.innerHTML = `
+          <div class="sandbox-game-header">Match ID #${g.match_id} &bull; Group ${g.group} &bull; ${g.date} &bull; ${g.host_city || ''}</div>
+          <div style="display:flex;gap:0.5rem">
+            <button class="sandbox-team-btn ${lockHome}" onclick="setLock(${g.match_id}, 'home')">${g.home_team}</button>
+            <button class="sandbox-team-btn ${lockDraw}" onclick="setLock(${g.match_id}, 'draw')">Draw</button>
+            <button class="sandbox-team-btn ${lockAway}" onclick="setLock(${g.match_id}, 'away')">${g.away_team}</button>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    function setLock(matchId, outcome) {
+      if (locks[matchId] === outcome) {
+        delete locks[matchId];
+      } else {
+        locks[matchId] = outcome;
+      }
+      loadSandboxFixtures();
+    }
+
+    async function runSandboxSim() {
+      const loading = document.getElementById('sandbox-loading');
+      loading.style.display = 'block';
+
+      // Convert locks to API parameters
+      let lockList = [];
+      for (const [id, outcome] of Object.entries(locks)) {
+        lockList.push(id + ':' + outcome);
+      }
+      const locksParam = lockList.join(',');
+
+      const res = await fetch('/api/simulation?iterations=20000&locks=' + encodeURIComponent(locksParam));
+      const data = await res.json();
+      loading.style.display = 'none';
+
+      const tbody = document.getElementById('sandbox-table-body');
+      tbody.innerHTML = '';
+
+      let teams = Object.keys(data.r32).map(abbr => ({
+        abbr,
+        r32: data.r32[abbr],
+        champion: data.champion[abbr]
+      }));
+
+      teams.sort((a, b) => b.champion - a.champion || b.r32 - a.r32);
+
+      teams.slice(0, 16).forEach(t => {
+        let row = document.createElement('tr');
+        row.innerHTML = `
+          <td><strong>${t.abbr}</strong></td>
+          <td>${(t.r32 * 100).toFixed(1)}%</td>
+          <td>${(t.champion * 100).toFixed(1)}%</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function openUpdateModal() {
+      document.getElementById('update-modal').style.display = 'flex';
+    }
+
+    function closeUpdateModal() {
+      document.getElementById('update-modal').style.display = 'none';
+    }
+
+    function openManualUpdate() {
+      document.getElementById('form-match-id').value = '';
+      document.getElementById('form-match-id').readOnly = false;
+      document.getElementById('modal-match-title').innerText = 'Enter Score by Match ID';
+      document.getElementById('form-home-score').value = '';
+      document.getElementById('form-away-score').value = '';
+      openUpdateModal();
+    }
+
+    function triggerUpdateScore(matchId, homeTeam, awayTeam) {
+      document.getElementById('form-match-id').value = matchId;
+      document.getElementById('form-match-id').readOnly = true;
+      document.getElementById('modal-match-title').innerText = `${homeTeam} vs ${awayTeam} (Match #${matchId})`;
+      document.getElementById('form-home-score').value = '';
+      document.getElementById('form-away-score').value = '';
+      openUpdateModal();
+    }
+
+    async function submitScore(event) {
+      event.preventDefault();
+      const id = document.getElementById('form-match-id').value;
+      const home = document.getElementById('form-home-score').value;
+      const away = document.getElementById('form-away-score').value;
+
+      const res = await fetch('/api/update-result', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'match_id=' + id + '&home_score=' + home + '&away_score=' + away
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        closeUpdateModal();
+        loadStandings();
+        if (activeTab === 'matches') loadMatchesList();
+      } else {
+        alert("Error updating score: " + data.error);
+      }
+    }
+
+    // Init page
+    switchTab('standings');
+  </script>
+</body>
+</html>
+)rawhtml";
+}
+
+} // namespace
+
+WebServer::WebServer(Tournament tournament,
+                     const std::string& schedulePath,
+                     double baseRate,
+                     double alpha,
+                     double hostAdvantage,
+                     int defaultIterations)
+    : tournament_(std::move(tournament)),
+      schedulePath_(schedulePath),
+      baseRate_(baseRate),
+      alpha_(alpha),
+      hostAdvantage_(hostAdvantage),
+      defaultIterations_(defaultIterations) {}
+
+WebServer::Response WebServer::handleForTests(const std::string& method,
+                                              const std::string& rawPath,
+                                              const std::string& body) {
+    int statusCode = 200;
+    std::string contentType = "text/plain; charset=utf-8";
+    const std::string responseBody = handleRequest(method, rawPath, body, statusCode, contentType);
+    return {statusCode, contentType, responseBody};
+}
+
+void WebServer::run(int port) {
+    int serverFd = socket(AF_INET, SOCK_STREAM, 0);
+    if (serverFd < 0) {
+        throw std::runtime_error("Failed to create server socket");
+    }
+
+    int opt = 1;
+    if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        close(serverFd);
+        throw std::runtime_error("Failed to set socket options");
+    }
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<uint16_t>(port));
+
+    if (bind(serverFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+        const std::string err = std::strerror(errno);
+        close(serverFd);
+        throw std::runtime_error("Failed to bind web server: " + err);
+    }
+
+    if (listen(serverFd, 32) < 0) {
+        close(serverFd);
+        throw std::runtime_error("Failed to listen on web server socket");
+    }
+
+    std::cout << "Web server running at http://127.0.0.1:" << port << std::endl;
+    std::cout << "Press Ctrl+C to stop." << std::endl;
+
+    while (true) {
+        int clientFd = accept(serverFd, nullptr, nullptr);
+        if (clientFd < 0) continue;
+
+        try {
+            const std::string request = readFullRequest(clientFd);
+            std::stringstream reqStream(request);
+            std::string requestLine;
+            std::getline(reqStream, requestLine);
+            if (!requestLine.empty() && requestLine.back() == '\r') {
+                requestLine.pop_back();
+            }
+
+            std::stringstream lineStream(requestLine);
+            std::string method;
+            std::string rawPath;
+            std::string version;
+            lineStream >> method >> rawPath >> version;
+
+            int statusCode = 200;
+            std::string contentType = "text/plain; charset=utf-8";
+            std::string body;
+            const size_t bodyPos = request.find("\r\n\r\n");
+            if (bodyPos != std::string::npos) {
+                body = request.substr(bodyPos + 4);
+            }
+
+            const std::string responseBody = handleRequest(method, rawPath, body, statusCode, contentType);
+            const std::string response = buildHttpResponse(statusCode, contentType, responseBody);
+
+            send(clientFd, response.c_str(), response.size(), 0);
+        } catch (const std::exception& e) {
+            const std::string response = buildHttpResponse(
+                500, "text/plain; charset=utf-8",
+                std::string("Internal server error: ") + e.what());
+            send(clientFd, response.c_str(), response.size(), 0);
+        }
+        close(clientFd);
+    }
+}
+
+std::string WebServer::handleRequest(const std::string& method,
+                                     const std::string& rawPath,
+                                     const std::string& body,
+                                     int& statusCode,
+                                     std::string& contentType) {
+    const std::string path = getPathOnly(rawPath);
+
+    if (method == "GET" && (path == "/" || path == "/standings")) {
+        contentType = "text/html; charset=utf-8";
+        return buildDashboardHtml();
+    }
+    if (method == "GET" && path == "/api/standings") {
+        contentType = "application/json; charset=utf-8";
+        return standingsJson();
+    }
+    if (method == "GET" && path == "/api/games") {
+        contentType = "application/json; charset=utf-8";
+        std::ostringstream out;
+        out << "{\"games\":[";
+        bool first = true;
+        for (const auto& match : tournament_.allMatches()) {
+            if (!first) out << ',';
+            first = false;
+            out << "{\"match_id\":" << match.matchId()
+                << ",\"stage\":\"" << jsonEscape(match.stage())
+                << "\",\"group\":\"" << jsonEscape(match.group())
+                << "\",\"date\":\"" << jsonEscape(match.date())
+                << "\",\"home_team\":\"" << jsonEscape(match.homeTeam())
+                << "\",\"away_team\":\"" << jsonEscape(match.awayTeam())
+                << "\",\"home_score\":" << match.homeScore()
+                << ",\"away_score\":" << match.awayScore()
+                << ",\"status\":\"" << jsonEscape(match.status())
+                << "\",\"host_city\":\"" << jsonEscape(match.hostCity()) << "\"}";
+        }
+        out << "]}";
+        return out.str();
+    }
+    if (path == "/api/simulation") {
+        contentType = "application/json; charset=utf-8";
+        int iterations = defaultIterations_;
+        std::string locksStr = "";
+
+        if (method == "POST") {
+            const auto params = parseUrlEncoded(body);
+            auto it = params.find("iterations");
+            if (it != params.end()) {
+                try { iterations = std::stoi(it->second); } catch (...) {}
+            }
+            it = params.find("locks");
+            if (it != params.end()) locksStr = it->second;
+        } else {
+            iterations = parseIterations(rawPath, defaultIterations_);
+            const size_t queryPos = rawPath.find('?');
+            if (queryPos != std::string::npos) {
+                const std::string query = rawPath.substr(queryPos + 1);
+                std::stringstream ss(query);
+                std::string part;
+                while (std::getline(ss, part, '&')) {
+                    const size_t eq = part.find('=');
+                    if (eq != std::string::npos) {
+                        const std::string key = part.substr(0, eq);
+                        const std::string value = part.substr(eq + 1);
+                        if (key == "locks") locksStr = urlDecodeLocal(value);
+                    }
+                }
+            }
+        }
+        return simulationJson(iterations, locksStr);
+    }
+    if (method == "GET" && path == "/api/impact") {
+        contentType = "application/json; charset=utf-8";
+        return impactJson(parseIterations(rawPath, defaultIterations_));
+    }
+    if (method == "GET" && getPathOnly(rawPath) == "/api/sync-scores") {
+        contentType = "application/json; charset=utf-8";
+        std::string date = parseQueryParam(rawPath, "date");
+        
+        // Sanitize date to prevent command injection
+        std::string sanitizedDate;
+        for (char c : date) {
+            if (std::isalnum(c) || c == '-') {
+                sanitizedDate += c;
+            }
+        }
+        
+        std::string cmd = "python3 scripts/fetch_live_scores.py --schedule " + schedulePath_;
+        if (!sanitizedDate.empty()) {
+            cmd += " --date " + sanitizedDate;
+        }
+        
+        // Execute python score ingestion script
+        int status = std::system(cmd.c_str());
+        if (status != 0) {
+            statusCode = 500;
+            return "{\"ok\":false,\"error\":\"Python score ingestion script exited with code " + std::to_string(status) + "\"}";
+        }
+        
+        // Reload tournament in memory to pick up disk changes
+        try {
+            tournament_ = wc::loadTournamentFromCsvFiles("data/teams.csv", schedulePath_);
+        } catch (const std::exception& e) {
+            statusCode = 500;
+            return "{\"ok\":false,\"error\":\"Failed to reload tournament schedule: " + std::string(e.what()) + "\"}";
+        }
+        
+        return "{\"ok\":true}";
+    }
+    if (path == "/api/update-result") {
+        if (method != "POST") {
+            statusCode = 405;
+            return "{\"error\":\"POST required\"}";
+        }
+        std::string error;
+        if (!applyResultUpdate(body, error)) {
+            statusCode = 400;
+            return "{\"ok\":false,\"error\":\"" + jsonEscape(error) + "\"}";
+        }
+        return "{\"ok\":true}";
+    }
+
+    statusCode = 404;
+    return "Not found";
+}
+
+std::string WebServer::standingsJson() const {
+    std::ostringstream out;
+    out << "{\"groups\":{";
+
+    // Re-evaluate group standings
+    Tournament temp = tournament_;
+    temp.computeStandings();
+
+    std::vector<std::string> groupsList = temp.getGroups();
+    std::sort(groupsList.begin(), groupsList.end());
+
+    // Identify third-place qualifiers
+    std::vector<Team*> thirdPlaces;
+    for (const auto& group : groupsList) {
+        auto standing = temp.teamsByGroup(group);
+        if (standing.size() >= 3) {
+            thirdPlaces.push_back(standing[2]);
+        }
+    }
+    auto rankedThirds = Tiebreaker::rankThirdPlaces(thirdPlaces);
+    std::set<std::string> bestThirdsAbbr;
+    for (size_t i = 0; i < 8 && i < rankedThirds.size(); ++i) {
+        bestThirdsAbbr.insert(rankedThirds[i]->abbreviation());
+    }
+
+    bool firstGroup = true;
+    for (const auto& group : groupsList) {
+        if (!firstGroup) out << ',';
+        firstGroup = false;
+
+        out << "\"" << group << "\":[";
+        auto standings = temp.teamsByGroup(group);
+        bool firstTeam = true;
+        for (const auto* team : standings) {
+            if (!firstTeam) out << ',';
+            firstTeam = false;
+
+            bool adv3rd = bestThirdsAbbr.count(team->abbreviation()) > 0;
+
+            out << "{\"abbr\":\"" << team->abbreviation()
+                << "\",\"name\":\"" << jsonEscape(team->fullName())
+                << "\",\"pts\":" << team->points()
+                << ",\"gd\":" << team->goalDifference()
+                << ",\"gf\":" << team->goalsFor()
+                << ",\"adv_3rd\":" << (adv3rd ? "true" : "false") << "}";
+        }
+        out << "]";
+    }
+
+    out << "}}";
+    return out.str();
+}
+
+std::string WebServer::simulationJson(int iterations, const std::string& locksStr) const {
+    Tournament simTour = tournament_;
+
+    // Apply outcome locks for Sandbox scenarios
+    // Format: match_id:winner (winner = "home", "draw", "away")
+    if (!locksStr.empty()) {
+        std::stringstream ss(locksStr);
+        std::string part;
+        while (std::getline(ss, part, ',')) {
+            const size_t colon = part.find(':');
+            if (colon == std::string::npos) continue;
+            int matchId = std::stoi(part.substr(0, colon));
+            std::string outcome = part.substr(colon + 1);
+
+            for (auto& match : simTour.allMatches()) {
+                if (match.matchId() == matchId) {
+                    if (outcome == "home") match.setScore(2, 0, -1, -1, "final");
+                    else if (outcome == "draw") match.setScore(1, 1, -1, -1, "final");
+                    else if (outcome == "away") match.setScore(0, 2, -1, -1, "final");
+                    break;
+                }
+            }
+        }
+    }
+
+    simTour.computeStandings();
+
+    MonteCarlo mc;
+    mc.setModelParameters(baseRate_, alpha_, hostAdvantage_);
+    auto results = mc.simulate(simTour, iterations, 12345);
+
+    std::ostringstream out;
+    out << "{\"r32\":{";
+    bool first = true;
+    for (const auto& [abbr, p] : results.r32Probability) {
+        if (!first) out << ',';
+        first = false;
+        out << "\"" << abbr << "\":" << p;
+    }
+    out << "},\"r16\":{";
+    first = true;
+    for (const auto& [abbr, p] : results.r16Probability) {
+        if (!first) out << ',';
+        first = false;
+        out << "\"" << abbr << "\":" << p;
+    }
+    out << "},\"qf\":{";
+    first = true;
+    for (const auto& [abbr, p] : results.qfProbability) {
+        if (!first) out << ',';
+        first = false;
+        out << "\"" << abbr << "\":" << p;
+    }
+    out << "},\"sf\":{";
+    first = true;
+    for (const auto& [abbr, p] : results.sfProbability) {
+        if (!first) out << ',';
+        first = false;
+        out << "\"" << abbr << "\":" << p;
+    }
+    out << "},\"final\":{";
+    first = true;
+    for (const auto& [abbr, p] : results.finalProbability) {
+        if (!first) out << ',';
+        first = false;
+        out << "\"" << abbr << "\":" << p;
+    }
+    out << "},\"champion\":{";
+    first = true;
+    for (const auto& [abbr, p] : results.championProbability) {
+        if (!first) out << ',';
+        first = false;
+        out << "\"" << abbr << "\":" << p;
+    }
+    out << "}}";
+
+    return out.str();
+}
+
+std::string WebServer::impactJson(int iterations) const {
+    Tournament temp = tournament_;
+    temp.computeStandings();
+
+    MonteCarlo mc;
+    mc.setModelParameters(baseRate_, alpha_, hostAdvantage_);
+    auto analysis = mc.analyzeImpact(temp, iterations, 12345);
+
+    std::ostringstream out;
+    out << "{\"impacts\":[";
+    bool first = true;
+    for (const auto& imp : analysis.gameImpacts) {
+        if (!first) out << ',';
+        first = false;
+        out << "{\"match_id\":" << imp.matchId
+            << ",\"date\":\"" << jsonEscape(imp.date) << "\""
+            << ",\"home_team\":\"" << jsonEscape(imp.homeTeam) << "\""
+            << ",\"away_team\":\"" << jsonEscape(imp.awayTeam) << "\""
+            << ",\"home_delta\":" << imp.homeDeltaR32
+            << ",\"away_delta\":" << imp.awayDeltaR32 << "}";
+    }
+    out << "]}";
+
+    return out.str();
+}
+
+bool WebServer::applyResultUpdate(const std::string& body, std::string& error) {
+    const auto params = parseUrlEncoded(body);
+    auto itId = params.find("match_id");
+    auto itHome = params.find("home_score");
+    auto itAway = params.find("away_score");
+
+    if (itId == params.end() || itHome == params.end() || itAway == params.end()) {
+        error = "Missing match_id, home_score, or away_score";
+        return false;
+    }
+
+    try {
+        int matchId = std::stoi(itId->second);
+        int homeScore = std::stoi(itHome->second);
+        int awayScore = std::stoi(itAway->second);
+
+        bool found = false;
+        for (auto& match : tournament_.allMatches()) {
+            if (match.matchId() == matchId) {
+                match.setScore(homeScore, awayScore, -1, -1, "final");
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            error = "Match ID " + std::to_string(matchId) + " not found";
+            return false;
+        }
+
+        tournament_.computeStandings();
+        return persistSchedule();
+    } catch (const std::exception& e) {
+        error = std::string("Parsing error: ") + e.what();
+        return false;
+    }
+}
+
+bool WebServer::persistSchedule() const {
+    try {
+        CsvParser::Table table;
+        for (const auto& match : tournament_.allMatches()) {
+            table.push_back({
+                {"match_id", std::to_string(match.matchId())},
+                {"stage", match.stage()},
+                {"group", match.group()},
+                {"date", match.date()},
+                {"home_team", match.homeTeam()},
+                {"away_team", match.awayTeam()},
+                {"home_score", std::to_string(match.homeScore())},
+                {"away_score", std::to_string(match.awayScore())},
+                {"home_penalty_score", std::to_string(match.homePenaltyScore())},
+                {"away_penalty_score", std::to_string(match.awayPenaltyScore())},
+                {"status", match.status()},
+                {"host_city", match.hostCity()}
+            });
+        }
+        CsvParser::write(schedulePath_, {
+            "match_id", "stage", "group", "date", "home_team", "away_team",
+            "home_score", "away_score", "home_penalty_score", "away_penalty_score", "status", "host_city"
+        }, table);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+std::string WebServer::jsonEscape(const std::string& value) {
+    std::string out;
+    for (char c : value) {
+        if (c == '"') out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
+        else out += c;
+    }
+    return out;
+}
+
+std::string WebServer::getPathOnly(const std::string& rawPath) {
+    const size_t q = rawPath.find('?');
+    if (q == std::string::npos) return rawPath;
+    return rawPath.substr(0, q);
+}
+
+int WebServer::parseIterations(const std::string& rawPath, int fallback) {
+    const size_t q = rawPath.find('?');
+    if (q == std::string::npos) return fallback;
+    const std::string query = rawPath.substr(q + 1);
+    std::stringstream ss(query);
+    std::string part;
+    while (std::getline(ss, part, '&')) {
+        const size_t eq = part.find('=');
+        if (eq != std::string::npos) {
+            const std::string key = part.substr(0, eq);
+            const std::string val = part.substr(eq + 1);
+            if (key == "iterations") {
+                try { return std::stoi(val); } catch (...) {}
+            }
+        }
+    }
+    return fallback;
+}
+
+std::string WebServer::parseQueryParam(const std::string& rawPath, const std::string& key) {
+    const size_t q = rawPath.find('?');
+    if (q == std::string::npos) return "";
+    const std::string query = rawPath.substr(q + 1);
+    std::stringstream ss(query);
+    std::string part;
+    while (std::getline(ss, part, '&')) {
+        const size_t eq = part.find('=');
+        if (eq != std::string::npos) {
+            const std::string k = part.substr(0, eq);
+            const std::string v = part.substr(eq + 1);
+            if (k == key) {
+                return urlDecodeLocal(v);
+            }
+        }
+    }
+    return "";
+}
+
+std::string WebServer::buildHttpResponse(int statusCode,
+                                         const std::string& contentType,
+                                         const std::string& body) {
+    std::ostringstream out;
+    out << "HTTP/1.1 " << statusCode << " " << statusText(statusCode) << "\r\n"
+        << "Content-Type: " << contentType << "\r\n"
+        << "Content-Length: " << body.size() << "\r\n"
+        << "Connection: close\r\n"
+        << "Access-Control-Allow-Origin: *\r\n"
+        << "\r\n"
+        << body;
+    return out.str();
+}
