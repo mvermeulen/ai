@@ -63,11 +63,11 @@ void AsciiPrinter::printSimulationResults(const MatchSimulationResults& results)
         return results.r32Probability.at(a.first) > results.r32Probability.at(b.first);
     });
 
-    std::cout << "┌────────────────────────────────────────────────────────────────────────┐\n";
-    std::cout << "│ TOURNAMENT FORECAST PROBABILITIES                                      │\n";
-    std::cout << "├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────┤\n";
-    std::cout << "│ Team     │ Adv R32  │ ReachR16 │ ReachQF  │ ReachSF  │ ReachF   │ Champ│\n";
-    std::cout << "├──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────┤\n";
+    std::cout << "┌──────────────────────────────────────────────────────────────────────────┐\n";
+    std::cout << "│ TOURNAMENT FORECAST PROBABILITIES                                        │\n";
+    std::cout << "├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬────────┤\n";
+    std::cout << "│ Team     │ Adv R32  │ ReachR16 │ ReachQF  │ ReachSF  │ ReachF   │ Champ  │\n";
+    std::cout << "├──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼────────┤\n";
 
     for (const auto& [abbr, champProb] : sortedTeams) {
         std::cout << "│ " << std::left << std::setw(8) << abbr
@@ -79,7 +79,7 @@ void AsciiPrinter::printSimulationResults(const MatchSimulationResults& results)
                   << " │ " << std::setw(7) << results.finalProbability.at(abbr) * 100.0 << "%"
                   << " │ " << std::setw(5) << champProb * 100.0 << "% │\n";
     }
-    std::cout << "└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────┘\n";
+    std::cout << "└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴────────┘\n";
 }
 
 void AsciiPrinter::printImpactAnalysis(const ImpactAnalysisResults& analysis) {
