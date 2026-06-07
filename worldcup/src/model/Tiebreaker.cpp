@@ -211,25 +211,25 @@ void Tiebreaker::allocateRoundOf32Matchups(Tournament& tournament) {
                     home = groupStandings["A"][1]->abbreviation();
                     away = groupStandings["B"][1]->abbreviation();
                     break;
-                case 74: // Winner Group C vs. Runner-up Group F
-                    home = groupStandings["C"][0]->abbreviation();
-                    away = groupStandings["F"][1]->abbreviation();
-                    break;
-                case 75: // Winner Group E vs. 3rd Group A/B/C/D/F
+                case 74: // Winner Group E vs. 3rd Group A/B/C/D/F
                     home = groupStandings["E"][0]->abbreviation();
                     away = winnerToThirdPlace["E"];
                     break;
-                case 76: // Winner Group F vs. Runner-up Group C
+                case 75: // Winner Group F vs. Runner-up Group C
                     home = groupStandings["F"][0]->abbreviation();
                     away = groupStandings["C"][1]->abbreviation();
                     break;
-                case 77: // Runner-up Group E vs. Runner-up Group I
-                    home = groupStandings["E"][1]->abbreviation();
-                    away = groupStandings["I"][1]->abbreviation();
+                case 76: // Winner Group C vs. Runner-up Group F
+                    home = groupStandings["C"][0]->abbreviation();
+                    away = groupStandings["F"][1]->abbreviation();
                     break;
-                case 78: // Winner Group I vs. 3rd Group C/D/F/G/H
+                case 77: // Winner Group I vs. 3rd Group C/D/F/G/H
                     home = groupStandings["I"][0]->abbreviation();
                     away = winnerToThirdPlace["I"];
+                    break;
+                case 78: // Runner-up Group E vs. Runner-up Group I
+                    home = groupStandings["E"][1]->abbreviation();
+                    away = groupStandings["I"][1]->abbreviation();
                     break;
                 case 79: // Winner Group A vs. 3rd Group C/E/F/H/I
                     home = groupStandings["A"][0]->abbreviation();
@@ -239,37 +239,37 @@ void Tiebreaker::allocateRoundOf32Matchups(Tournament& tournament) {
                     home = groupStandings["L"][0]->abbreviation();
                     away = winnerToThirdPlace["L"];
                     break;
-                case 81: // Winner Group G vs. 3rd Group A/E/H/I/J
-                    home = groupStandings["G"][0]->abbreviation();
-                    away = winnerToThirdPlace["G"];
-                    break;
-                case 82: // Winner Group D vs. 3rd Group B/E/F/I/J
+                case 81: // Winner Group D vs. 3rd Group B/E/F/I/J
                     home = groupStandings["D"][0]->abbreviation();
                     away = winnerToThirdPlace["D"];
                     break;
-                case 83: // Winner Group H vs. Runner-up Group J
-                    home = groupStandings["H"][0]->abbreviation();
-                    away = groupStandings["J"][1]->abbreviation();
+                case 82: // Winner Group G vs. 3rd Group A/E/H/I/J
+                    home = groupStandings["G"][0]->abbreviation();
+                    away = winnerToThirdPlace["G"];
                     break;
-                case 84: // Runner-up Group K vs. Runner-up Group L
+                case 83: // Runner-up Group K vs. Runner-up Group L
                     home = groupStandings["K"][1]->abbreviation();
                     away = groupStandings["L"][1]->abbreviation();
+                    break;
+                case 84: // Winner Group H vs. Runner-up Group J
+                    home = groupStandings["H"][0]->abbreviation();
+                    away = groupStandings["J"][1]->abbreviation();
                     break;
                 case 85: // Winner Group B vs. 3rd Group E/F/G/I/J
                     home = groupStandings["B"][0]->abbreviation();
                     away = winnerToThirdPlace["B"];
                     break;
-                case 86: // Runner-up Group D vs. Runner-up Group G
-                    home = groupStandings["D"][1]->abbreviation();
-                    away = groupStandings["G"][1]->abbreviation();
-                    break;
-                case 87: // Winner Group J vs. Runner-up Group H
+                case 86: // Winner Group J vs. Runner-up Group H
                     home = groupStandings["J"][0]->abbreviation();
                     away = groupStandings["H"][1]->abbreviation();
                     break;
-                case 88: // Winner Group K vs. 3rd Group D/E/I/J/L
+                case 87: // Winner Group K vs. 3rd Group D/E/I/J/L
                     home = groupStandings["K"][0]->abbreviation();
                     away = winnerToThirdPlace["K"];
+                    break;
+                case 88: // Runner-up Group D vs. Runner-up Group G
+                    home = groupStandings["D"][1]->abbreviation();
+                    away = groupStandings["G"][1]->abbreviation();
                     break;
                 default:
                     break;

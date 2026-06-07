@@ -48,6 +48,7 @@ private:
     std::string impactJson(int iterations) const;
 
     bool applyResultUpdate(const std::string& body, std::string& error);
+    void refreshBracketSlotsFromResults();
     bool persistSchedule() const;
 
     static std::string jsonEscape(const std::string& value);

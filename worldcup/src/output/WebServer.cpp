@@ -54,6 +54,49 @@ std::map<std::string, std::string> parseUrlEncoded(const std::string& body) {
     return values;
 }
 
+bool startsWith(const std::string& value, const std::string& prefix) {
+  return value.rfind(prefix, 0) == 0;
+}
+
+bool parseInt(const std::string& value, int& out) {
+  try {
+    size_t idx = 0;
+    const int parsed = std::stoi(value, &idx);
+    if (idx != value.size()) {
+      return false;
+    }
+    out = parsed;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool isGroupFinalized(const Tournament& tournament, const std::string& group) {
+  for (const auto& match : tournament.allMatches()) {
+    if (match.stage() == "group" && match.group() == group && !match.isFinal()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const Match* findMatchById(const Tournament& tournament, int matchId) {
+  for (const auto& match : tournament.allMatches()) {
+    if (match.matchId() == matchId) {
+      return &match;
+    }
+  }
+  return nullptr;
+}
+
+std::string winnerOfFinalMatch(const Match* match) {
+  if (!match || !match->isFinal()) {
+    return "";
+  }
+  return match->homeTeamWon() ? match->homeTeam() : match->awayTeam();
+}
+
 std::string statusText(int statusCode) {
     switch (statusCode) {
         case 200: return "OK";
@@ -811,7 +854,17 @@ std::string buildDashboardHtml() {
     function renderMatchesTable(matches) {
       const tbody = document.getElementById('matches-table-body');
       tbody.innerHTML = '';
-      matches.forEach(m => {
+
+      const isResolvedTeamName = (team) => {
+        return !/^((WINNER|RUNNER_UP)_GROUP_[A-L]|THIRD_GROUP_[A-Z_]+|R32_WINNER_\d+|R16_WINNER_\d+|QUARTERFINAL_WINNER_\d+|SEMIFINAL_WINNER_\d+|TBD(_\d+)?)$/.test(team);
+      };
+
+      const visibleMatches = matches.filter(m => {
+        if (m.stage === 'group') return true;
+        return isResolvedTeamName(m.home_team) && isResolvedTeamName(m.away_team);
+      });
+
+      visibleMatches.forEach(m => {
         let row = document.createElement('tr');
         
         let scoreStr = '-';
@@ -1293,6 +1346,12 @@ std::string WebServer::handleRequest(const std::string& method,
         // Reload tournament in memory to pick up disk changes
         try {
             tournament_ = wc::loadTournamentFromCsvFiles("data/teams.csv", schedulePath_);
+          tournament_.computeStandings();
+          refreshBracketSlotsFromResults();
+          if (!persistSchedule()) {
+            statusCode = 500;
+            return "{\"ok\":false,\"error\":\"Failed to persist schedule after slot resolution\"}";
+          }
         } catch (const std::exception& e) {
             statusCode = 500;
             return "{\"ok\":false,\"error\":\"Failed to reload tournament schedule: " + std::string(e.what()) + "\"}";
@@ -1506,12 +1565,112 @@ bool WebServer::applyResultUpdate(const std::string& body, std::string& error) {
         }
 
         tournament_.computeStandings();
+        refreshBracketSlotsFromResults();
         return persistSchedule();
     } catch (const std::exception& e) {
         error = std::string("Parsing error: ") + e.what();
         return false;
     }
 }
+
+    void WebServer::refreshBracketSlotsFromResults() {
+      const std::vector<std::string> groups = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"};
+      std::map<std::string, bool> groupFinalized;
+      std::map<std::string, std::vector<Team*>> groupStandings;
+
+      bool allGroupsFinalized = true;
+      for (const auto& group : groups) {
+        const bool finalized = isGroupFinalized(tournament_, group);
+        groupFinalized[group] = finalized;
+        allGroupsFinalized = allGroupsFinalized && finalized;
+        groupStandings[group] = tournament_.teamsByGroup(group);
+      }
+
+      auto resolveGroupSlot = [&](const std::string& slot) -> std::string {
+        if (startsWith(slot, "WINNER_GROUP_")) {
+          const std::string group = slot.substr(std::string("WINNER_GROUP_").size());
+          if (groupFinalized[group] && groupStandings[group].size() >= 1) {
+            return groupStandings[group][0]->abbreviation();
+          }
+        }
+        if (startsWith(slot, "RUNNER_UP_GROUP_")) {
+          const std::string group = slot.substr(std::string("RUNNER_UP_GROUP_").size());
+          if (groupFinalized[group] && groupStandings[group].size() >= 2) {
+            return groupStandings[group][1]->abbreviation();
+          }
+        }
+        return "";
+      };
+
+      // Resolve only guaranteed winner/runner-up slots as soon as each group is finalized.
+      // Third-place dependent slots are only resolved after all groups are finalized.
+      for (auto& match : tournament_.allMatches()) {
+        if (match.stage() != "knockout_r32" || match.isFinal()) {
+          continue;
+        }
+
+        std::string home = match.homeTeam();
+        std::string away = match.awayTeam();
+
+        if (!allGroupsFinalized) {
+          const std::string resolvedHome = resolveGroupSlot(home);
+          const std::string resolvedAway = resolveGroupSlot(away);
+          if (!resolvedHome.empty()) home = resolvedHome;
+          if (!resolvedAway.empty()) away = resolvedAway;
+          if (home != match.homeTeam() || away != match.awayTeam()) {
+            match.setTeams(home, away);
+          }
+        }
+      }
+
+      if (allGroupsFinalized) {
+        Tiebreaker::allocateRoundOf32Matchups(tournament_);
+      }
+
+      auto resolveWinnerReference = [&](const std::string& slot) -> std::string {
+        int refId = -1;
+        if (startsWith(slot, "R32_WINNER_")) {
+          if (parseInt(slot.substr(std::string("R32_WINNER_").size()), refId)) {
+            return winnerOfFinalMatch(findMatchById(tournament_, refId));
+          }
+        }
+        if (startsWith(slot, "R16_WINNER_")) {
+          if (parseInt(slot.substr(std::string("R16_WINNER_").size()), refId)) {
+            return winnerOfFinalMatch(findMatchById(tournament_, refId));
+          }
+        }
+        if (startsWith(slot, "QUARTERFINAL_WINNER_")) {
+          if (parseInt(slot.substr(std::string("QUARTERFINAL_WINNER_").size()), refId)) {
+            return winnerOfFinalMatch(findMatchById(tournament_, refId));
+          }
+        }
+        if (startsWith(slot, "SEMIFINAL_WINNER_")) {
+          if (parseInt(slot.substr(std::string("SEMIFINAL_WINNER_").size()), refId)) {
+            return winnerOfFinalMatch(findMatchById(tournament_, refId));
+          }
+        }
+        return "";
+      };
+
+      // Propagate only finalized match winners to downstream rounds.
+      for (auto& match : tournament_.allMatches()) {
+        if (match.isFinal()) {
+          continue;
+        }
+        std::string home = match.homeTeam();
+        std::string away = match.awayTeam();
+
+        const std::string resolvedHome = resolveWinnerReference(home);
+        const std::string resolvedAway = resolveWinnerReference(away);
+
+        if (!resolvedHome.empty()) home = resolvedHome;
+        if (!resolvedAway.empty()) away = resolvedAway;
+
+        if (home != match.homeTeam() || away != match.awayTeam()) {
+          match.setTeams(home, away);
+        }
+      }
+    }
 
 bool WebServer::persistSchedule() const {
     try {
