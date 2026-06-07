@@ -33,6 +33,8 @@ private:
     double hostAdvantage_;
     int defaultIterations_;
 
+    void rebuildProbabilityHistory(int iterations);
+
     std::string handleRequest(const std::string& method,
                               const std::string& rawPath,
                               const std::string& body,

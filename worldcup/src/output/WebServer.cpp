@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include <cerrno>
+#include <fstream>
+#include <iomanip>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -601,6 +603,7 @@ std::string buildDashboardHtml() {
       margin-bottom: 1.25rem;
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -616,6 +619,7 @@ std::string buildDashboardHtml() {
         <button id="nav-simulation" class="nav-btn" onclick="switchTab('simulation')">Tournament Sim</button>
         <button id="nav-impact" class="nav-btn" onclick="switchTab('impact')">Match Importance</button>
         <button id="nav-sandbox" class="nav-btn" onclick="switchTab('sandbox')">What-If Sandbox</button>
+        <button id="nav-history" class="nav-btn" onclick="switchTab('history')">Contender History</button>
       </nav>
     </div>
   </header>
@@ -759,6 +763,42 @@ std::string buildDashboardHtml() {
         </div>
       </div>
     </section>
+
+    <!-- CONTENDER HISTORY TAB -->
+    <section id="history-section" class="view-section">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="page-title">Contender Probability History</h1>
+          <p class="page-desc">Track how each team's probability of reaching the final shifts over checkpoints throughout the tournament.</p>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+          <div id="history-rebuild-status" style="font-size: 0.9rem; color: var(--text-secondary);"></div>
+          <button id="btn-rebuild-history" class="btn btn-primary" onclick="rebuildHistoryData()">
+            <span id="rebuild-btn-text">Rebuild History (100k Sims)</span>
+          </button>
+        </div>
+      </div>
+      
+      <div class="card" style="padding: 1.5rem; margin-bottom: 2rem;">
+        <div style="position: relative; height: 450px; width: 100%; margin-bottom: 2rem;">
+          <canvas id="history-chart"></canvas>
+        </div>
+        
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="font-family: var(--font-display); font-size: 1.1rem; color: #cbd5e1;">Select Teams to Display</h3>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('contenders')">Reset to Top 5</button>
+              <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('all')">Select All</button>
+              <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('none')">Clear</button>
+            </div>
+          </div>
+          <div id="history-team-pills" style="display: flex; flex-wrap: wrap; gap: 0.5rem; max-height: 200px; overflow-y: auto; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(0,0,0,0.2);">
+            <!-- Team checkboxes will be dynamically inserted here -->
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- UPDATE RESULT MODAL -->
@@ -809,6 +849,7 @@ std::string buildDashboardHtml() {
       else if (tab === 'simulation') runSimulation();
       else if (tab === 'impact') runImpactAnalysis();
       else if (tab === 'sandbox') loadSandboxFixtures();
+      else if (tab === 'history') loadHistoryTab();
     }
 
     async function loadMatchesList() {
@@ -1142,6 +1183,298 @@ std::string buildDashboardHtml() {
       }
     }
 
+    let historyChart = null;
+    let historyData = [];
+    let selectedTeams = new Set();
+    const checkpointLabels = {
+      0: "Pre-Tournament",
+      24: "24 Matches",
+      48: "48 Matches",
+      72: "Group Stage Complete",
+      88: "Round of 32 Complete",
+      96: "Round of 16 Complete",
+      100: "Quarterfinals Complete",
+      102: "Semifinals Complete",
+      104: "Final Complete"
+    };
+
+    function getTeamColor(abbr) {
+      let hash = 0;
+      for (let i = 0; i < abbr.length; i++) {
+        hash = abbr.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const hue = Math.abs(hash) % 360;
+      return {
+        line: `hsla(${hue}, 85%, 65%, 1)`,
+        fill: `hsla(${hue}, 85%, 65%, 0.1)`,
+        border: `hsla(${hue}, 85%, 65%, 0.4)`
+      };
+    }
+
+    async function loadHistoryTab() {
+      const statusDiv = document.getElementById('history-rebuild-status');
+      statusDiv.innerText = "Loading history data...";
+      try {
+        const res = await fetch('/api/probability-history');
+        historyData = await res.json();
+        statusDiv.innerText = "";
+        
+        if (historyData.error) {
+          statusDiv.innerText = "Error: " + historyData.error;
+          return;
+        }
+
+        const uniqueCheckpoints = [...new Set(historyData.map(d => d.games_played))].sort((a, b) => a - b);
+        const allTeams = [...new Set(historyData.map(d => d.team))].sort();
+
+        renderTeamPills(allTeams);
+
+        if (selectedTeams.size === 0 && uniqueCheckpoints.length > 0) {
+          const latestCp = uniqueCheckpoints[uniqueCheckpoints.length - 1];
+          const latestData = historyData.filter(d => d.games_played === latestCp);
+          latestData.sort((a, b) => b.probability - a.probability);
+          for (let i = 0; i < 5 && i < latestData.length; i++) {
+            selectedTeams.add(latestData[i].team);
+          }
+          allTeams.forEach(abbr => {
+            const cb = document.getElementById('chk-team-' + abbr);
+            if (cb) {
+              cb.checked = selectedTeams.has(abbr);
+              const label = cb.parentElement;
+              if (selectedTeams.has(abbr)) {
+                label.classList.add('active');
+              } else {
+                label.classList.remove('active');
+              }
+            }
+          });
+        }
+
+        updateHistoryChart(uniqueCheckpoints);
+      } catch (e) {
+        statusDiv.innerText = "Failed to load history data.";
+        console.error(e);
+      }
+    }
+
+    function renderTeamPills(teams) {
+      const container = document.getElementById('history-team-pills');
+      container.innerHTML = '';
+      
+      teams.forEach(abbr => {
+        const colorInfo = getTeamColor(abbr);
+        const label = document.createElement('label');
+        label.style.display = 'inline-flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.35rem';
+        label.style.padding = '0.35rem 0.65rem';
+        label.style.background = 'rgba(255, 255, 255, 0.03)';
+        label.style.border = `1px solid var(--border-color)`;
+        label.style.borderRadius = '20px';
+        label.style.fontSize = '0.8rem';
+        label.style.cursor = 'pointer';
+        label.style.transition = 'all 0.2s ease';
+        label.className = selectedTeams.has(abbr) ? 'active' : '';
+        if (selectedTeams.has(abbr)) {
+          label.style.borderColor = colorInfo.line;
+          label.style.background = colorInfo.fill;
+        }
+
+        label.innerHTML = `
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${colorInfo.line}"></span>
+          <input type="checkbox" id="chk-team-${abbr}" style="display:none" ${selectedTeams.has(abbr) ? 'checked' : ''} onchange="toggleTeamSelection('${abbr}')">
+          <strong>${abbr}</strong>
+        `;
+        container.appendChild(label);
+      });
+    }
+
+    function toggleTeamSelection(abbr) {
+      const cb = document.getElementById('chk-team-' + abbr);
+      const label = cb.parentElement;
+      const colorInfo = getTeamColor(abbr);
+
+      if (cb.checked) {
+        selectedTeams.add(abbr);
+        label.classList.add('active');
+        label.style.borderColor = colorInfo.line;
+        label.style.background = colorInfo.fill;
+      } else {
+        selectedTeams.delete(abbr);
+        label.classList.remove('active');
+        label.style.borderColor = 'var(--border-color)';
+        label.style.background = 'rgba(255, 255, 255, 0.03)';
+      }
+
+      const uniqueCheckpoints = [...new Set(historyData.map(d => d.games_played))].sort((a, b) => a - b);
+      updateHistoryChart(uniqueCheckpoints);
+    }
+
+    function selectQuickGroup(groupType) {
+      if (groupType === 'all') {
+        const allTeams = [...new Set(historyData.map(d => d.team))];
+        allTeams.forEach(abbr => selectedTeams.add(abbr));
+      } else if (groupType === 'none') {
+        selectedTeams.clear();
+      } else if (groupType === 'contenders') {
+        selectedTeams.clear();
+        const uniqueCheckpoints = [...new Set(historyData.map(d => d.games_played))].sort((a, b) => a - b);
+        if (uniqueCheckpoints.length > 0) {
+          const latestCp = uniqueCheckpoints[uniqueCheckpoints.length - 1];
+          const latestData = historyData.filter(d => d.games_played === latestCp);
+          latestData.sort((a, b) => b.probability - a.probability);
+          for (let i = 0; i < 5 && i < latestData.length; i++) {
+            selectedTeams.add(latestData[i].team);
+          }
+        }
+      }
+      
+      const allTeams = [...new Set(historyData.map(d => d.team))].sort();
+      renderTeamPills(allTeams);
+      const uniqueCheckpoints = [...new Set(historyData.map(d => d.games_played))].sort((a, b) => a - b);
+      updateHistoryChart(uniqueCheckpoints);
+    }
+
+    function updateHistoryChart(checkpoints) {
+      const ctx = document.getElementById('history-chart').getContext('2d');
+      const xLabels = checkpoints.map(cp => checkpointLabels[cp] || `${cp} Matches`);
+
+      const datasets = [];
+      selectedTeams.forEach(abbr => {
+        const teamData = [];
+        checkpoints.forEach(cp => {
+          const point = historyData.find(d => d.games_played === cp && d.team === abbr);
+          teamData.push(point ? point.probability : null);
+        });
+
+        const colors = getTeamColor(abbr);
+        datasets.push({
+          label: abbr,
+          data: teamData,
+          borderColor: colors.line,
+          backgroundColor: colors.fill,
+          borderWidth: 3,
+          pointBackgroundColor: colors.line,
+          pointBorderColor: '#fff',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: colors.line,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          fill: false,
+          tension: 0.25,
+          spanGaps: true
+        });
+      });
+
+      if (historyChart) {
+        historyChart.data.labels = xLabels;
+        historyChart.data.datasets = datasets;
+        historyChart.update();
+      } else {
+        historyChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: xLabels,
+            datasets: datasets
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                grid: {
+                  color: 'rgba(255, 255, 255, 0.05)',
+                  borderColor: 'rgba(255, 255, 255, 0.1)'
+                },
+                ticks: {
+                  color: '#94a3b8',
+                  font: {
+                    family: "'Outfit', sans-serif",
+                    size: 11
+                  }
+                }
+              },
+              y: {
+                grid: {
+                  color: 'rgba(255, 255, 255, 0.05)',
+                  borderColor: 'rgba(255, 255, 255, 0.1)'
+                },
+                ticks: {
+                  color: '#94a3b8',
+                  font: {
+                    family: "'Outfit', sans-serif",
+                    size: 11
+                  },
+                  callback: function(value) {
+                    return (value * 100).toFixed(0) + '%';
+                  }
+                },
+                min: 0,
+                max: 1
+              }
+            },
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                backgroundColor: '#0f172a',
+                titleColor: '#f8fafc',
+                bodyColor: '#cbd5e1',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderWidth: 1,
+                cornerRadius: 8,
+                titleFont: {
+                  family: "'Outfit', sans-serif",
+                  weight: '600'
+                },
+                bodyFont: {
+                  family: "'Inter', sans-serif"
+                },
+                callbacks: {
+                  label: function(context) {
+                    return ` ${context.dataset.label}: ${(context.parsed.y * 100).toFixed(2)}%`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    async function rebuildHistoryData() {
+      const btn = document.getElementById('btn-rebuild-history');
+      const btnText = document.getElementById('rebuild-btn-text');
+      const statusDiv = document.getElementById('history-rebuild-status');
+      
+      btn.disabled = true;
+      btnText.innerText = "Running 100,000 simulations...";
+      statusDiv.innerText = "Calculating checkpoints, please wait (this may take a few seconds)...";
+      statusDiv.style.color = 'var(--text-secondary)';
+      
+      try {
+        const res = await fetch('/api/rebuild-probability-history', { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.ok) {
+          statusDiv.innerText = "Rebuild complete!";
+          statusDiv.style.color = 'var(--success-color)';
+          setTimeout(() => { statusDiv.innerText = ""; statusDiv.style.color = 'var(--text-secondary)'; }, 3000);
+          await loadHistoryTab();
+        } else {
+          statusDiv.innerText = "Rebuild failed: " + data.error;
+          statusDiv.style.color = 'var(--danger-color)';
+        }
+      } catch (e) {
+        statusDiv.innerText = "Rebuild request failed.";
+        statusDiv.style.color = 'var(--danger-color)';
+      } finally {
+        btn.disabled = false;
+        btnText.innerText = "Rebuild History (100k Sims)";
+      }
+    }
+
     // Init page
     switchTab('standings');
   </script>
@@ -1163,7 +1496,76 @@ WebServer::WebServer(Tournament tournament,
       baseRate_(baseRate),
       alpha_(alpha),
       hostAdvantage_(hostAdvantage),
-      defaultIterations_(defaultIterations) {}
+      defaultIterations_(defaultIterations) {
+    std::string historyPath = "data/probability_history.csv";
+    std::ifstream f(historyPath.c_str());
+    if (!f.good()) {
+        std::cout << "Probability history file not found. Building it on startup..." << std::endl;
+        rebuildProbabilityHistory(100000);
+    } else {
+        std::cout << "Using existing probability history file." << std::endl;
+    }
+}
+
+void WebServer::rebuildProbabilityHistory(int iterations) {
+    auto matches = tournament_.allMatches();
+    std::sort(matches.begin(), matches.end(), [](const Match& a, const Match& b) {
+        return a.matchId() < b.matchId();
+    });
+
+    int actualCompleted = 0;
+    for (const auto& m : matches) {
+        if (m.isFinal()) {
+            actualCompleted++;
+        }
+    }
+
+    std::vector<int> checkpoints = {0, 24, 48, 72, 88, 96, 100, 102, 104};
+
+    std::string historyPath = "data/probability_history.csv";
+    std::ofstream outFile(historyPath);
+    if (!outFile.is_open()) {
+        std::cerr << "Failed to open probability history file for writing: " << historyPath << std::endl;
+        return;
+    }
+
+    outFile << "games_played,team,probability\n";
+
+    for (int cp : checkpoints) {
+        if (cp > actualCompleted) {
+            break;
+        }
+
+        Tournament simTour = tournament_;
+        auto& simMatches = simTour.allMatches();
+        std::sort(simMatches.begin(), simMatches.end(), [](const Match& a, const Match& b) {
+            return a.matchId() < b.matchId();
+        });
+
+        for (size_t i = cp; i < simMatches.size(); ++i) {
+            simMatches[i].setScore(-1, -1, -1, -1, "scheduled");
+        }
+        simTour.computeStandings();
+
+        MonteCarlo mc;
+        mc.setModelParameters(baseRate_, alpha_, hostAdvantage_);
+        auto results = mc.simulate(simTour, iterations, 12345);
+
+        std::vector<std::string> teamAbbrs;
+        for (const auto& [abbr, _] : simTour.allTeams()) {
+            teamAbbrs.push_back(abbr);
+        }
+        std::sort(teamAbbrs.begin(), teamAbbrs.end());
+
+        for (const auto& abbr : teamAbbrs) {
+            double prob = results.finalProbability.at(abbr);
+            outFile << cp << "," << abbr << "," << std::fixed << std::setprecision(6) << prob << "\n";
+        }
+    }
+
+    outFile.close();
+    std::cout << "Successfully rebuilt probability history up to " << actualCompleted << " completed games using " << iterations << " iterations." << std::endl;
+}
 
 WebServer::Response WebServer::handleForTests(const std::string& method,
                                               const std::string& rawPath,
@@ -1370,6 +1772,41 @@ std::string WebServer::handleRequest(const std::string& method,
             return "{\"ok\":false,\"error\":\"" + jsonEscape(error) + "\"}";
         }
         return "{\"ok\":true}";
+    }
+    if (method == "GET" && path == "/api/probability-history") {
+        contentType = "application/json; charset=utf-8";
+        try {
+            auto table = CsvParser::parse("data/probability_history.csv");
+            std::ostringstream out;
+            out << "[";
+            bool first = true;
+            for (const auto& row : table) {
+                if (!first) out << ",";
+                first = false;
+                out << "{\"games_played\":" << row.at("games_played")
+                    << ",\"team\":\"" << jsonEscape(row.at("team")) << "\""
+                    << ",\"probability\":" << row.at("probability") << "}";
+            }
+            out << "]";
+            return out.str();
+        } catch (const std::exception& e) {
+            statusCode = 500;
+            return "{\"error\":\"Failed to load probability history: " + std::string(e.what()) + "\"}";
+        }
+    }
+    if (path == "/api/rebuild-probability-history") {
+        if (method != "POST") {
+            statusCode = 405;
+            return "{\"error\":\"POST required\"}";
+        }
+        contentType = "application/json; charset=utf-8";
+        try {
+            rebuildProbabilityHistory(100000);
+            return "{\"ok\":true}";
+        } catch (const std::exception& e) {
+            statusCode = 500;
+            return "{\"ok\":false,\"error\":\"Failed to rebuild probability history: " + std::string(e.what()) + "\"}";
+        }
     }
 
     statusCode = 404;
