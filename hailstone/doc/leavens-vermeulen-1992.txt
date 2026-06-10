@@ -1,0 +1,2647 @@
+Computers Math. Appli¢. Vol. 24, No. 11, pp. 79-99, 1992
+Printed in Great Britain. All rights rescued
+
+3x + 1 S E A R C H
+
+0097-4943/92 $5.03 + 0.00
+Copyright~)1992 Pergamon Press Ltd
+
+PROGRAMS
+
+GARY T. LEAVENS*
+Department of Computer Science, 229 Atanasoff Hall
+Iowa State University, Ames, Iowa 50311-1040, U.S.A.
+MIKE VERMEULEN
+Hewlett Packard, 3404 East Harmony Road
+Fort Collins,C O 80525, U.S.A.
+
+(Received November 1991 and in revised/arm March 199~)
+A b s t r a c t - - A l g o r i t h m s for computing peaks of certain statistics related to the 3.~ + 1 problem are
+described, along with data on such peaks up to 56 trillion (5.6 x 1013). The data result from several
+years of computation. The design of the algorithms used illustrates several techniques for program
+optimization.
+
+1. I N T R O D U C T I O N
+The 3z + 1 problem concerns iteratesof the following function:
+T(n)
+
+I (3n+1)/2,
+k
+
+ifn--1 (rood2),
+
+n/2,
+
+if n -- 0
+
+(mod 2).
+
+(1)
+
+which takes odd integers n to (3n + 1)/2 and even integers n to n/2 [1I. The 3z + I Conjecture
+asserts that, starting from any positive integer n, repeated iteration of this function eventually
+produces the value 1. This conjecture is apparently intractable.
+The iterates of T are simply defined. Let T(°)(n) = n, and for all integers k > 0, let T(k)(n) =
+T(T(k-1)(n)). The sequence of iterates (T(°)(n),TO)(n),T(2)(n),...) is called the T-trajectory
+of n. For example, the T-trajectory of 7 is:
+7, 11, 17, 26, 13, 20, 10, 5, 8, 4, 2, 1, 2, I, 2, 1, ...
+An alternative formulation of the 3z % 1 problem considers iterates of the function H that does
+not map odd integers n to (3n + 1)/2, but rather to 3n + 1:
+
+H(n) I 3n+1,
+n/2,
+
+ifn-1 (rood2),
+if n - - 0
+
+%
+
+(mod 2).
+
+(2)
+
+The function H is modeled after the so-called hailstone algorithm, see [2]. One defines the iterates of H in the same way as T. For example, if n is 7, then the sequence of successive iterates of H
+*Leavens's work was supported in part by the National Science Foundation under Grant CCR-9108654 by the
+ISU Achievement Foundation and by a Genl~ad/AEA Faculty Development Fellowship; while graduate students at
+MIT both authors' work was supported in part by the National Science Foundation under Grants DCFt-8510014
+and CCR-8716884, and the Defense Advanced Research Projects Agency under Contract N00314-83-K-0125.
+Computer support was provided in part by the National Science Foundation under Grant DCR 8503662.
+The work described in this report was done while the authors were graduate students at MIT, and hence was
+supported indirectly by MIT, the Laboratory for Computer Science, and in particular by professors Barbara Liskov
+and Bill Weihl.
+While the Argus group has benefited from having a running application, Paul Johnson has been helpful beyond
+the call of duty in fixing problems with the Argus system (and our programs!) in a timely manner. Paul has also
+helped with assembly language programming. We also thank all the members of the Argus group for putting up
+with the balhtone system with such good grace.
+Thanks also to Kelvin Nilsen who helped correct an earlier draft.
+
+79
+
+80
+
+G.T. LEAVENS, S. VERMEULEN
+
+is:
+7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 4, 2, 1, ...
+W e will call such a sequence a H-trajector~l.
+Notice how the H-trajectory of 7 differsfrom its T-trajectory. The difference is stated precisely
+in the following lemma. The firstpart states that the T-trajectory of a number is a subsequence
+of the corresponding H-trajectory, with the property that every even number in the sequence of
+iterates of H can be paired with a number in the iterate sequence of T. The second part states
+that every number k in the H-trajectory of n either occurs in the T-trajectory of n or else k/2
+does.
+LEMMA
+
+I.
+
+(a) For all i > O, for all n > O, and for all k > O, if T(i)(n) = k, then there is some j >_ 0 such
+that, H(J)(n) = 2k, and H(j+l) = k.
+(b) For all j > O, for all n >. O, and for a/l k > 0, if H(J)(n) = k, then there is some i >_ 0 such
+that either T(i)(n) = k or T(i)(n) = k/2.
+PROOF. The proof is by induction on i, respectively j, for (a) and (b).
+I
+There are graphs in the article by Hayes that show the wildly erratic and unpredicatable
+behavior of the iterates of H [2]. The behavior of T is, of course, similarly wild and unpredictable.
+W e define certain statistics that measure various attributes of the iterates of the functions T
+and H. These statistics are related to the 3z + 1 conjecture, since one counts the number of
+iterations needed to reach I, or the m a x i m u m value reached in a trajectory.
+A necessary condition for T(t)(n) = I is that there is some m such that T(m)(n) < n. The stopping time #(n) is the least whole number k such that T(t)(n) is less than n, with the convention
+that ~r(1) = 0. If there is no such k, then let ~(n) be oo. For example, or(7) = 7.
+The total stopping time #oo(n) is the least whole number k such that T(t)(n) is one, with the
+convention that aoo(1) = 0. If there is no such k, then let aoo(n) be co. For example, ~oo(7) = 11.
+The value of steps(n) is the least whole number k such that H ( t ) ( n ) is one. If there is no
+such k, then let steps(n) be oo. It is the analog of total stopping time for H. For example,
+steps(7) = 16.
+The maximum value, max_value(n), is the least upper bound of all the integers reached by
+iterating H until the value of the iterates reach one. That is,
+
+max_value(n) = lub{H(t)(n) I0 < k < steps(n)}.
+
+(3)
+
+For example, max_value(7) = 52. Using T instead of H gives an alternative definition of maximum value.
+air_max_value(n) = lub{T(t)(n) 10 < k < aoo(n)}.
+(4)
+For example, air_max_value(7) = 26. Except in certain special cases, the max_value of a number
+is always twice its air_max_value. The proof of this simple fact depends on part (a) of the following
+lemma, which states that if a value occurs in the T-trajectory of a number greater than two, then
+it must occur before the iterates reach one.
+LZMMA
+
+2.
+
+(a) For all n > 2, and/or all k, if there is some i >_ 0 such that H(i)(n) -- k, then there is
+some 0 <_ j <_ steps(n) such that H(J)(n) = k; furthermore, if there is some i > 0 such that
+T(i)(n) = k, then there is some 0 <_ j < ~oo(n) such that T(J)(n) = k.
+(b) For all n > O, if air_max_value(n) ~ n, then max_value(n) = 2. alt_maz_value(n).
+
+II
+
+W e are interested in the behavior of these statistics as n varies. M a n y facts are known about
+them, see [1]. A number of researchers have observed that if the input n is drawn randomly,
+say with the uniform distribution on an interval [I,N], then these statistics appear to have nice
+limiting distributions as N approaches infinity (see, for example, [3] and [4]). Lagarias and
+Weiss [5] describe various random walk models intended to simulate 3z + 1 function iterates.
+
+3x + 1 search p r o g r a m s
+
+81
+
+Particularly interesting statistics concern the behavior of extreme values of these statistics
+as n varies, which we call peaks. An integer n > 0 is a peak in a statistic f , if and only if for all
+0 < m < n, f ( m ) < f(n). These numbers are called peaks because if one graphs the function,
+then each peak will be a point higher than has been reached for smaller n. For example, 3 is a
+peak in max_value, because max_value(3) = 16, max_value(2) = 2, and max_value(l) = 1.
+This paper describes algorithms for computing such peaks; tables of peaks appear in the
+Appendix. The algorithmic optimizations described below were developed in a spirit of friendly
+competition between the two authors. Each author developed a program, and so many of our
+results have been validated by more than one program. The first program (by Leavens) designed
+to experiment with the Argus distributed programming language and system (see references [6]
+and [7]). A second program (by Vermeulen) was written in C, to understand the inherent costs
+of Argus as opposed to C. Various distributed programs have been running since 1986, although
+only Vermeulen's program is currently running. Vermeulen's current system, which was started
+in August 1990, runs on about 15 workstations (the exact number varies), searches an interval of
+about 100 billion per night, and has accumulated between 5 and 15 years of CPU time. (That
+is, if the search were run sequentially it would take about 5 CPU-years on the fastest machine,
+or about 15 CPU-years on the slowest.)
+Peaks appear more and more rarely as one tests larger numbers. While it is easy to verify the
+value of steps(n) or max_value(n) for any particular n, it is very expensive to verify that n is a
+peak in either statistic, because this involves showing that all numbers less than n have a smaller
+value for steps or max_value.
+One of the mathematical questions we have investigated is whether peaks in one statistic
+must be peaks in some other statistic. Since the trajectories under H and T are related (as in
+Lemma 1), one might guess that numbers that are peaks in a measure based on iterates of T
+would necessarily be peaks in a measure based on H. This is true for maximum values, but
+the question remains open for stopping times and steps. The relationships are summarized in
+Table 1.
+Table 1. Relationships b e t w e e n p e a k s in various statistics.
+a
+
+aoo
+
+step8
+
+max_~alue
+
+~r
+
+sarfle
+
+~oo
+
+distinct
+
+steps
+
+distinct
+
+unknown
+
+same
+
+distinct
+
+distinct
+
+distinct
+
+sa,lne
+
+distinct
+
+distinct
+
+distinct
+
+Jlg~e
+
+alLmax_~alue
+
+alLmax_~alue
+
+same
+
+88A'ne
+
+The fact that peaks in max_value and air_max_value are the same is a corollary of Lemma 2 (b).
+COROLLARY 3. An integer k > 0 is a peak in max_value if and only ff k /s a/so a peak in
+alt_max_value.
+1
+Counter-examples that distinguish between peaks in most other measures can be found by
+examining the tables in Appendix A.
+The relationship between peaks in steps and peaks in a ~ is one of the difficult open questions
+that often appear in the study of the 3z + 1 problem. However, it is easy to see that the total
+stopping time cannot be greater than the number of steps, nor as small as half the number of
+steps.
+LEMMA 4. For a/l n > 0, if steps(n) ~ oo, then steps(n)~2 < aoo(n) < steps(n).
+PROOF. In any H-trajectory, every step of the form 3z + 1 is followed by a division by 2. Thus
+the T-trajectory omits at most half of these steps. However, if steps(n) is defined, then there
+must be more division by 2 steps in the iteration of H than there are steps that multiply by 3
+and add one.
+1
+
+G.T. LgAvgNs, M. VERM~-ULEN
+
+82
+
+A different relationship holds between total stopping time and steps. Let odd(n) be the number
+of odd integers in the iterate sequence of H (excluding 1) and even(n) be the number of even
+integers that occur until 1 is reached. That is:
+
+odd(n) d.~ ~ ( k [ k mod 2 = 1, H(i)(n) = k, 0 <_i < steps(n)},
+
+(5)
+
+even(n) =
+d.f # { k I k rood 2 = 0, HCi)(n) = k, 0 _< i < stepsCn)}.
+
+(6)
+
+Since every step produces an odd or an even number, the sum of odd and even is the number
+of steps; that is, for all n > 0, steps(n) = odd(n) + even(n).
+It is interesting that the number of even steps is the same as the total stopping time.
+LEMMA 5. For a/l n > 0, ~oo(n) = even(n).
+PROOF. If ~oo(n) = oo, then even(n) = oo. Furthermore, ~oo(1) = 0 = even(l) and ~oo(2) =
+
+1 = even(2).
+So suppose n > 2 and ~oo(n) = rn < oo. By Lemma 1, for each 0 < i < ~oo(n), there is
+some j > 0 such that 2T(i)(n) = HO)(n). By Lemma 2, j can be chosen so that j < steps(n).
+Thus, aoo(n) _> even(n). However, if aoo(n) > even(n), then there would have to be two iterates
+of T with the same value (that is, 0 < i < 1 < aoo(n), such that T(i)(n) = T(0(n)), but if this
+happened there would be infinitely many such cases, and so ~oo(n) would be infinite.
+|
+The above analysis does not seem to lead to a proof that peaks in steps are also peaks in total
+stopping time. However, the peaks do coincide at least to 12.3 billion (12.3 x 109), as the first
+author's program verified. So we offer the following conjecture.
+CONJECTURE 6. An integer k > 0 is a peak in steps if and only if k is a peak in torn/stopping
+
+time (~oo).
+This conjecture seems difficult to prove.
+The rest of the paper is organized as follows. Section 2 discusses smaller-scale efficiency issues,
+and describes how we turn mathematical insight into better ways to prune the search space.
+Section 3 draws some conclusions from this experience. Appendix A gives tables of results from
+the search.
+From the tables we make the following observations.
+• 1, 2, 3, 7, 27, and 703, are the only known peaks in steps, stopping time (~r), and max_value;
+no larger number is known to be a peak in all three of these statistics.
+• 12,235,060,455 is the largest known number that is a peak in both steps and a; no larger
+number is known to be a peak in more than one of: steps, stopping time (tr), and mar_value.
+• Despite the previous remark, many of the peaks in steps have the same max_value, and
+hence their trajectories are identical after a certain number of iterations.
+Unlike the peaks in steps, the maximum values reached by peaks in stopping time, ~r, rarely
+repeat.
+See also Lagarias and Weiss for more detailed comparisons in a similar vein [5].
+2. S M A L L S C A L E D E S I G N ISSUES
+This section describes algorithms for iterating H and T. Another issue of practical importance,
+how to efficiently distribute the search among several computers, will not be discussed in this
+paper (see [81).
+A fundamental observation is that peaks are extremely rare. For example, in the first 50 billion
+positive integers, there are only 49 peaks in max_value and only 78 peaks in steps. The peaks
+become more and more rare as the search progresses; between 1 billion and 50 billion there are
+only 5 peaks in maz_value and 12 peaks in steps. So a typical number is not a peak, and the
+main task of the search is to find this out as quickly as possible. For doing this there are three
+basic strategies.
+
+3z + 1 search programs
+
+83
+
+• Cutting off the search by discovering that the input number is not a peak before taking it
+through all the iterates of H or T down to 1 (or until the values of the iterates fall below
+the starting value if one is searching for peaks in stopping time).
+• Running the steps of the iteration algorithm faster.
+• Multiplying, dividing, adding, and comparing numbers faster. Algorithms and data structures for large precision integers were important practical considerations, because the
+searches went well past the usual 32 bit integers, and because the iterates exceed these
+limits quickly. For example, maz_value(159,487) = 17,202,377,752. Such algorithms and
+data structures are well-known [9].
+The benefits of the optimizations discussed in this section are summarized in Table 2. The
+speedup due to a particular optimization depends on the order in which optimizations are applied.
+For example, the a priori cutoff of all numbers k mod 6 = 5 reduces the set of numbers to be
+searched by a sixth if one is searching all numbers, but by a third if the set is already restricted
+to even numbers. The table lists the optimizations in the order that they were added to Mike
+Vermeulen's program, and then lists the speedup achieved by that optimization assuming the
+optimizations listed above it were already applied.
+The speedup of seven for using polynomials results from a comparison between an assembly
+language program and a polynomial based program. All other speedups were measured while
+selectively disabling optimizations on the polynomial search.
+Table 2. Effectivenessof optimizations.
+
+Optimization
+None
+Use Composite polynomials
+Search only odd numbers
+
+Values: ¢ pos~eriori cutoffs
+Ignore k mod 6 -- 5
+Values: a priori cutoff with 8 bit polynomial
+Steps: a priori cutoff using 8 bit polynomial
+Use 16 bit polynomials for a priori cutoffs
+Steps: a posteriori cutoffs
+
+Speedup
+1.00
+7.00
+2.00
+1.84
+1.41
+1.71
+1.15
+1.36
+1.88
+
+Cumulative Speedup
+1.0
+7.0
+14.0
+25.7
+36.4
+62.1
+71.3
+97.1
+182.0
+
+2.1. A Priori Cutoffs
+The best way to cut off the search on a given input number is to prove that the input cannot
+be a peak and to ignore it without spending time on it; this is called an a priori cutoff. A less
+effective way to cut off the search on a given input is to prove that the number cannot be a peak
+after learning something about its trajectory; this is called an a posteriori cutoff.
+A basic result is that it is possible, a priori, to limit the search to odd numbers. For maz_value,
+it suffices to note that the first step of H for an even number is to divide it by two.
+LEMMA 7. For all k > O, max_value(2k) = max{2k, maz_value(k)}.
+The technique used in the proof of the following corollary is an example of reasoning about
+the convergence of different trajectories.
+COROLLARY 8. The n u m b e r 2 is the only even peak in maz_value.
+PROOF. Let k > 1 be given. By the above lemma, maz_~alue(2k), is the maximum of 2k
+or maz_value(k). If maz_value(2k) = maz_value(k), then 2k is not a peak. So suppose
+maz_value(2k) = 2k. But, then 2k is not a peak in maz_value either, since maz_value(~,k - I ) ~
+
+G.T. LEAVENS, M. VERMEULEN
+
+84
+
+3(2k- 1) > 2k. The inequality maz_valne(~k - I) >_ 3(2k- 1) holds because 2 k - 1 is odd, hence
+H(2k - 1) = 3(2k - 1). That 3(2k - 1) > 2k holds for k > I holds is shown by the following:
+
+k>1::~4k>4
+4k - 3 > 1
+
+(7)
+(S)
+
+: . (6k - 3) - 2k > 1
+
+(9)
+
+3) > 2k + 1
+
+(10)
+
+(6k -
+
+::~ 3(2k - I) > 2k.
+
+(11)
+
+|
+Results similar to the above apply to aILmaz_valne as well.
+For steps, the same observation about the first step of H means that an even number k will
+take only one more step than k/2 to return to 1.
+
+LEMMA 9. For aII k > O, steps(2k) = 1 + steps(k).
+
+COROLLARY I0. If k is a peak in steps, then the least even number greater than k that can be
+a peak in steps is 2k.
+
+PROOF. Let k be a peak in steps. By definition, for all 0 < j < k, steps(j) < steps(b). Thus by
+the preceding lemma, steps(2j) is constrained as follows:
+s t e p s ( 2 j ) = 1 + s t e p s ( j ) _< s t e p s ( b ) = s t e p s ( 2 k ) - 1 < s t e p , ( 2 k ) .
+
+(12)
+|
+
+A similar result applies to total stopping time.
+By these corollaries, it is easy to predict all the even peaks in steps and mar_value. Thus the
+search for these peaks ignores all the even numbers, giving a factor of 2 speedup.
+For stopping time, the first division by two means that an even number always has a stopping
+time of 1.
+
+LEMMA 11. For all k > 0, #(2k) = 1.
+
+COROLLARY
+
+12. Ilk > 2 is a peak in stoppin K time, then k is odd.
+
+So the search for peaks in stopping time also ignores all the even numbers.
+The following results allow the search for peaks in stopping time to effectively ignore half of
+the odd numbers as well, that is, those that are equal to i modulo 4. The |emma predicts the
+first iteration of T from the fact that the number is equal to I modulo 4, and the corollary carries
+this analysis one iteration further to predict the stopping time.
+LEMMA
+
+13. For a]] k > 0, ilk m o d 4 = I, then T(k) is even.
+
+PROOF. Suppose k > 0 and k rood 4 = 1. Then k mod 2 - 1, and hence T(k) = (3k + 1)/2. But
+
+(3k + 1) is evenly divisible by 4:
+k rood 4 = 1 =~ 3k mod 4 = 3
+
+=~ (3k + 1) mod 4 = 0,
+and, therefore, (3k + 1)/2 must be evenly divisible by 2.
+COROLLARY
+
+14. For all k > I, ilk m o d 4 = I, then or(k) = 2.
+
+(13)
+
+(14)
+|
+
+3m -I- 1 s e a r c h p r o g r a m s
+
+85
+
+PROOF. Suppose k > 1. Then 3k + k > 3k + 1, so k > (3k + 1)/4. By the above lemma,
+T ( k ) = (3k + 1)/2. But (3k + 1)/2 > k and (3k + 1)/2 is even, so T(2)(k) = (3k + 1)/4. So by
+definition, the stopping time of k is 2.
+|
+Sad to say, the first author's search for peaks in stopping time never used the above idea, which
+would have resulted in a factor of 1.25 speedup (over and above ignoring the even numbers).
+A fruitful idea for finding a pr/ori cutoffs is to see how a number can result from (smaller)
+numbers in the course of iterating H or T. This should be contrasted with the techniques used
+above to find cutoffs in stopping time, which see what happens to the number itself when it is
+used as input to iterations of T. The idea of looking at convergence between the trajectories of
+smaller numbers and the number in question is related to the Coilatz graph discussed in [1].
+LEMMA 15. Let j and k be given so that O < j < k. I f there is some m > O such that H(m)(j) = k,
+then k cannot be a peak in steps or max_value.
+PROOF. Since the steps taken by k are the same as those taken by j after m initial steps,
+steps(j) = m + steps(k) and max_value(j) >_ mar_value(k).
+|
+LEMMA 16. Let j and k be given so that 0 < j < k. I f there is some m > 0 such that T(m)(j) = k,
+then k cannot be a peak in stopping time, total stopping time, or air_max_value.
+|
+The most important practical example of this kind of a priori cutoff is that if k mod 6 = 5,
+then k cannot be a peak in any of the statistics mentioned above. This is because if k mod 6 = 5,
+then k lies on the trajectory of (2k - 1)/3, which is smaller than k. Indeed the iterates of H first
+multiply (2k - 1)/3 by 3 and add 1, obtaining 2k, and then divide 2k by 2 obtaining k. This
+result is proved in the following lemma.
+LEMMA 17. Let k > O. I l k mod 6 = 5, then T((2k - 1)/3) = k and H(2)((2k - 1)/3) = k.
+PROOF. Suppose k > 0 and k mod 6 = 5. First we note that 2k - 1 is divisible by 3:
+k mod 6 = 5 =~ 2k mod 6 = 4
+
+(15)
+
+:=~ 2k mod 3 - 1
+
+(16)
+
+::~ (2k - 1) mod 3 - 0.
+
+(17)
+
+To see where T or H maps (2k - 1)/3 we must know if (2k - 1)/3 is even or odd:
+
+==~(2k - 1) mod 6 = 3
+
+(18)
+(19)
+
+(2k- 1) mod 2 -- 1.
+
+(20)
+
+k mod 6 = 5 =~ 2k mod 6 = 4
+
+=~
+
+3
+
+The last implication above follows because there is some integer q such that:
+( 2 k - 1) = 6q Jr 3 ~ ( 2 k - 1) - 3(2q) + 3
+
+(2k- 1)
+
+::~ ~
+
+= 2 q + 1.
+
+(21)
+
+(22)
+
+Since (2k - 1)/3 is odd, according to the definitions of T and H,
+
+(23)
+H I ( 2 k ~ 1) 1 =2&
+
+(24)
+
+H(~) I ( 2 k 3 I ) I - k.
+
+(25)
+|
+
+86
+
+G.T. LEAVENS, M. VERMgULEN
+
+COROLLARY 18. Let k > 0. If k mod 6 = 5, then k cannot be a peak in steps, max_value,
+stopping time, total stopping time, or alt=maz_value.
+|
+
+Thus, the search programs ignore odd numbers that are equal to 5 modulo 6, for an factor
+of 1.33 speedup (over a program that ignores even numbers).
+The reader might see what happens when k mod 18 = 13. This idea can be carried as far as
+one desires. For example, one could keep a table of which numbers modulo 216 cannot be peaks
+in max_value or steps, and a counter that gives the value of the current iterate modulo 216. One
+could then use the table to avoid testing numbers that have no hope of being peaks. In the
+extreme, one can organize the entire search by constructing the Collatz graph, but the space
+requirements become prohibitive.
+Other a priori cutoffs are discussed below, after the introduction of composite polynomials.
+
+~.$. A Posteriori Cutoffs
+When iterating H to search for peaks in max_value, one has to check periodically to see if the
+values produced are greater than the value of the previous iterate (or greater than the value of
+the previous peak). However, these comparisons are fairly expensive for large precision numbers.
+It should be obvious that one does not have to make a comparison after dividing by 2, since the
+next iterate is smaller than the last. Neither does one have to make a comparison after every
+3n + 1 step of iterating H, but only until the iterates have fallen below the initial value (stopped);
+this is due to the following result.
+LEMMA 19. Let k > 0 be a peak in max_value.
+max_value(k) = max{H(i)(k) l O < i < m}.
+
+If for some m > O, H(m)(k) < k, then
+
+PROOF. Let m > 0, be such that H(m)(k) = j < k. Since j < k, max_value(j) < max_value(k),
+because k is a peak. Since after this point the H-trajectory of k is the same as that taken by j,
+it cannot be the case that more iterations will reach or exceed the maximum value obtained up
+to this point:
+|
+The way this lemma is used in an a posteriori cutoff is to stop making comparisons for purposes
+of finding a peak in max_value after the value of the iterates falls below the initial input number, k.
+Note that the lemma depends on k being a peak in max_value. If this is not the case, the m a ~ m u m
+value may be obtained after the value of an iterate falls below its starting value. An example is
+the number 55, which reaches a value of 376 before it first falls below 55 (to 47). It then goes on
+to reach a maximum value of 9,232.
+After the value of the iterates has fallen below the input value, one can cut off the search for
+peaks in steps (or total stopping time) a posteriori using the following lemma to estimate the
+maximum number of further iterations that will be needed.
+LEMMA 20. For all k > O, i f H (P) = n _< j, where j is a p e a k i n steps, then steps(k) <_p+steps(j).
+PROOF. If n = j, then steps(k) -- p + steps(j). If n < j, then, since j is a peak in steps,
+steps(n) < steps(j), by the definition of a peak.
+|
+A similar results holds for T and aoo.
+In practice, the above lemma is used as follows. Let the number to be tested be k. After a
+step where H divides the current iterate value by two, one finds (if possible) the largest peak, j,
+in steps such that the current iterate's value is no greater than j, and uses the lemma above to
+bound steps(k). If this bound on steps(k) indicates that k is not a peak in steps, then k can be
+dismissed as far as steps is concerned.
+The importance of this a posteriori cutoff is the empirical observation that the cutoff allows
+the search for peaks in steps to be cut off, on the average, after a constant number of steps. This
+seems to be true in any sufficiently large interval, provided that all but one or two peaks in steps
+less than the interval are known. That is, if one knows all the peaks in steps up to j, and if j
+is sufficiently large, then over the interval from j + 1 to 2j one should always be able to cut off
+
+3 s + 1 search programs
+
+87
+
+the search after an average of about 15 steps, independent of the value of j.x Considering that
+the number of steps taken by n goes up logarithmically with the n, this cutoff makes sense as
+soon as the average (odd) number starts taking more than 15 steps worth of time plus the time
+required to see if the search can be cut off. Furthermore, the value of this cutoff grows as the
+search proceeds towards infinity. (The first author used this cutoff instead of some of cutoffs
+based on the polynomials discussed below.)
+
+g.3. Speedin 9 Up the Iterations
+Even with the results above, there are still infinitely many trajectories that must be computed,
+at least in part, for a search. Thus these trajectories must be computed efficiently.
+The hailstone algorithm in Figure 1, which finds the values of steps(n) and maz_value(n) is
+coded in Argus [7]. This algorithm is does not save the entire H - t r a j e c t o r y of n, but just records
+the values of the statistics. (In the code Y. starts a comment, / / i s a modulo operator and "=
+means "not equal." In the real programs, n would not be an i n t , it would be an object of some
+type of large-precision natural numbers.)
+g input:
+an integer n > 0
+g output:
+n u m b e r o f s t e p s a n d max_value reached
+steps:
+i n t := 0
+
+max_va].ue : int : = n
+while n "= 1 do
+if (n / / 2) = 0
+t h e n n := n / 2
+e l s e n :ffi 3*n + 1
+m a x _ v a l u e := i n t S a a x ( m a x _ v a l u e , n )
+
+end
+steps
+
+:= s t e p s
+
++ 1
+
+end
+Figure 1. The hailstone algorithm, which computes iterates of H .
+
+The problem considered in this sub-section is finding an equivalent algorithm that can be
+executed in less time. The focus in this section is on the hailstone algorithm, and the search for
+peaks in steps and maz_value.
+
+g.3.1. Make_odd
+Division by 2 is best implemented by shifting in a binary representation. Also, shifting a number
+by several bit positions is roughly as fast as shifting a number by one bit position. Thus, one idea
+for making a faster algorithm is to replace the division by 2 step in the hailstone algorithm by a
+step that shifts the input as many bits as necessary in order to make it odd. How effective will
+this be? If the value of the hailstone algorithm's variable n were uniformly distributed among
+the even integers by the 3n + 1 step, then half of the time n would not be divisible by 4, and one
+fourth of the time n would not be divisible by 8, and so on. Thus the expected number of bit
+positions that an even number would be shifted is:
+
++2
+
++3
+
++4
+
+(1)
+
++...=
+
+~ = 2.
+
+(26)
+
+i=1
+
+Thus on the average, shifting n by as many bits as necessary to make it odd does the work of
+two divisions by 2. It is, therefore, cost-effective if it takes no more than the time taken by doing
+two divisions.
+An advantage of shifting n so that it is odd is that one no longer has to check to see whether n
+is odd or even, because one can write the hailstone algorithm (for odd inputs) as in Figure 2. In
+the figure, the procedure make_odd returns the new value of n and the number of bit positions
+l W e recorded data for the I00,000 odd numbers in the interval from 17,828,259,369 to 17,828,459,369, Note
+t h a t 17,828,259,369 is a peak in steps. In this interval the average n u m b e r of steps is 276.
+
+88
+
+G.T. LEAVENS, 1~. VERMEULEN
+
+L ~ u t : an odd intsger n > 0
+while n "= 1 do
+n is o d d
+n :- 3*n + 1
+n
+
+is e v e n
+
+7. check for max_value here
+n, p :-make_odd(n)
+the nmaber of steps taken t h i s time around the loop is p+l
+check for a poster~ori cutoffs here
+
+end
+Figure 2. Hailstone algorithm using m61~e_odd.
+input:
+
+i n t e g e r s n > O, m > 0
+
+while n -- 1 do
+p, s := m B i t P o l y ( n / / 2**m)
+n :ffi p o l y E v a l ( p , n)
+7. t h e number of s t e p s t a k e n t h i s t i m e around t h e l o o p i s s
+7. check for a posteriori cutoffs
+
+end
+Figure 3. Hailstone algorithm using composite polynomials.
+
+that the old value of n had to be shifted to make it odd. Another pleasing property of this
+hailstone algorithm is that one can check for cutoffs when n is as low as it can be before going
+up again, this means that one spends less time checking for cutoffs, on the average.
+
+~.3.~. Composite Polynomials
+A more efficient hailstone algorithm than the above takes bigger steps, doing several iterates
+at a time. This idea gives a speedup of 7 over the hailstone algorithm of Figure 1. It also leads
+to several strategies for cutoffs.
+The standard hailstone algorithm looks at the last bit of the value of the variable n to decide
+what step to take. By looking at the last m bits of the binary representation of n, one can decide
+what the next several steps that will be taken are, combine all these steps into a polynomial, and
+then do the work of all those steps by evaluating the polynomial at the value of n. An algorithm
+that uses this idea for computing the iterates of H is shown in simplified form in Figure 3. In
+the figure, mBitPoly returns both a polynomial and the number of steps that the polynomial
+represents. Checking for max_value is described below.
+There axe two strategies for expressing the polynomial.
+One strategy is to obtain a polynomial of the form:
+3kx + z
+2,n ,
+which is equivalent to the sequence of ]c + m steps taken. For example, for n = 7, the first step
+is to multiply by 3 and add 1 (obtaining 22), the second divides by 2 (obtaining 11), the third
+multiples by 3 and adds 1 (obtaining 34), and the forth divides by 2 (obtaining 17). These steps
+are represented by the following polynomial.
++
+
+Such a polynomial is called the standard polynomial, it represents k steps of the form 3 n + l and m
+divisions by 2. (It will be shown below why the number of divisions by 2 is equal to the number
+of bits considered.) For each , , the standard m bit polynomial f o r , will be written Spoly,,,(n).
+This polynomial can be evaluated by multiplying by the appropriate power of 3, adding in the
+appropriate integer z and then shifting by the appropriate power of 2. As in the previous section
+one ends up with an odd number.
+
+3x + 1 search p r o g r a m s
+
+89
+
+A disadvantage of the standard polynomial is that the intermediate result after multiplying
+by the appropriate power of 3 is rather large, possibly leading to inefficient use of storage or
+inadvertent overflow. The second strategy overcomes this problem by doing the shifting first,
+and this is the strategy used by the second author's programs. The idea is to represent the Steps
+by a '~olynomial" of the following form
+
+This Vermeulen polynomial also represents k steps of the form 3n + 1 and m divisions by 2. For
+each n, the m bit Vermeulen polynomial for n will be written Vpolym(n ). Vermeulen polynomials
+will yield an answer equivalent to the normal sequence of steps when evaluated in the following
+manner:
+1. divide by 2"* and truncate, that is, shift the binary representation right by m bits,
+2. multiply the result (the most significant part of n) by the appropriate power of 3, and
+3. add y.
+The idea is that a Vermeulen polynomial represents the effect of the steps on the most significant
+part of n only. The number y represents the overflow from the least significant m bits.
+To explain how these polynomials are generated, consider the following examples. Items to the
+right of the dot (.) in last bits do not affect the other bits, and items to the left of the dot do.
+The following is the generation of an 8 bit Vermeulen polynomial, VpolYs(3 ).
+Max L a s t b i t s
+.00000011
+.00001010
+.0000101
+* .0010000
+.001
+.100
+.I
+10.0
+I0.
+
+M
+3
+10
+5
+16
+1
+4
+I
+4
+2
+
+Partial poly
+x
+3x+l
+3(x/2)+2
+9(x/2)+7
+9(x/32)+1
+27(x/32)+4
+27(x/128)+I
+81(x/128)+2
+81(x/256)+2
+
+| e x t step
+*3
+/2
+*3
+/16
+*3
+/4
+*3
+/2
+
+Notice that division by 2 removes one bit from the right, this corresponds to moving in bits
+from the left that are unknown. The process of computing partial polynomials stops when all the
+known bits are shifted out, that is, when m divisions by 2 have been performed. The row with the
+asterisk (*) marks the partial polynomial that produces the largest intermediate result. If one is
+checking for peaks in max_value, then the evaluation must be broken into three steps: evaluating
+the partial polynomial at this point, checking for a peak in ma~_value, and then evaluating the
+rest of the polynomial. For comparison, Spolys(3 ) is (81x + 269)/256.
+As another example, Vpolys(27 ) is [x/256J 2187 + 242; for comparison Spolys(27 ) is (2187x +
+
+2903)/2 6.
+The composite polynomial idea leads to a hailstone algorithm that is about an order of magnitude faster than the algorithm in Figure 2. It is an open question whether this approach is
+optimal.
+The practical drawback to such an algorithm is its complexity of implementation. One needs
+automated tools for generating the polynominals. Furthermore, it is difficult to write the code to
+cheek for peaks in maz_value or stopping time. This implementation difficulty makes the results
+of the algorithm less reliable (as the implementation is more difficult to verify).
+
+2.4. A Priori Cutoffs Based on Composite Polynomials
+Even if composite polynomials are not used in the iteration algorithm, they can be used to
+generate a priori cutoffs.
+The second author's program uses the following lemma for a priori cutoffs in the search for
+peaks in steps. It allows one to ignore numbers k such that k rood 2rn has a m-bit Vermeulen
+polynomial less that is the same as some number smaller than k rood 2ra. The potential benefits
+
+90
+
+G.T. LEAVENS, M. VERMEULEN
+
+Table 3. Effectiveneu of a priori cutotfs based on polynomials,
+percentage of numbers e!imi~ated.
+Polynomial Width (bits)
+4
+8
+12
+16
+
+Values
+
+Steps
+
+81.25%
+92.57%
+94.48%
+
+43.75%
+59.76%
+67.6~
+
+96.78%
+
+73.98%
+
+of this optimization are listed in Table 3, showing that 60% of all numbers may be eliminated
+using an 8 bit wide table. Increasing the width of the cutoff polynomial can further speed up the
+search.
+LEMMA 21. Let m > 0 be given. Let 0 < rx < r2 < 2m, Vpoly,n(rl) = Vpoly,n(r2). Then there
+is no k > 2 m + rl such that k mod 2~ = r2 and k is a peak in steps.
+PROOF. Let k > 2 m + rl be such that k mod 2 m = r2. Let b be the largest number such
+that b < k and b rood 2 m = rl. Since the polynomials Vpolym(rl) and Vpolyrn(r2 ) are identical
+they represent the same number of steps. After these steps, b and k take the same steps since
+(VpolYm(rl))(b) = (Vpolym(r2))(k). So k cannot be a peak, because b < k and steps(b) =
+
+steps(k).
+
+I
+
+The second author's program cuts off the search for peaks in max_value a priori if the m bit
+Vermeulen polynomial has as the coefficient of z a term that is less than unity. For example, using
+8 bit polynomials, one need not look for peaks in values when the last 8 bits are ".00000011,"
+because Vpolys(3 ) = Lx/256J81 + 2 and 81/256 < 1 (where the coefficient is 81/256). Another example: one does look for peaks in values when the last 8 bits are ".00011011" because
+Vpolys(27) = [x/256J 2187 + 242.
+The potential benefits of this optimization are listed in Table 3, showing that 92% of all
+numbers may be eliminated using an 8 bit wide table. The actual benefits are smaller because
+the eliminated numbers are also detected by an A Posteriori cutoff based on Lemma 19.
+Th~s kind of cutoff is formalized using the notion of the "largest" partial polynomial. A partial
+polynomial is a polynomial incorporating the first s > 0 steps of the hailstone algorithm, as
+predicted (see above) from the least significant m bits. We say that p >_ q for m bit partial
+polynomials if there is some N > 0 such that, for all n > N, p(n) > q(n).
+Let LVpolym(r ) be the largest m bit partial Vermeulen polynomial for r. Similarly, let
+LSpoly m (r) be the largest m bit partial standard polynomial for r.
+L~.MMA 22. Let m > 0 be given.
+
+Let polym(r ) and Lpolym(r ) denote either the standard or
+Vermeulen m bit polynomial and largest m bit partial polynomial for r.
+There is some N > 0 such that for a/l k > N, i l k mod 2ra = r and
+
+1. poly ( )(k) < k, and
+2. there is some max_value peak j < k such that I,polym(r)(k ) < max_value(j),
+then k is not a peak in max_value.
+PaOOF. Choose N such that for all k > N and for all predicted m bit partial polynomials, p and
+q, p > q implies p(k) > q(k). Now, given k > N, the highest value an iterate reaches before falling
+below its initial value, k, is Lpoly(r)(k), where r = k mod 2m. This is because (poly(r))(k) < k,
+and so n falls below k (after the number of steps represented by the polynomial) and because
+by construction (Lpoly(r))(k) is the highest value that n attains (in these first steps). Thus by
+L e m m a 19, if k is a peak in max_value, then
+
+(Zpoly(r))(k) = max_value(k) < max_value(j),
+which is a contradiction. So k cannot be a peak in max_value.
+
+II
+
+3x + 1 search programs
+
+91
+
+Note that the above lemma is independent of the kind of polynomial used. In practice, the
+choice of N is not a problem, because the input numbers soon dwarf the coefficients of the
+composite polynomials.
+The above lemma allows one to set up a table that tells which numbers modulo 2m need to
+be checked for peaks in max_value. For each 0 < r < 2m, one must check the two conditions of
+the above lemma. For sufficiently large numbers, one can check the first condition of the lemma
+above a priori.
+One can also satisfy the second condition of the lemma a priori over a certain interval. Suppose N is chosen to be the least number to satisfy the lemma and such that the first condition
+of the lemma can be checked a priori. Suppose the largest known peak in max_value, call it j, is
+such that j > N. Finally, suppose that there is a rational number R > 0 such that, for all k > N
+and for all 0 < r < 2m such that (polym(r))(k) < k:
+
+(LVpolym(r))(t) < R. k.
+Then, in the interval from N to maz_value(j)/R the second condition of the lemma can be
+checked a priori. In fact, in such an interval, the second condition of the lemma is satisfied
+whenever the first condition of the lemma is satisfied.
+Thus the practical justification for setting up a table of cutoffs as described above is that,
+for sufficiently large input numbers, the maximum value of the largest peak is many orders of
+magnitude greater than the inputs numbers and the coefficients of the Vermeulen polynomial
+cannot be very large. In fact the following result holds.
+LEMMA 23. Let m > 1 be given. For a/! 0 < r < 2m, he there is some Mr such that for all
+k > Mr, k mod 2 "~ = r implies that (Vpolym(r))(k) < k, then the coefficient o f x in LVpolym(r )
+is at most 31/2 (j-l), where j is the largest integer such that 3 i < 2m.
+PROOF. Every step in the hailstone algorithm of the form 3n + 1 is followed by a step that
+divides by 2. Thus the coefficient of x in the partial Vermeulen polynomial is made as large as
+possible when it is of the form 3//2 (j-D. However, because the final polynomial is of the form
+[x/2mJ31 +p + y, for some p ~ 0, 3/ must be less than 2m if the Vermeulen polynomial is to be
+such that Vpolym(r)(k ) < k, for all sufficiently large k mod 2m = r.
+|
+As an example, for 8 bit Vermeulen polynomials, the coefficient can be at most
+35
+
+243
+
+~=
+
+16
+
+= 15.1875.
+
+Thus, as long as the is the largest peak j in max_value is at least 16 times the input numbers
+being checked, then for all sufficiently large k:
+
+(Vpolys(r))(k) < k
+
+(
+
+Vpolys(r))(k) < max_value(j).
+
+This condition seems to be met for all numbers past 7, although we have no proof of this conjecture.
+3. CONCLUSIONS
+The optimizations described in Section 2 illustrate an old story: mathematical insight can
+greatly improve the efficiency of a program. Both authors expected that the C program would
+be faster because of low-level coding issues; the Argus compiler did almost no optimization,
+and C allows one to write fast programs. There were some speedups from using faster integer
+arithmetic in C, hut these were soon dwarfed by the algorithmic speedups. Even though Argus
+code is perhaps 5 to 10 times slower than C, the algorithmic improvements give a cumulative
+speedup by a factor of 182. (Both programs used assembly language for time-critical parts, such
+as arbitrary precision integer arithmetic. However, our comments about the relative speeds of
+Argus and C are still accurate, because in Argus integers must be decoded before they can be
+processed by the CPU's native instruction set, and then encoded on return.)
+
+92
+
+G.T. LEAVENS, M. VERMEULEN
+
+Our optimizations can be analyzed in tern~ of Bentley's taxonomy of program efficiency improvement strategies [10]. This comparison shows that we used some standard strategies in
+interesting ways.
+Bentley's logic rule 1 "exploit algebraic identities" states that: "If the evaluation of a logical expression is costly, replace it by an algebraically equivalent expression that is cheaper to
+evaluate" [10, p. 148]. (This strategy is often called "strength reduction" when one replaces the
+expression with one entirely equivalent.) We used this strategy several times. In Section 2.1
+we noted that it was not necessary to test even numbers for peaks; this is similar to Bentley's
+example of eliminating the square root in a distance calculation, since all that mattered for the
+program was the relative distances. Another use of this strategy is in the a priori cutoffs based
+on convergence of trajectories, also described in Section 2.1.
+Our optimization of not making a comparison for peaks in maz_value after a step of division
+by 2, described in Section 2.2, is similar to Bentley's logic rule 5 "boolean variable elimination."
+Bentley remarks that his rule can be generalized to the idea of storing arbitrary conditions in the
+program counter [10, p. 73]. We like to think that instead of storing conditions in the program
+counter, one pushes desired assertions about the program state back through earlier statements.
+That is, at the end of the loop, we want to assert that we have recorded the largest peak in
+maz_value; in the case where the number was divided by 2, this is automatically satisfied. This
+strategy was also applied at lower levels of coding. For example, in the C program when the
+iterates take on a value that will fit in a 32 bit integer, faster code is used that avoids the
+overhead needed for a complete arbitrary precision integer computation.
+We described a similar optimization in Lemma 19. This lemma allows us to not check for a
+peak in raaz_value after the iterates have fallen below the initial value (stopped). This can also
+be thought of as an application of Bentely's logic rule 5. However, another way to think of it is
+an application of Bentley's loop rule 1 "code motion out of loops," because the tests for a peak
+in maz_value cannot succeed after the iterates have stopped.
+In Section 2.2 we described an a posteriori cutoff in the search for peaks in s~eps by estimating the maximum number of steps that an iterate can take to reach 1. We do this by using
+precomputed results, the value of steps for all known peaks. This is an application of Bentley's
+space-for-time rule 2 "store precomputed results." (This strategy is classically called "dynamic
+programming" [11, Chapter 5].) To see this as an instance of Bentley's strategy, one has to
+imagine that our search algorithms was originally recursive, checking the precomputed results
+on each call. This recursive process is then transformed to an iterative one (Bentley's procedure
+rule 4). Then as above, one notes that the check only has to be made after division by 2.
+The main idea behind our first faster iteration algorithm, discussed in Section 2.3.1, can be
+thought of as Bentley's expression rule 2 "exploit algebraic identities." The algebraic identity
+that a division by a power of two can be implemented by a shift. Since after the shift it is known
+that the result is odd, Bentley's logic rule 5 ~'boolean variable elimination" is used remove the
+test to see whether the number is odd. This also allows the remaining tests to be done less often,
+as described above.
+The composite polynomials, discussed in Section 2.3.2, are an application of Bentley's space
+for time rule 2 "store precomputed results". However, Bentley does not describe this kind of use
+of precomputed results--taking one large step instead of several small steps. As Bentley notes,
+applying one optimization can often pave the way for others; this was certainly true of using the
+polynomials. For example, we also used the polynomials to invent a priori cutoffs. As Table 3
+shows, increasing the bits considered in the polynomials used in the a priori cutoffs trades an
+increase in space for an increase the effectiveness of the cutoff (hence decreased time).
+We also used Bentley's expression rule 4 "pairing computation" to search for peaks in steps and
+maz_value at the same time. Finally, we also used his procedure rule 5 '~parallelism" extensively,
+although we did not discuss that aspect of our programs in Section 2; see [8].
+A final conclusion is that even with the ability to distribute the search programs on many fairly
+fast computers, and even with the ability to run such programs for years (literally), algorithmic
+improvements are necessary to achieve interesting results. Finding a peak becomes more and
+more rare as the search progresses towards infinity. To maintain interest in such a program, one
+must make continual improvements in its speed, so that the results appear at a more or less
+
+3x + 1 search programs
+
+93
+
+constant rate. Without such algorithmic improvements as described above, the programs would
+never have been able to search into the trillions within our lifetimes.
+That such a simple problem could exhibit such interesting mathematics was wholly surprising
+and a source of great pleasure.
+REFERENCES
+1.
+2.
+3.
+4.
+5.
+6.
+7.
+
+8.
+9.
+10.
+11.
+
+J.C. Lagarias, The 3x + 1 problem and its generalizations, The American Mathematical Monthly 92 (1),
+3-23, (January 1985).
+B. Hayes, Computer recreations: On the ups and downs of hailstone numbers, Scientific American 250 (1),
+10-16 (January 1984).
+D. Rawsthorne, Imitation of an iteration, Mathematics Magazine 58, 172-176 (1985).
+S. Wagon, The conatz problem, Mathematical lntelligencer T, 72-76 (1985).
+J.C. Lagarias and A. Weiss, The 3z + 1 problem: Two stochastic models, Annals o/Applied Pro~abilitlt 2
+(1992) (to appear).
+B. Liskov and R. Scheifler, Guardians and actions: Linguistic support for robust, distributed programs, A CM
+Trans. Prog. Lang. Syst. 5 (3), 381--404 (July 1983).
+B. Liskov, M. Day, M. Herlihy, P. Johnson, G. Leavens, R. Scheifler, and W. Weild, Argus r d e r ~ c e manual,
+Technical Report 400, Massachusetts Institute of Tedmology, Laboratory for Computer Science, (October
+1987). An earlier version appeared as Programming Methodology Group Memo 54 in March 1987.
+G.T. Leavens, A distributed search program for the 3x + 1 problem, Technical Report 89-22, Iowa State
+University, Department of Computer Science, Ames, Iowa, (November 1989).
+D.E. Knuth, Seminumerical Algorithms, The Art o/ Computer Programming, Volume 2, Addison-Wesley
+Publishing Co., Reading, Mass., (1969).
+J.L. Bentley, Writing E~cient Programa, Software Series, Prentice-Hall, Englewood Cliffs, N.J., (1982).
+E. Horowitz and S. Sahni, Fundamentala of Computer Algorithms, Computer Software Engineering Series,
+Computer Science Press, Inc., Potomac, Maryland, (1978).
+
+APPENDIX A
+TABLES OF PEAKS
+This appendix contains tables of results from the various search programs.
+
+A.I. Peaks in More than One Statistic
+A few numbers have been found to be peaks in several statistics. In a sense, these are the most interesting
+numbers we found.
+Tables 8-10 list the peaks in both steps and total stopping time; these are known to be identical up to 12.3
+billion (12.3 × 109).
+Table 4 lists numbers that are peaks in other combinations of statistics; each entry is filled in if the number is
+a peak in the corresponding function and left empty otherwise.
+Table 4. Peaks in more than one statistic.
+
+• tepo(n)
+
+.(n)
+
+1
+
+0
+
+0
+
+1
+
+2
+3
+7
+27
+703
+26,623
+270,271
+626,331
+63,728,127
+12,235,060,455
+
+1
+7
+16
+111
+170
+307
+
+1
+4
+7
+59
+81
+
+2
+16
+52
+9,232
+250,504
+106,358,020
+24,648,077,896
+
+508
+949
+1,184
+
+164
+176
+376
+547
+
+m,,_,alue(n)
+
+A.e. Maximum Values
+The peaks in mar-value are listed in Tables 5 and 6. These tables are complete up to 56 trillion (5.6 × 1013).
+The ppalt, up t o 100 billion (100 × 10 ~) have been verified by two programs. Mike Vermeulen's program found all
+the peaks above 100 billion.
+Of p a r t i ~ I a r interest here are the peaks at 27, 6,631,675, 319,804,831, and 3,716,509,988,199. Also listed in
+the tables is the ratio of the peak's maximum wdue reached to the previous maximum v,due reached (labeled
+"ratio") and the approxim,~te expansion factor (labeled s(n)), where a(n) is m~_~alue(n)/(2n).
+
+G . T . LEAVENS, M. V]CRMgULEN
+
+94
+
+Table 5. Peaks in m~.,~61~e up to n -- 5,000,000.
+n
+
+rna=_,41~e(n)
+
+I
+
+1
+
+2
+
+2
+16
+
+2.0
+8.0
+
+0.5
+2.7
+
+52
+160
+
+3.3
+3.1
+
+3.7
+5.3
+
+9,232
+13,120
+39,364
+41,524
+250,504
+1,276,936
+
+57.7
+1.4
+3.0
+1.1
+6.0
+5.1
+
+1.7 X 102
+2.5 X I01
+4.4 X I01
+3.2 X 101
+1.8 X 102
+3.5 X 102
+
+6,810,136
+
+5.3
+
+8.0 X 102
+
+8,153,620
+27,114,424
+50,143,264
+
+1.2
+3.3
+1.8
+
+8.9 X 102
+1.4 X 103
+1.2 X 103
+
+106,358,020
+121,012,864
+593~279,152
+
+2.1
+1.1
+4.9
+
+2.0 X I03
+1.9 X 10 z
+4.9 × 103
+
+3
+7
+15
+27
+255
+447
+639
+703
+1,819
+4,255
+4,591
+9,663
+20,895
+26,623
+31,911
+60,975
+77,671
+113,383
+138,367
+159,487
+
+ratio
+
+*(n)
+0.5
+
+1,570~824,736
+
+2.6
+
+1.0 X 104
+
+2,482,111,348
+2,798,323,360
+17,202,377,752
+
+1.6
+I.I
+6.1
+
+1.1 X 10 a
+1.0 X 104
+5.4 X 10 4
+
+270,271
+665,215
+704,511
+
+24,648,077,896
+52,483,285,312
+
+1.4
+2.1
+
+4.6 X 104
+3.9 X 104
+
+56,991,483,520
+
+1.1
+
+4.0 X 104
+
+1,042,431
+
+90,239,155,648
+
+1.6
+
+4.3 X 104
+
+1,212,415
+1,441,407
+
+139,646,736,808
+151,629,574,372
+
+1.5
+1.1
+
+5.8 X 104
+5.3 X 104
+
+1,875,711
+
+155,904,349,696
+
+1.0
+
+4.2 X 104
+
+1,988,859
+2,643,183
+2,684,647
+
+156,914,378,224
+190,459,818,484
+
+1.0
+1.2
+
+3.9 X 104
+3.6 X 104
+
+352,617,812,944
+
+1.9
+
+6.6 X 104
+
+3,041,127
+3,873,535
+4,637,979
+
+622,717,901,620
+858,555,169,576
+1,318,802,294,932
+
+1.8
+1.4
+1.5
+
+1.0 X 105
+1.1 X 10s
+1.4 X 105
+
+3z + I search programs
+
+95
+
+Table 6. Peaks in m~_e*lle from n = 5,000,030 upwards.
+
+m~_,,t,e(.)
+5,656,191
+6,416,623
+6,631,675
+19,638,399
+38,595,583
+80,049,391
+120,080,895
+210,964,383
+319,804,831
+1,410,123,943
+8,528,817,511
+12,327,829,503
+23,035,537,407
+45,871,962,271
+51,739,336,447
+59,152,641,055
+59,436,135,663
+70,141,259,775
+77,566,362,559
+110,243,094,271
+204,430,613,247
+231,913,730,799
+272,025,660,543
+446,559,217,279
+567,839,862,631
+871,673,828,443
+2,674,309,547,647
+3,716,509,988,199
+9,016,346,070,511
+
+r~o
+
+o(~)
+
+1.8
+2.0
+12.6
+5.1
+1.5
+4.6
+1.5
+2.0
+220.8
+5.0
+2.5
+20,722,398,914,405,051,728 1.1
+68,838,156,641,548,227,040
+3.3
+82,341,648,902,022,834,004
+1.2
+114,639,617,141,613,998,440
+1.4
+151,499,365,062,390,201,544
+1.3
+205,736,389,371,841,852,168
+1.4
+420,967,113,788,389,829,704
+2.0
+916,613,029,076,867,799,856
+2.2
+1,372,453,649,566,268,380,360
+1.5
+1,415,260,793,009,654,991,088
+1.0
+2,190,343,823,882,874,513,556
+1.5
+21,948,463,635,670,417,963,748
+10.0
+39,533,276,910,778,060,381,072
+1.8
+100,540,173,225,585,986,235,988
+2.5
+400,558,740,821,250,122,033,728
+4.0
+770,419,949,849,742,373,052,272
+1.9
+207,936,463,344,549,949,044,875,464
+269.9
+252,229,527,163,443,335,194,424,192
+1.21
+
+2.1 x l 0 s
+3.7 x los
+4.5 × 10e
+7.7 x los
+6.1 x 10e
+1.4 x 107
+1.4 × 107
+1.5 x 107
+2.2 x 109
+2.5 × 109
+1.1 × 109
+8.4 x 108
+1.5 × 109
+9.0 x 10s
+1.1 × 109
+1.3 x 109
+1.7 x 109
+3.0 x 109
+5.9 × 109
+6.2 x 109
+3.4 × 109
+4.7 x 109
+4.0 × 101°
+4.4 × 101°
+8.8 x 10 l°
+2.3 × 1011
+2.9 × 1011
+5.6 x 1013
+2.7 x 1013
+
+2,412,493,616,608
+4,799,996,945,368
+60,342,610,919,632
+306,296,925,203,752
+474,637,698,851,092
+2,185,143,829,170,100
+3,277,901,576,118,580
+6,404,797,161,121,264
+1,414,236,446,719,942,480
+7,125,885,122,794,452,160
+18,144,594,937,356,598,024
+
+A.3. Steps and Tof,,I Stopping Time
+Peaks in steps are listed in Tables 8-10. These tables are complete u p to 56 trillion (5.6 × 101s). T h e peaks
+up to 100 billion (100 × los) have been verified by two programs. Mike Vermeulen's program found All the peaks
+above 100 billion. It seems t h a t every peak in steps is also a peak in total stopping time, ~oo, although we have
+only verified this conjecture up to 12.3 × 109. T h a t is Tables 8-10 also contain all peaks in total stopping time up
+to 12.3 billion.
+Also listed in these tables are the difference between each peak's n u m b e r of steps a n d the previous peak's
+n u m b e r of steps, the value of the stopping time ~(n), the value of ~oo(n), a n d the m a x i m u m value reached. Many
+of the peaks in steps have the same maz_~ahte, a n d hence their trajectories are identical after a certain n u m b e r
+of iterations. For example, H(e)(27) = 94 = H(1°)(73).
+Of particnlar interest here are the peaks at n equal to 27, 63,728,127, a n d 3,743,559,068,799 which have large
+increments in the n u m b e r of steps a n d the peaks t h a t are simply twice the previous peak in steps, found in Table 7.
+
+A.~. Sfoppino Time
+Peaks in stopping time, Gr, are not necessarily peaks in step,, a n d conversely peaks in steps are not necessarily
+peaks in stopping time. T h e same remark applies to total stopping time.
+Table 11 lists the peaks in stopping time. T h e list is complete u p to 6.8 trillion (6.8 × 1012); however, only the
+peaks up to 1.043 trillion (1.043 × 101~) are confirmed by two programs. T h e most interesting of these peaks is
+12,235,060,455.
+Also listed m e the difference between each peak's stopping time a n d the stopping time of the previous peak
+(labeled "diff."), the value of steps for t h a t peak, the total stopping time ~roo, a n d the m a x i m u m value reached.
+Urdike the peaks in steps, the m a x i m u m values reached by these peaks rarely repeat.
+
+24s11-6
+
+96
+
+G . T . LEAVBNS, M. VmRMIULSN
+
+Table T. E v e n peaks in Iteps.
+
+pc.t(.)
+
+.,p.(~)
+
+2
+6
+
+1
+8
+20
+112
+705
+950
+
+18
+54
+31,466,382
+127,456,254
+53T,099,606
+1,341,234,558
+9,780,657,630
+63,389,366,646
+404,970,804,222
+7,487,118,137,598
+
+965
+98T
+1,132
+1,220
+1,308
+1,550
+
+Table 8. Peaks in stepa u p to n = 100, O00.
+
+.-p.(~)
+0
+2
+3
+6
+7
+9
+18
+
+0
+
+0
+
+1
+
+1
+7
+8
+
+1
+6
+1
+
+1
+4
+1
+
+1
+5
+6
+
+16
+
+16
+19
+20
+
+8
+
+7
+
+11
+
+52
+
+3
+
+2
+
+13
+
+52
+
+1
+3
+88
+1
+
+1
+2
+59
+1
+
+14
+16
+TO
+71
+
+52
+88
+9,232
+9,232
+
+97
+
+23
+111
+112
+115
+118
+
+129
+
+25
+27
+54
+73
+
+2
+16
+
+3
+
+2
+
+73
+
+9,232
+
+2
+
+75
+
+9,232
+
+121
+
+3
+3
+
+2
+
+77
+
+9,232
+
+171
+
+124
+
+3
+
+5
+
+79
+
+9,232
+
+231
+
+127
+
+3
+
+12
+
+81
+
+9,232
+
+313
+
+130
+
+3
+
+2
+
+83
+
+9,232
+
+327
+
+143
+
+7
+
+21
+
+91
+
+9,232
+
+649
+
+144
+170
+
+1
+26
+
+2
+81
+
+92
+108
+
+9,232
+250,504
+
+703
+871
+
+178
+
+8
+
+35
+
+113
+
+190,996
+
+1,161
+
+181
+
+3
+
+2
+
+115
+
+190,996
+
+2,223
+
+182
+208
+216
+
+1
+
+8
+
+26
+
+21
+
+8
+
+26
+
+116
+132
+137
+
+250,504
+250,504
+250,504
+
+3,711
+6,171
+10,971
+
+23T
+261
+
+21
+24
+
+37
+58
+
+150
+165
+
+481,624
+975,400
+
+267
+
+6
+
+8
+
+169
+
+975,400
+
+13,255
+
+275
+278
+
+8
+3
+
+8
+73
+
+174
+176
+
+497,176
+11,003,416
+
+281
+307
+
+3
+26
+
+2
+65
+
+178
+194
+
+11,003,416
+106,358,020
+
+310
+323
+339
+350
+
+3
+13
+16
+11
+
+92
+135
+18
+89
+
+196
+204
+214
+221
+
+18,9T6,192
+41,163,712
+106,358,020
+21,933,016
+
+2,463
+2,919
+
+1~,647
+23,529
+26,623
+34,239
+
+35,655
+52,527
+
+77,o31
+
+3z + 1 search progrbms
+
+9T
+
+Table 9. Peaks in atep# from n = 100,000 to n = 5,000,000,000.
+
+n
+106,239
+142,587
+156,159
+216,367
+230,631
+410,011
+511,935
+626,331
+837,799
+1,117,065
+1,501,353
+1,723,519
+2,298,025
+3,064,033
+3,542,887
+3,732,423
+5,649,499
+6,649,279
+8,400,511
+11,200,681
+14,934,241
+15,733,191
+31,466,382
+36,791,535
+63,728,127
+127,456,254
+169,941,673
+226,588,897
+268,549,803
+537,099,606
+670,617,279
+1,341,234,558
+1,412,987,847
+1,674,652,263
+2,610,744,987
+4,578,853,915
+4,890,328,815
+
+,,p,(,)
+353
+374
+382
+38.5
+442
+448
+469
+508
+524
+527
+530
+556
+559
+562
+583
+596
+612
+664
+685
+688
+691
+704
+705
+744
+949
+950
+953
+956
+964
+M5
+986
+987
+1,000
+1,008
+1,0.50
+1,087
+1,131
+
+d~.
+
+~(~)
+
+3
+21
+8
+3
+57
+6
+21
+39
+16
+3
+3
+26
+3
+3
+21
+13
+16
+52
+21
+3
+3
+13
+1
+39
+205
+1
+3
+3
+8
+1
+21
+1
+13
+8
+42
+37
+44
+
+97
+24
+37
+83
+73
+75
+16
+176
+105
+2
+2
+176
+2
+2
+180
+8
+116
+146
+214
+2
+2
+8
+I
+34
+376
+1
+2
+2
+5
+1
+18
+1
+8
+13
+46
+81
+135
+
+..(.)
+223
+236
+241
+243
+278
+282
+295
+319
+329
+331
+333
+349
+351
+353
+366
+374
+384
+416
+429
+431
+433
+441
+442
+466
+592
+593
+595
+597
+602
+603
+616
+617
+625
+630
+6.56
+679
+706
+
+,,~.,,I,,(,)
+104,674,192
+593,279,152
+41,163,712
+11,843,332
+76,778,008
+76,778,008
+76,778,008
+7,222,283,188
+2,974,984,576
+2,974,984,576
+90,239,155,648
+46,571,871,940
+46,571,871,940
+46,571,871,940
+294,475,592,320
+294,475,592,320
+1,017,886,660
+15,208,728,208
+159,424,614,880
+159,424,614,880
+159,424,614,880
+159,424,614,880
+159,424,614,880
+159,424,614,880
+966,616,035,460
+966,616,035,460
+966,616,035,460
+966,616,035,460
+966,616,0.35,460
+966,616,035,460
+966,616,035,460
+966,616,035,460
+966,616,035,460
+966,616,035,460
+966,616,035,460
+966,616,035,460
+319,497,287,463,520
+
+98
+
+G.T. Ls,vsNs, M. VBRMSULE~
+
+T.~ble 10. Peaks in Jfepm f r o m . = 5,000,000,000 upwards.
+
+.
+
+,.p.(.)
+
+~r.
+
+9,780,657,630
+12,212,032,815
+12,235,06o,455
+13,371,194,52T
+17,828,259,369
+31,664,683,323
+03,389,366,646
+75,128,138,247
+133,561,134,663
+158,294,678,119
+166,763,117,679
+202,48~,402,111
+404,970,804,222
+426,635,908,975
+568,847,878,633
+674,120,078,379
+881,T15,740,415
+989,345,275,647
+1,122,382,791,663
+1,444,338,092,271
+1,899,148,164,679
+2,081,751,768,559
+2,775,669,024,745
+3,700,892,032,993
+3,743,559,068,T99
+7,487,118,137,598
+7,887,663,552,367
+10,516,884,736,489
+14,022,512,981,085
+19,536,224,150,271
+26,262,557,464,201
+27,667,550,250,351
+38,903,934,249,727
+
+1,132
+1,153
+1,184
+1,210
+1,213
+
+1
+21
+31
+26
+3
+6
+1
+8
+6
+8
+13
+52
+1
+13
+3
+
+1
+15
+547
+
+707
+720
+
+62
+
+755
+757
+761
+762
+767
+771
+776
+784
+816
+817
+825
+827
+
+8
+3
+13
+
+5
+329
+165
+16
+
+48,575,069,253,735
+51,173,735,510,107
+
+1,219
+1,220
+1,228
+1,234
+1,242
+1,255
+1,307
+1,308
+1,321
+1,324
+
+1,332
+1,335
+1,348
+1,356
+1,408
+
+8
+52
+
+1,411
+1,437
+1,440
+1,443
+1,549
+1,550
+1,503
+1,566
+1,569
+1,585
+1,588
+1,601
+1,617
+1,638
+1,651
+
+3
+26
+3
+3
+106
+1
+13
+3
+3
+16
+3
+13
+16
+21
+13
+
+~(.) ~oo(-)
+
+2
+7
+1
+7
+10
+15
+35
+270
+1
+40
+2
+
+739
+
+832
+834
+842
+
+202
+
+847
+879
+
+72
+606
+2
+2
+65
+1
+70
+2
+2
+327
+2
+
+881
+897
+899
+901
+966
+967
+975
+977
+979
+989
+991
+
+I0
+
+211
+13
+21
+
+....-..~-(-)
+319,497,287,463,520
+319,497,287,463,520
+1,037,298,361,093,936
+319,497,287,463,520
+319,497,287,403,520
+319,497,287,463,520
+
+319,497,287,403,520
+319,497,287,403,520
+
+319,49Tt28T,463,520
+319,49T,28T,463,520
+319,497,287,463,520
+
+2,662,567,439,048,656
+2,662,567,439,048,656
+
+2,662,567,439,048,656
+2,662,567,439,048,656
+2,662,567,439,048,656
+5,234,135,688,127,384
+1,219,624,271,099,764
+2,662,567,439,048,656
+1,219,624,271,099,764
+
+1,037,298,361,0~3,936
+79,988,992,034,030,705,960
+79,988,992,024,030,705,960
+79,988,992,034,030,705,960
+79,988,992,024,030,T05,960
+79,988,992,024,030,705,960
+79,988,992,034,030,705,960
+T9,988,992+024,030,T05,960
+79,988,992,024,030,705,960
+3,813,091,869,769,158,724
+79,988,992,024,030,705,960
+999
+79,988,992,024,030,705,960
+1 , 0 0 9 1,180,174,841,128,253,392
+1 , 0 2 2 1,180,174,641,128,253,392
+1 , 0 3 0 1,180,174,841,128,2r~3,392
+
+3z + 1 search p r o g r ~ n s
+
+99
+
+Table 11. Peaks in stopping time, ¢.
+
+I
+
+0
+
+0
+
+0
+
+I
+
+2
+
+1
+
+1
+
+1
+
+1
+
+3
+
+4
+
+3
+
+7
+
+5
+
+2
+16
+52
+
+7
+
+7
+
+4
+
+16
+
+11
+
+27
+703
+
+59
+81
+
+52
+22
+
+111
+170
+
+70
+108
+
+10,087
+
+105
+
+24
+
+223
+
+142
+
+9,232
+250,504
+2,484,916
+
+35,655
+
+30
+
+270,271
+362,343
+381,727
+
+135
+164
+165
+173
+
+29
+I
+8
+
+323
+406
+360
+373
+
+204
+256
+228
+236
+
+24,648,077,896
+565,335,124
+565,335,124
+
+626,331
+1,027,431
+
+176
+183
+
+3
+7
+
+508
+377
+
+319
+239
+
+7,222,263,188
+17,808,240,724
+
+41,163,712
+
+1,126,015
+
+224
+
+41
+
+527
+
+331
+
+90,239,155,648
+
+8,088,063
+13,421,671
+
+246
+287
+
+22
+41
+
+566
+608
+
+356
+382
+
+16,155,154,672
+1,591,706,254,336
+
+20,638,335
+26,716,671
+56,924,955
+
+292
+298
+308
+
+5
+6
+I0
+
+694
+658
+742
+
+435
+413
+465
+
+63,728,127
+217,740,015
+
+376
+395
+
+68
+19
+
+949
+793
+
+592
+395
+
+89,243,211,616
+3,696,858,621,088
+7,209,046,267,252
+966,616,035,460
+2,516,021,527,120
+
+1,200,991,791
+
+398
+
+3
+
+873
+
+547
+
+1,827,397,567
+2,788,008,987
+
+433
+447
+
+25
+14
+
+928
+944
+
+581
+
+12,235,060,455
+898,696,369,947
+
+547
+550
+
+100
+3
+
+1,184
+1,136
+
+739
+712
+
+2,081,751,768,559
+
+606
+
+56
+
+1,437
+
+897
+
+591
+
+35,681,506,677,550
+118,736,698,851,769,012
+81,887,769,175,732
+1,037,298,361,093,936
+791,612,079,014,220,715,456
+79,988,992,024,030,705,960
+
+

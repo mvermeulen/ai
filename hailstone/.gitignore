@@ -1,0 +1,18 @@
+# Build directory
+build/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Compiled shader files (compiled dynamically by glslc in build)
+*.spv
+
+# IDE configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

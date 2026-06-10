@@ -1,0 +1,165 @@
+#include "cpu_search.h"
+#include <chrono>
+
+CollatzStats compute_collatz(uint128 n) {
+    CollatzStats stats;
+    stats.start_val = n;
+    stats.steps = 0;
+    stats.stopping_time = 0;
+    stats.max_value = n;
+    stats.overflow = false;
+
+    // Base cases
+    if (n == uint128(1)) {
+        stats.steps = 0;
+        stats.stopping_time = 0;
+        stats.max_value = 1;
+        return stats;
+    }
+    if (n == uint128(2)) {
+        stats.steps = 1;
+        stats.stopping_time = 1;
+        stats.max_value = 2;
+        return stats;
+    }
+
+    uint128 curr = n;
+    uint32_t t_steps = 0;
+    bool has_stopped_sigma = false;
+    bool dropped_below_start = false;
+
+    // Handle even starting values on the first step (though search normally skips evens)
+    if ((curr.low & 1) == 0) {
+        int p = count_trailing_zeros(curr);
+        curr = shift_right(curr, p);
+        stats.steps += p;
+        stats.stopping_time = 1;
+        has_stopped_sigma = true;
+        t_steps += p;
+        dropped_below_start = (curr < n);
+    }
+
+    while (curr > uint128(1)) {
+        // Since curr is odd, next step of H is 3 * curr + 1 (which is even)
+        bool overflow = false;
+        uint128 next_val = mul3_add1(curr, overflow);
+        if (overflow) {
+            stats.overflow = true;
+            return stats;
+        }
+        stats.steps++; // for the 3n + 1 step
+
+        // Update max value (only needed before the trajectory drops below the starting value)
+        if (!dropped_below_start) {
+            if (next_val > stats.max_value) {
+                stats.max_value = next_val;
+            }
+        }
+
+        // Division by 2^p to make it odd again
+        int p = count_trailing_zeros(next_val);
+        
+        // Track stopping time (sigma) on T-iterates: next_val >> 1, next_val >> 2, ..., next_val >> p
+        if (!has_stopped_sigma) {
+            for (int k = 1; k <= p; ++k) {
+                uint128 val_k = shift_right(next_val, k);
+                if (val_k < n) {
+                    stats.stopping_time = t_steps + k;
+                    has_stopped_sigma = true;
+                    break;
+                }
+            }
+        }
+
+        next_val = shift_right(next_val, p);
+        stats.steps += p;
+        t_steps += p;
+        curr = next_val;
+
+        if (curr < n) {
+            dropped_below_start = true;
+        }
+    }
+
+    return stats;
+}
+
+void cpu_search_range(uint128 start, uint128 end, 
+                      std::vector<PeakRecord>& max_value_peaks,
+                      std::vector<PeakRecord>& steps_peaks,
+                      std::vector<PeakRecord>& sigma_peaks,
+                      PeakState& global_peaks,
+                      SearchMetrics& metrics) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    // Ensure start is odd
+    uint128 curr = start;
+    if ((curr.low & 1) == 0) {
+        metrics.numbers_skipped_even++;
+        curr = curr + uint128(1);
+    }
+
+    for (; curr <= end; curr = curr + uint128(2)) {
+        // Modulo 6 cutoff: if curr % 6 == 5, skip
+        // Since curr is odd, curr % 6 can be 1, 3, or 5.
+        // We can do a fast modulo 6 check
+        // n % 6 == 5 is equivalent to (n % 3 == 2) because n is odd (n % 2 == 1).
+        // Let's compute (n.low + 2 * (n.high % 3)) % 3 or similar, or just write a division-free remainder.
+        // For uint128, n % 3:
+        // n = n.high * 2^64 + n.low
+        // 2^64 % 3 = (2^2)^32 % 3 = 1^32 % 3 = 1.
+        // So n % 3 = (n.high + n.low) % 3.
+        // This is incredibly beautiful and fast!
+        uint64_t sum_mod3 = (curr.high % 3 + curr.low % 3) % 3;
+        if (sum_mod3 == 2) {
+            metrics.numbers_skipped_mod6++;
+            metrics.total_numbers_checked++;
+            continue;
+        }
+
+        CollatzStats stats = compute_collatz(curr);
+        metrics.total_numbers_checked++;
+
+        if (stats.overflow) {
+            metrics.numbers_overflowed++;
+            continue;
+        }
+
+        metrics.total_steps_computed += stats.steps;
+
+        // Check max_value peak
+        if (stats.max_value > global_peaks.current_max_value) {
+            global_peaks.current_max_value = stats.max_value;
+            max_value_peaks.push_back({curr, stats.max_value});
+        }
+
+        // Check steps peak
+        if (stats.steps > global_peaks.current_max_steps) {
+            global_peaks.current_max_steps = stats.steps;
+            steps_peaks.push_back({curr, uint128(stats.steps)});
+        }
+
+        // Check stopping time (sigma) peak
+        if (stats.stopping_time > global_peaks.current_max_sigma) {
+            global_peaks.current_max_sigma = stats.stopping_time;
+            sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+        }
+    }
+
+    // Accumulate evens skipped in the range
+    // In a range [start, end], half the numbers are even.
+    // Since we incremented by 2, we skipped all evens within the loop.
+    // Total numbers in [start, end] is end - start + 1.
+    // Half of them are even.
+    if (end >= start) {
+        unsigned __int128 total_range = end.low - start.low; // approximate
+        // Let's calculate exactly:
+        uint128 diff = end + uint128(1) - start;
+        uint128 evens = shift_right(diff, 1);
+        metrics.numbers_skipped_even += evens.low;
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = end_time - start_time;
+    metrics.elapsed_seconds += diff.count();
+}

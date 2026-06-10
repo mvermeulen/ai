@@ -1,0 +1,572 @@
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 256) in;
+
+struct uint128 {
+    uint64_t low;
+    uint64_t high;
+};
+
+// Push Constants
+layout(push_constant) uniform PushConstants {
+    uint64_t start_low;
+    uint64_t start_high;
+    uint64_t end_low;
+    uint64_t end_high;
+    uint total_odds;
+} pcs;
+
+// Binding 0: Current global maximum metrics (used for peak checks)
+layout(std430, binding = 0) coherent buffer GlobalPeaks {
+    uint64_t max_val_low;
+    uint64_t max_val_high;
+    uint max_steps;
+    uint max_sigma;
+} global_peaks;
+
+// Binding 1: Mutex Lock for 128-bit peak updates
+layout(std430, binding = 1) coherent buffer LockBuffer {
+    uint lock;
+} lock_buf;
+
+// Binding 2: Peak logs sizes
+layout(std430, binding = 2) coherent buffer PeaksCount {
+    uint max_val_count;
+    uint steps_count;
+    uint sigma_count;
+} peaks_count;
+
+// Structs for peak records
+struct PeakRecord {
+    uint64_t start_low;
+    uint64_t start_high;
+    uint64_t val_low;
+    uint64_t val_high;
+};
+
+// Binding 3: Max Value Peaks Log
+layout(std430, binding = 3) coherent buffer MaxValuePeaks {
+    PeakRecord max_value_peaks[];
+};
+
+// Binding 4: Steps Peaks Log
+layout(std430, binding = 4) coherent buffer StepsPeaks {
+    PeakRecord steps_peaks[];
+};
+
+// Binding 5: Sigma Peaks Log
+layout(std430, binding = 5) coherent buffer SigmaPeaks {
+    PeakRecord sigma_peaks[];
+};
+
+// Binding 6: Metrics
+layout(std430, binding = 6) coherent buffer GlobalMetrics {
+    uint total_checked;
+    uint total_steps;
+    uint skipped_mod6;
+    uint overflowed;
+} global_metrics;
+
+// Helper functions for uint128
+bool equal(uint128 a, uint128 b) {
+    return a.low == b.low && a.high == b.high;
+}
+
+bool less_than(uint128 a, uint128 b) {
+    if (a.high != b.high) return a.high < b.high;
+    return a.low < b.low;
+}
+
+bool greater_than(uint128 a, uint128 b) {
+    if (a.high != b.high) return a.high > b.high;
+    return a.low > b.low;
+}
+
+uint128 add(uint128 a, uint128 b) {
+    uint128 res;
+    res.low = a.low + b.low;
+    uint64_t carry = (res.low < a.low) ? 1UL : 0UL;
+    res.high = a.high + b.high + carry;
+    return res;
+}
+
+uint128 shift_left_1(uint128 a, out bool overflow) {
+    uint128 res;
+    overflow = (a.high & 0x8000000000000000UL) != 0UL;
+    res.high = (a.high << 1UL) | (a.low >> 63UL);
+    res.low = a.low << 1UL;
+    return res;
+}
+
+uint128 shift_right(uint128 a, uint p) {
+    uint128 res;
+    res.low = 0UL;
+    res.high = 0UL;
+    if (p <= 0) {
+        return a;
+    } else if (p < 64) {
+        res.low = (a.low >> p) | (a.high << (64 - p));
+        res.high = a.high >> p;
+    } else if (p < 128) {
+        res.low = a.high >> (p - 64);
+        res.high = 0UL;
+    }
+    return res;
+}
+
+uint ctz64(uint64_t val) {
+    uint low32 = uint(val & 0xFFFFFFFFUL);
+    int lsb = findLSB(low32);
+    if (lsb != -1) {
+        return uint(lsb);
+    }
+    uint high32 = uint(val >> 32UL);
+    lsb = findLSB(high32);
+    if (lsb != -1) {
+        return uint(lsb + 32);
+    }
+    return 64;
+}
+
+uint count_trailing_zeros(uint128 a) {
+    if (a.low != 0UL) {
+        return ctz64(a.low);
+    } else if (a.high != 0UL) {
+        return 64 + ctz64(a.high);
+    } else {
+        return 128;
+    }
+}
+
+bool check_mul3_add1_overflow(uint128 n) {
+    if (n.high > 0x5555555555555555UL) return true;
+    if (n.high == 0x5555555555555555UL && n.low > 0x5555555555555554UL) return true;
+    return false;
+}
+
+uint128 mul3_add1(uint128 n, out bool overflow) {
+    if (check_mul3_add1_overflow(n)) {
+        overflow = true;
+        uint128 zero;
+        zero.low = 0UL;
+        zero.high = 0UL;
+        return zero;
+    }
+    overflow = false;
+    bool temp_of;
+    uint128 n2 = shift_left_1(n, temp_of);
+    uint128 n3 = add(n2, n);
+    uint128 one;
+    one.low = 1UL;
+    one.high = 0UL;
+    return add(n3, one);
+}
+shared uint64_t shared_max_val_low[256];
+shared uint64_t shared_max_val_high[256];
+shared uint shared_steps[256];
+shared uint shared_sigma[256];
+
+void main() {
+    // Read initial global peaks at start of invocation to avoid dynamic thread blocking
+    uint128 init_max_val;
+    init_max_val.low = global_peaks.max_val_low;
+    init_max_val.high = global_peaks.max_val_high;
+    uint init_max_steps = global_peaks.max_steps;
+    uint init_max_sigma = global_peaks.max_sigma;
+
+    uint g_id = gl_GlobalInvocationID.x;
+    uint l_id = gl_LocalInvocationID.x;
+
+    bool active_thread = (g_id < pcs.total_odds);
+
+    // Compute the starting odd integer n
+    uint128 start_pct;
+    start_pct.low = pcs.start_low;
+    start_pct.high = pcs.start_high;
+
+    // n = start_pct + 2 * g_id
+    uint128 step_val;
+    step_val.low = uint64_t(g_id) * 2UL;
+    step_val.high = 0UL;
+    uint128 n = add(start_pct, step_val);
+
+    if (active_thread) {
+        // Skip modulo 6 filter: skip if n % 6 == 5
+        // As in C++: (n.high + n.low) % 3 == 2
+        uint64_t sum_mod3 = (n.high % 3UL + n.low % 3UL) % 3UL;
+        if (sum_mod3 == 2UL) {
+            atomicAdd(global_metrics.skipped_mod6, 1);
+            atomicAdd(global_metrics.total_checked, 1);
+            active_thread = false;
+        }
+    }
+
+    // Base cases
+    uint128 one;
+    one.low = 1UL;
+    one.high = 0UL;
+
+    uint128 two;
+    two.low = 2UL;
+    two.high = 0UL;
+
+    uint steps = 0;
+    uint stopping_time = 0;
+    uint128 max_val;
+    max_val.low = 0UL;
+    max_val.high = 0UL;
+    bool overflowed = false;
+
+    if (active_thread) {
+        max_val = n;
+        if (equal(n, one)) {
+            steps = 0;
+            stopping_time = 0;
+            max_val = one;
+        } else if (equal(n, two)) {
+            steps = 1;
+            stopping_time = 1;
+            max_val = two;
+        } else {
+            uint128 curr = n;
+            uint t_steps = 0;
+            bool has_stopped_sigma = false;
+            bool dropped_below_start = false;
+
+            while (greater_than(curr, one)) {
+                bool overflow = false;
+                uint128 next_val = mul3_add1(curr, overflow);
+                if (overflow) {
+                    overflowed = true;
+                    break;
+                }
+                steps++;
+
+                if (!dropped_below_start) {
+                    if (greater_than(next_val, max_val)) {
+                        max_val = next_val;
+                    }
+                }
+
+                uint p = count_trailing_zeros(next_val);
+                if (!has_stopped_sigma) {
+                    for (uint k = 1; k <= p; ++k) {
+                        uint128 val_k = shift_right(next_val, k);
+                        if (less_than(val_k, n)) {
+                            stopping_time = t_steps + k;
+                            has_stopped_sigma = true;
+                            break;
+                        }
+                    }
+                }
+
+                next_val = shift_right(next_val, p);
+                steps += p;
+                t_steps += p;
+                curr = next_val;
+
+                if (less_than(curr, n)) {
+                    dropped_below_start = true;
+                }
+            }
+        }
+    }
+
+    if (active_thread) {
+        atomicAdd(global_metrics.total_checked, 1);
+        if (overflowed) {
+            atomicAdd(global_metrics.overflowed, 1);
+            active_thread = false;
+        } else {
+            atomicAdd(global_metrics.total_steps, steps);
+        }
+    }
+
+    // Workgroup reduction & prefix scan to log local peaks
+    shared_max_val_low[l_id] = active_thread ? max_val.low : 0UL;
+    shared_max_val_high[l_id] = active_thread ? max_val.high : 0UL;
+    shared_steps[l_id] = active_thread ? steps : 0;
+    shared_sigma[l_id] = active_thread ? stopping_time : 0;
+    barrier();
+
+    // 1. Unrolled Kogge-Stone prefix scan for stride 1, 2, 4, 8, 16, 32, 64, 128
+    // Stride 1
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 1) {
+            t_low = shared_max_val_low[l_id - 1];
+            t_high = shared_max_val_high[l_id - 1];
+            t_st = shared_steps[l_id - 1];
+            t_si = shared_sigma[l_id - 1];
+        }
+        barrier();
+        if (l_id >= 1) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    // Stride 2
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 2) {
+            t_low = shared_max_val_low[l_id - 2];
+            t_high = shared_max_val_high[l_id - 2];
+            t_st = shared_steps[l_id - 2];
+            t_si = shared_sigma[l_id - 2];
+        }
+        barrier();
+        if (l_id >= 2) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    // Stride 4
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 4) {
+            t_low = shared_max_val_low[l_id - 4];
+            t_high = shared_max_val_high[l_id - 4];
+            t_st = shared_steps[l_id - 4];
+            t_si = shared_sigma[l_id - 4];
+        }
+        barrier();
+        if (l_id >= 4) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    // Stride 8
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 8) {
+            t_low = shared_max_val_low[l_id - 8];
+            t_high = shared_max_val_high[l_id - 8];
+            t_st = shared_steps[l_id - 8];
+            t_si = shared_sigma[l_id - 8];
+        }
+        barrier();
+        if (l_id >= 8) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    // Stride 16
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 16) {
+            t_low = shared_max_val_low[l_id - 16];
+            t_high = shared_max_val_high[l_id - 16];
+            t_st = shared_steps[l_id - 16];
+            t_si = shared_sigma[l_id - 16];
+        }
+        barrier();
+        if (l_id >= 16) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    // Stride 32
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 32) {
+            t_low = shared_max_val_low[l_id - 32];
+            t_high = shared_max_val_high[l_id - 32];
+            t_st = shared_steps[l_id - 32];
+            t_si = shared_sigma[l_id - 32];
+        }
+        barrier();
+        if (l_id >= 32) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    // Stride 64
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 64) {
+            t_low = shared_max_val_low[l_id - 64];
+            t_high = shared_max_val_high[l_id - 64];
+            t_st = shared_steps[l_id - 64];
+            t_si = shared_sigma[l_id - 64];
+        }
+        barrier();
+        if (l_id >= 64) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    // Stride 128
+    {
+        uint64_t t_low = 0UL; uint64_t t_high = 0UL; uint t_st = 0; uint t_si = 0;
+        if (l_id >= 128) {
+            t_low = shared_max_val_low[l_id - 128];
+            t_high = shared_max_val_high[l_id - 128];
+            t_st = shared_steps[l_id - 128];
+            t_si = shared_sigma[l_id - 128];
+        }
+        barrier();
+        if (l_id >= 128) {
+            uint128 temp; temp.low = t_low; temp.high = t_high;
+            uint128 my_val; my_val.low = shared_max_val_low[l_id]; my_val.high = shared_max_val_high[l_id];
+            if (greater_than(temp, my_val)) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+            if (t_st > shared_steps[l_id]) {
+                shared_steps[l_id] = t_st;
+            }
+            if (t_si > shared_sigma[l_id]) {
+                shared_sigma[l_id] = t_si;
+            }
+        }
+        barrier();
+    }
+
+    if (active_thread) {
+        // Max value local peak check
+        uint128 prev_max_val;
+        prev_max_val.low = (l_id == 0) ? 0UL : shared_max_val_low[l_id - 1];
+        prev_max_val.high = (l_id == 0) ? 0UL : shared_max_val_high[l_id - 1];
+
+        if (greater_than(max_val, prev_max_val)) {
+            if (greater_than(max_val, init_max_val)) {
+                uint idx = atomicAdd(peaks_count.max_val_count, 1);
+                if (idx < 65536) {
+                    max_value_peaks[idx].start_low = n.low;
+                    max_value_peaks[idx].start_high = n.high;
+                    max_value_peaks[idx].val_low = max_val.low;
+                    max_value_peaks[idx].val_high = max_val.high;
+                }
+
+                uint128 current_g;
+                current_g.low = global_peaks.max_val_low;
+                current_g.high = global_peaks.max_val_high;
+                if (greater_than(max_val, current_g)) {
+                    global_peaks.max_val_low = max_val.low;
+                    global_peaks.max_val_high = max_val.high;
+                }
+            }
+        }
+
+        // Steps local peak check
+        uint prev_steps = (l_id == 0) ? 0 : shared_steps[l_id - 1];
+        if (steps > prev_steps) {
+            if (steps > init_max_steps) {
+                uint idx = atomicAdd(peaks_count.steps_count, 1);
+                if (idx < 65536) {
+                    steps_peaks[idx].start_low = n.low;
+                    steps_peaks[idx].start_high = n.high;
+                    steps_peaks[idx].val_low = uint64_t(steps);
+                    steps_peaks[idx].val_high = 0UL;
+                }
+
+                if (steps > global_peaks.max_steps) {
+                    global_peaks.max_steps = steps;
+                }
+            }
+        }
+
+        // Sigma local peak check
+        uint prev_sigma = (l_id == 0) ? 0 : shared_sigma[l_id - 1];
+        if (stopping_time > prev_sigma) {
+            if (stopping_time > init_max_sigma) {
+                uint idx = atomicAdd(peaks_count.sigma_count, 1);
+                if (idx < 65536) {
+                    sigma_peaks[idx].start_low = n.low;
+                    sigma_peaks[idx].start_high = n.high;
+                    sigma_peaks[idx].val_low = uint64_t(stopping_time);
+                    sigma_peaks[idx].val_high = 0UL;
+                }
+
+                if (stopping_time > global_peaks.max_sigma) {
+                    global_peaks.max_sigma = stopping_time;
+                }
+            }
+        }
+    }
+}
