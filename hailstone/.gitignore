@@ -1,5 +1,25 @@
-# Build directory
+# CMake and build outputs
 build/
+build_*/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# Binaries and libraries
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exe
 
 # Python cache
 __pycache__/
@@ -10,9 +30,13 @@ __pycache__/
 # Compiled shader files (compiled dynamically by glslc in build)
 *.spv
 
-# IDE configs
+# IDE and editor configs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -28,6 +28,7 @@ if(Vulkan_FOUND)
     
     # Compile SPIR-V shader automatically
     find_program(GLSLC_EXECUTABLE glslc)
+    set(PRECOMPILED_SHADER ${CMAKE_CURRENT_SOURCE_DIR}/gpu_vulkan/shader.spv)
     if(GLSLC_EXECUTABLE)
         add_custom_command(
             OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
@@ -38,12 +39,21 @@ if(Vulkan_FOUND)
         # Add dependency on the compiled spv file
         target_sources(hailstone_vulkan PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shader.spv)
     else()
-        # Fallback: copy precompiled shader
-        add_custom_command(TARGET hailstone_vulkan POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/gpu_vulkan/shader.spv
-            ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
-        )
+        if(EXISTS ${PRECOMPILED_SHADER})
+            message(STATUS "glslc not found; using precompiled shader at ${PRECOMPILED_SHADER}")
+            add_custom_command(TARGET hailstone_vulkan POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PRECOMPILED_SHADER}
+                ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
+            )
+        else()
+            message(FATAL_ERROR
+                "glslc was not found and no precompiled shader is available.\n"
+                "Install glslc (for example from the Vulkan SDK package), or add a precompiled shader at:\n"
+                "  ${PRECOMPILED_SHADER}\n"
+                "Then re-run CMake configure."
+            )
+        endif()
     endif()
 endif()
 
