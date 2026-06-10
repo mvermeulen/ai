@@ -1067,8 +1067,8 @@ std::string buildDashboardHtml() {
       const list = document.getElementById('sandbox-list');
       list.innerHTML = '';
 
-      // Only display scheduled group matches
-      const unplayed = data.games.filter(g => g.stage === 'group' && g.status === 'scheduled');
+      // Only display scheduled/upcoming group matches
+      const unplayed = data.games.filter(g => g.stage === 'group' && (g.status === 'scheduled' || g.status === 'upcoming'));
 
       unplayed.forEach(g => {
         let card = document.createElement('div');
