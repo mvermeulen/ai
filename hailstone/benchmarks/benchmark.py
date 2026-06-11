@@ -181,15 +181,15 @@ def main():
     for backend in backends:
         print(f"\nStep 2: Benchmarking {backend} on range [{start:,}, {end:,}]...")
         if backend == "CPU":
-            cmd = f"./hailstone_cpu {start} {end}"
+            cmd = f"./hailstone_cpu --no-checkpoint {start} {end}"
             stdout = run_cmd(cmd)
             results = parse_cpu_output(stdout)
         elif backend == "Vulkan":
-            cmd = f"./hailstone_vulkan {start} {end}"
+            cmd = f"./hailstone_vulkan --no-checkpoint {start} {end}"
             stdout = run_cmd(cmd)
             results = parse_vulkan_output(stdout)
         elif backend == "HIP":
-            cmd = f"./hailstone_hip {start} {end}"
+            cmd = f"./hailstone_hip --no-checkpoint {start} {end}"
             stdout = run_cmd(cmd)
             results = parse_cpu_output(stdout)
             

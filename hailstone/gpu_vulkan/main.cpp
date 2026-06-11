@@ -2,6 +2,7 @@
 #include <vector>
 #include <fstream>
 #include <string>
+#include <sstream>
 #include <cstring>
 #include <cassert>
 #include <iomanip>
@@ -152,6 +153,114 @@ void filter_and_print_peaks(const std::string& name, std::vector<PeakRecordGpu>&
     }
 }
 
+bool save_checkpoint(const std::string& filename,
+                     uint128_gpu last_num,
+                     const std::vector<PeakRecordGpu>& max_value_peaks,
+                     const std::vector<PeakRecordGpu>& steps_peaks,
+                     const std::vector<PeakRecordGpu>& sigma_peaks,
+                     const GlobalPeaksGpu& global_peaks) {
+    std::ofstream ofs(filename);
+    if (!ofs.is_open()) {
+        std::cerr << "Warning: Could not open checkpoint file " << filename << " for writing." << std::endl;
+        return false;
+    }
+    ofs << "last_num: " << u128_to_string(last_num) << "\n";
+    ofs << "max_value: " << u128_to_string(global_peaks.max_val) << "\n";
+    ofs << "max_steps: " << global_peaks.max_steps << "\n";
+    ofs << "max_sigma: " << global_peaks.max_sigma << "\n\n";
+
+    ofs << "max_value_peaks:\n";
+    for (const auto& peak : max_value_peaks) {
+        ofs << u128_to_string(peak.start) << " " << u128_to_string(peak.val) << "\n";
+    }
+    ofs << "\n";
+
+    ofs << "steps_peaks:\n";
+    for (const auto& peak : steps_peaks) {
+        ofs << u128_to_string(peak.start) << " " << u128_to_string(peak.val) << "\n";
+    }
+    ofs << "\n";
+
+    ofs << "sigma_peaks:\n";
+    for (const auto& peak : sigma_peaks) {
+        ofs << u128_to_string(peak.start) << " " << u128_to_string(peak.val) << "\n";
+    }
+    ofs << "\n";
+
+    ofs.close();
+    return true;
+}
+
+bool load_checkpoint(const std::string& filename,
+                     uint128_gpu& last_num,
+                     std::vector<PeakRecordGpu>& max_value_peaks,
+                     std::vector<PeakRecordGpu>& steps_peaks,
+                     std::vector<PeakRecordGpu>& sigma_peaks,
+                     GlobalPeaksGpu& global_peaks) {
+    std::ifstream ifs(filename);
+    if (!ifs.is_open()) {
+        return false;
+    }
+    
+    std::string line;
+    std::string section = "header";
+
+    while (std::getline(ifs, line)) {
+        // Trim
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        
+        if (line.empty()) continue;
+
+        if (line == "max_value_peaks:") {
+            section = "max_value_peaks";
+            continue;
+        } else if (line == "steps_peaks:") {
+            section = "steps_peaks";
+            continue;
+        } else if (line == "sigma_peaks:") {
+            section = "sigma_peaks";
+            continue;
+        }
+
+        if (section == "header") {
+            size_t colon = line.find(":");
+            if (colon != std::string::npos) {
+                std::string key = line.substr(0, colon);
+                std::string val = line.substr(colon + 1);
+                val.erase(0, val.find_first_not_of(" \t"));
+                if (key == "last_num") {
+                    last_num = parse_uint128_gpu(val);
+                } else if (key == "max_value") {
+                    global_peaks.max_val = parse_uint128_gpu(val);
+                } else if (key == "max_steps") {
+                    global_peaks.max_steps = std::stoul(val);
+                } else if (key == "max_sigma") {
+                    global_peaks.max_sigma = std::stoul(val);
+                }
+            }
+        } else {
+            std::istringstream iss(line);
+            std::string start_str, metric_str;
+            if (iss >> start_str >> metric_str) {
+                PeakRecordGpu record;
+                record.start = parse_uint128_gpu(start_str);
+                record.val = parse_uint128_gpu(metric_str);
+                if (section == "max_value_peaks") {
+                    max_value_peaks.push_back(record);
+                } else if (section == "steps_peaks") {
+                    steps_peaks.push_back(record);
+                } else if (section == "sigma_peaks") {
+                    sigma_peaks.push_back(record);
+                }
+            }
+        }
+    }
+    
+    ifs.close();
+    return true;
+}
+
 void print_help() {
     std::cout << "Usage: hailstone_vulkan [options] [positional_start] [positional_end]\n\n"
               << "Options:\n"
@@ -160,7 +269,9 @@ void print_help() {
               << "  --end-num, --end_num VALUE      Ending number of the search range (default: 100000)\n"
               << "  --start-block, --start_block INDEX Starting block index (each block is 2^32 items, overrides start-num)\n"
               << "  --end-block, --end_block INDEX     Ending block index (overrides end-num)\n"
-              << "  --num-blocks, --num_blocks COUNT   Number of blocks to check (overrides end-num/end-block)\n\n"
+              << "  --num-blocks, --num_blocks COUNT   Number of blocks to check (overrides end-num/end-block)\n"
+              << "  --checkpoint, --checkpoint_file FILE Checkpoint file path (default: hailstone.chk)\n"
+              << "  --no-checkpoint, --no_checkpoint     Disable saving and restoring checkpoints\n\n"
               << "Note: Positional parameters can still be used as a fallback if no named options are provided.\n";
 }
 
@@ -186,6 +297,9 @@ int main(int argc, char* argv[]) {
     uint64_t opt_start_block = 0;
     uint64_t opt_end_block = 0;
     uint64_t opt_num_blocks = 0;
+
+    bool checkpoint_enabled = true;
+    std::string checkpoint_file = "hailstone.chk";
 
     std::vector<std::string> positional_args;
 
@@ -234,6 +348,16 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: " << arg << " requires an argument." << std::endl;
                 return 1;
             }
+        } else if (arg == "--checkpoint" || arg == "--checkpoint_file") {
+            if (i + 1 < argc) {
+                checkpoint_file = argv[++i];
+                checkpoint_enabled = true;
+            } else {
+                std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+                return 1;
+            }
+        } else if (arg == "--no-checkpoint" || arg == "--no_checkpoint") {
+            checkpoint_enabled = false;
         } else if (arg[0] == '-') {
             std::cerr << "Unknown option: " << arg << std::endl;
             print_help();
@@ -243,59 +367,93 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (has_start_block || has_start_num || has_end_block || has_end_num || has_num_blocks) {
-        if (!positional_args.empty()) {
-            std::cerr << "Error: Cannot mix named options and positional arguments." << std::endl;
-            print_help();
-            return 1;
-        }
+    bool has_range_options = has_start_block || has_start_num || has_end_block || has_end_num || has_num_blocks;
+    if (has_range_options && !positional_args.empty()) {
+        std::cerr << "Error: Cannot mix named options and positional arguments." << std::endl;
+        print_help();
+        return 1;
+    }
 
-        if (has_start_block || has_start_num) {
-            if (has_start_num) {
-                start = opt_start_num;
-            } else {
-                unsigned __int128 start_val = block_to_num(opt_start_block);
-                if (start_val < 3) {
-                    start_val = 3;
-                }
-                start.low = static_cast<uint64_t>(start_val);
-                start.high = static_cast<uint64_t>(start_val >> 64);
-            }
-        }
+    GlobalMetricsGpu masterMetrics = {0, 0, 0, 0};
+    GlobalPeaksGpu masterPeaks = {{0, 0}, 0, 0};
+    std::vector<PeakRecordGpu> masterMaxValPeaks;
+    std::vector<PeakRecordGpu> masterStepsPeaks;
+    std::vector<PeakRecordGpu> masterSigmaPeaks;
 
-        if (has_end_num || has_end_block || has_num_blocks) {
-            if (has_end_num) {
-                end = opt_end_num;
-            } else if (has_num_blocks) {
-                uint64_t base_block = 0;
-                if (has_start_block) {
-                    base_block = opt_start_block;
-                } else if (has_start_num) {
-                    unsigned __int128 start_val = opt_start_num.high;
-                    start_val = (start_val << 64) | opt_start_num.low;
-                    base_block = static_cast<uint64_t>(start_val >> 32);
-                }
-                unsigned __int128 end_val = block_to_num(base_block + opt_num_blocks);
-                end.low = static_cast<uint64_t>(end_val);
-                end.high = static_cast<uint64_t>(end_val >> 64);
-            } else {
-                unsigned __int128 end_val = block_to_num(opt_end_block + 1);
-                end.low = static_cast<uint64_t>(end_val);
-                end.high = static_cast<uint64_t>(end_val >> 64);
-            }
+    uint128_gpu last_num = {0, 0};
+    bool checkpoint_loaded = false;
+
+    if (checkpoint_enabled) {
+        if (load_checkpoint(checkpoint_file, last_num, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks, masterPeaks)) {
+            checkpoint_loaded = true;
+            std::cout << "Loaded checkpoint: " << checkpoint_file << " (last number searched: " << u128_to_string(last_num) << ")" << std::endl;
         }
+    }
+
+    // Determine start boundary
+    if (has_start_block || has_start_num) {
+        if (has_start_num) {
+            start = opt_start_num;
+        } else {
+            unsigned __int128 start_val = block_to_num(opt_start_block);
+            if (start_val < 3) {
+                start_val = 3;
+            }
+            start.low = static_cast<uint64_t>(start_val);
+            start.high = static_cast<uint64_t>(start_val >> 64);
+        }
+    } else if (!positional_args.empty()) {
+        start = parse_uint128_gpu(positional_args[0]);
+    } else if (checkpoint_loaded) {
+        unsigned __int128 last_val = last_num.high;
+        last_val = (last_val << 64) | last_num.low;
+        unsigned __int128 start_val = last_val + 1;
+        start.low = static_cast<uint64_t>(start_val);
+        start.high = static_cast<uint64_t>(start_val >> 64);
     } else {
-        if (positional_args.size() > 0) {
-            start = parse_uint128_gpu(positional_args[0]);
+        start = {3, 0};
+    }
+
+    // Determine end boundary
+    if (has_end_num || has_end_block || has_num_blocks) {
+        if (has_end_num) {
+            end = opt_end_num;
+        } else if (has_num_blocks) {
+            uint64_t base_block = 0;
+            if (has_start_block) {
+                base_block = opt_start_block;
+            } else if (has_start_num) {
+                unsigned __int128 start_val = opt_start_num.high;
+                start_val = (start_val << 64) | opt_start_num.low;
+                base_block = static_cast<uint64_t>(start_val >> 32);
+            } else if (checkpoint_loaded) {
+                unsigned __int128 start_val = start.high;
+                start_val = (start_val << 64) | start.low;
+                base_block = static_cast<uint64_t>(start_val >> 32);
+            }
+            unsigned __int128 end_val = block_to_num(base_block + opt_num_blocks);
+            end.low = static_cast<uint64_t>(end_val);
+            end.high = static_cast<uint64_t>(end_val >> 64);
+        } else {
+            unsigned __int128 end_val = block_to_num(opt_end_block + 1);
+            end.low = static_cast<uint64_t>(end_val);
+            end.high = static_cast<uint64_t>(end_val >> 64);
         }
-        if (positional_args.size() > 1) {
-            end = parse_uint128_gpu(positional_args[1]);
-        }
-        if (positional_args.size() > 2) {
-            std::cerr << "Error: Too many positional arguments." << std::endl;
-            print_help();
-            return 1;
-        }
+    } else if (positional_args.size() > 1) {
+        end = parse_uint128_gpu(positional_args[1]);
+    } else {
+        // Default range size of 100,000 numbers
+        unsigned __int128 start_val = start.high;
+        start_val = (start_val << 64) | start.low;
+        unsigned __int128 end_val = start_val + 99997;
+        end.low = static_cast<uint64_t>(end_val);
+        end.high = static_cast<uint64_t>(end_val >> 64);
+    }
+
+    if (positional_args.size() > 2) {
+        std::cerr << "Error: Too many positional arguments." << std::endl;
+        print_help();
+        return 1;
     }
 
     std::cout << "Searching range: [" << u128_to_string(start) << ", " << u128_to_string(end) << "]" << std::endl;
@@ -458,13 +616,7 @@ int main(int argc, char* argv[]) {
     double mem_transfer_time_ms = 0.0;
     double total_kernel_time_ms = 0.0;
 
-    // Master metrics on host
-    GlobalMetricsGpu masterMetrics = {0, 0, 0, 0};
-    GlobalPeaksGpu masterPeaks = {{0, 0}, 0, 0};
-
-    std::vector<PeakRecordGpu> masterMaxValPeaks;
-    std::vector<PeakRecordGpu> masterStepsPeaks;
-    std::vector<PeakRecordGpu> masterSigmaPeaks;
+    // Master metrics on host (masterPeaks, maxValPeaks, stepsPeaks, sigmaPeaks are defined at start of main)
 
     // 6. Create descriptor pool & sets
     std::vector<VkDescriptorSetLayoutBinding> bindings(7);
@@ -769,6 +921,12 @@ int main(int argc, char* argv[]) {
 
     vkDestroyDevice(device, nullptr);
     vkDestroyInstance(instance, nullptr);
+
+    if (checkpoint_enabled) {
+        if (save_checkpoint(checkpoint_file, end, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks, masterPeaks)) {
+            std::cout << "Saved checkpoint: " << checkpoint_file << std::endl;
+        }
+    }
 
     return 0;
 }

@@ -4,7 +4,6 @@
 #include <sstream>
 #include <memory>
 #include <array>
-#include <algorithm>
 #include <sys/stat.h>
 
 struct RunResults {
@@ -194,14 +193,14 @@ int main() {
     }
 
     std::vector<TestRun> test_runs = {
-        {"Positional 3 100", "3 100"},
-        {"Positional 3 1000", "3 1000"},
-        {"Positional 100 1000", "100 1000"},
-        {"Positional 1000 10000", "1000 10000"},
-        {"Positional 27 27", "27 27"},
-        {"Named --start-num and --end-num", "--start-num 3 --end-num 1000"},
-        {"Named --start_num and --end_num (underscores)", "--start_num 100 --end_num 1000"},
-        {"Named mix dashes/underscores", "--start_num 1000 --end-num 10000"}
+        {"Positional 3 100", "--no-checkpoint 3 100"},
+        {"Positional 3 1000", "--no-checkpoint 3 1000"},
+        {"Positional 100 1000", "--no-checkpoint 100 1000"},
+        {"Positional 1000 10000", "--no-checkpoint 1000 10000"},
+        {"Positional 27 27", "--no-checkpoint 27 27"},
+        {"Named --start-num and --end-num", "--no-checkpoint --start-num 3 --end-num 1000"},
+        {"Named --start_num and --end_num (underscores)", "--no-checkpoint --start_num 100 --end_num 1000"},
+        {"Named mix dashes/underscores", "--no-checkpoint --start_num 1000 --end-num 10000"}
     };
 
     for (const auto& run : test_runs) {
@@ -261,6 +260,160 @@ int main() {
         } else {
             // Not found is expected in our environment since ROCm is not installed
         }
+    }
+
+    // 2. Verify Checkpointing Correctness
+    std::cout << "\nVerifying checkpointing correctness..." << std::endl;
+    for (const std::string& bin : {"./hailstone_cpu", "./hailstone_vulkan", "./hailstone_hip"}) {
+        if (file_exists(bin)) {
+            std::cout << "Testing checkpointing on " << bin << "..." << std::endl;
+            
+            // Clean up any old checkpoint files
+            std::remove("test_checkpoint.chk");
+
+            // Step A: Run single continuous check as reference
+            std::string ref_cmd = bin + " --no-checkpoint --start-num 3 --end-num 1000";
+            RunResults ref_res = parse_output(bin + "_ref", run_command(ref_cmd));
+
+            // Step B: Run first phase [3, 100] saving checkpoint
+            std::string phase1_cmd = bin + " --checkpoint test_checkpoint.chk --start-num 3 --end-num 100";
+            run_command(phase1_cmd);
+
+            if (!file_exists("test_checkpoint.chk")) {
+                std::cerr << "  [FAIL] Checkpoint file was not created!" << std::endl;
+                all_passed = false;
+                continue;
+            }
+
+            // Step C: Run second phase resumed [101, 1000] using checkpoint
+            std::string phase2_cmd = bin + " --checkpoint test_checkpoint.chk --end-num 1000";
+            RunResults checkpointed_res = parse_output(bin + "_checkpoint", run_command(phase2_cmd));
+
+            // Step D: Compare peaks lists of ref_res and checkpointed_res
+            bool peaks_match = true;
+            if (ref_res.max_val_peaks != checkpointed_res.max_val_peaks) {
+                std::cerr << "  [FAIL] Max Value Peaks mismatch on checkpoint resume!" << std::endl;
+                peaks_match = false;
+            }
+            if (ref_res.steps_peaks != checkpointed_res.steps_peaks) {
+                std::cerr << "  [FAIL] Steps Peaks mismatch on checkpoint resume!" << std::endl;
+                peaks_match = false;
+            }
+            if (ref_res.sigma_peaks != checkpointed_res.sigma_peaks) {
+                std::cerr << "  [FAIL] Sigma Peaks mismatch on checkpoint resume!" << std::endl;
+                peaks_match = false;
+            }
+
+            if (peaks_match) {
+                std::cout << "  [PASS] " << bin << " checkpoint resume matches reference peaks." << std::endl;
+            } else {
+                all_passed = false;
+            }
+
+            // Clean up checkpoint file
+            std::remove("test_checkpoint.chk");
+        }
+    }
+
+    // 3. Stress Test Scenario 1: Block Resumption Stress Test (Vulkan and HIP only)
+    std::cout << "\nRunning Stress Test Scenario 1: Block Resumption Correctness (GPU backends)..." << std::endl;
+    for (const std::string& bin : {"./hailstone_vulkan", "./hailstone_hip"}) {
+        if (file_exists(bin)) {
+            std::cout << "Testing block resumption on " << bin << "..." << std::endl;
+            std::remove("block_stress.chk");
+
+            // Step A: Run single continuous check of blocks 0 and 1 as reference
+            std::string ref_cmd = bin + " --no-checkpoint --start-block 0 --num-blocks 2";
+            RunResults ref_res = parse_output(bin + "_block_ref", run_command(ref_cmd));
+
+            // Step B: Run block 0 saving checkpoint
+            std::string phase1_cmd = bin + " --checkpoint block_stress.chk --start-block 0 --num-blocks 1";
+            run_command(phase1_cmd);
+
+            if (!file_exists("block_stress.chk")) {
+                std::cerr << "  [FAIL] block_stress.chk was not created!" << std::endl;
+                all_passed = false;
+                continue;
+            }
+
+            // Step C: Run block 1 resuming from checkpoint
+            std::string phase2_cmd = bin + " --checkpoint block_stress.chk --num-blocks 1";
+            RunResults resumed_res = parse_output(bin + "_block_resumed", run_command(phase2_cmd));
+
+            // Step D: Compare peaks lists of ref_res and resumed_res
+            bool peaks_match = true;
+            if (ref_res.max_val_peaks != resumed_res.max_val_peaks) {
+                std::cerr << "  [FAIL] Max Value Peaks mismatch on block resume!" << std::endl;
+                peaks_match = false;
+            }
+            if (ref_res.steps_peaks != resumed_res.steps_peaks) {
+                std::cerr << "  [FAIL] Steps Peaks mismatch on block resume!" << std::endl;
+                peaks_match = false;
+            }
+            if (ref_res.sigma_peaks != resumed_res.sigma_peaks) {
+                std::cerr << "  [FAIL] Sigma Peaks mismatch on block resume!" << std::endl;
+                peaks_match = false;
+            }
+
+            if (peaks_match) {
+                std::cout << "  [PASS] " << bin << " block resumption matches continuous reference." << std::endl;
+            } else {
+                all_passed = false;
+            }
+
+            std::remove("block_stress.chk");
+        }
+    }
+
+    // 4. Stress Test Scenario 2: Cross-Backend Checkpoint Interoperability Test
+    std::cout << "\nRunning Stress Test Scenario 2: Cross-Backend Checkpoint Interoperability..." << std::endl;
+    if (file_exists("./hailstone_cpu") && file_exists("./hailstone_vulkan")) {
+        std::cout << "Testing CPU <-> Vulkan interop chain..." << std::endl;
+        std::remove("interop_stress.chk");
+
+        // Reference: Continuous CPU run
+        std::string ref_cmd = "./hailstone_cpu --no-checkpoint --start-num 3 --end-num 5000";
+        RunResults ref_res = parse_output("cpu_ref_interop", run_command(ref_cmd));
+
+        // Phase 1: CPU starts [3, 500] -> checkpoint
+        run_command("./hailstone_cpu --checkpoint interop_stress.chk --start-num 3 --end-num 500");
+
+        // Phase 2: Vulkan resumes [501, 1000] -> checkpoint
+        run_command("./hailstone_vulkan --checkpoint interop_stress.chk --end-num 1000");
+
+        // Phase 3: HIP resumes [1001, 2000] -> checkpoint (if HIP is available)
+        if (file_exists("./hailstone_hip")) {
+            run_command("./hailstone_hip --checkpoint interop_stress.chk --end-num 2000");
+        } else {
+            // Fallback: CPU resumes [1001, 2000] if HIP is not available
+            run_command("./hailstone_cpu --checkpoint interop_stress.chk --end-num 2000");
+        }
+
+        // Phase 4: CPU resumes [2001, 5000] -> checkpoint
+        RunResults final_res = parse_output("cpu_final_interop", run_command("./hailstone_cpu --checkpoint interop_stress.chk --end-num 5000"));
+
+        // Compare peaks lists of ref_res and final_res
+        bool interop_match = true;
+        if (ref_res.max_val_peaks != final_res.max_val_peaks) {
+            std::cerr << "  [FAIL] Max Value Peaks mismatch on interop chain!" << std::endl;
+            interop_match = false;
+        }
+        if (ref_res.steps_peaks != final_res.steps_peaks) {
+            std::cerr << "  [FAIL] Steps Peaks mismatch on interop chain!" << std::endl;
+            interop_match = false;
+        }
+        if (ref_res.sigma_peaks != final_res.sigma_peaks) {
+            std::cerr << "  [FAIL] Sigma Peaks mismatch on interop chain!" << std::endl;
+            interop_match = false;
+        }
+
+        if (interop_match) {
+            std::cout << "  [PASS] Cross-backend checkpoint interop chain verified successfully." << std::endl;
+        } else {
+            all_passed = false;
+        }
+
+        std::remove("interop_stress.chk");
     }
 
     if (all_passed) {

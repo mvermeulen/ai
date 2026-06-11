@@ -288,10 +288,10 @@ void hip_search_range(
 
     // Master statistics/metrics
     SearchMetrics masterMetrics = {0};
-    PeakState masterPeaks;
-    std::vector<PeakRecord> masterMaxValPeaks;
-    std::vector<PeakRecord> masterStepsPeaks;
-    std::vector<PeakRecord> masterSigmaPeaks;
+    PeakState masterPeaks = global_peaks;
+    std::vector<PeakRecord> masterMaxValPeaks = max_value_peaks;
+    std::vector<PeakRecord> masterStepsPeaks = steps_peaks;
+    std::vector<PeakRecord> masterSigmaPeaks = sigma_peaks;
 
     const uint64_t CHUNK_SIZE = 2000000;
     uint128 current_chunk_start = start;

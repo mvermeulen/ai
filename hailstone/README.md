@@ -84,19 +84,32 @@ The search executables (`hailstone_cpu`, `hailstone_vulkan`, and `hailstone_hip`
 * `--start-block, --start_block INDEX`: Starting block index (each block is $2^{32}$ items, overrides `--start-num`).
 * `--end-block, --end_block INDEX`: Ending block index (each block is $2^{32}$ items, overrides `--end-num`).
 * `--num-blocks, --num_blocks COUNT`: Number of blocks to check (each block is $2^{32}$ items, overrides `--end-num`/`--end-block`).
+* `--checkpoint, --checkpoint_file FILE`: Checkpoint file path (default: `hailstone.chk`).
+* `--no-checkpoint, --no_checkpoint`: Disable saving and restoring checkpoints.
 
-*Note: Backward-compatible positional arguments (`[start] [end]`) are still supported as a fallback if no named options are provided.*
+### Checkpointing & Resumption
+State checkpointing is enabled by default. Before completing, search programs save the baseline peak thresholds, the list of all peaks, and the last number checked to a checkpoint file.
+- When continuing a search, running the binary with no starting bound options will resume from `last_num + 1` of the checkpoint.
+- If no ending boundary is provided on a resumed run, the search range size defaults to `100,000` numbers.
+- If an explicit starting range (`--start-num` / `--start-block`) is passed, the search will respect that start point, but will still load baseline peak thresholds from the checkpoint.
+
+*Note: Backward-compatible positional arguments (`[start] [end]`) are still supported as a fallback if no named range options are provided.*
 
 ### Examples
-1. **Numeric Range**:
+1. **Numeric Range** (ignoring checkpoints):
    ```bash
-   ./hailstone_cpu --start-num 3 --end-num 100000
+   ./hailstone_cpu --no-checkpoint --start-num 3 --end-num 100000
    ```
-2. **Block Range** (e.g. 8GB test configuration covering blocks 0 and 1):
+2. **Resuming Search from Checkpoint**:
+   ```bash
+   # Resume and run for another 100,000 numbers from where the default checkpoint left off
+   ./hailstone_cpu
+   ```
+3. **Block Range** (e.g. 8GB test configuration covering blocks 0 and 1):
    ```bash
    ./hailstone_vulkan --start-block 0 --num-blocks 2
    ```
-3. **Legacy Positional Fallback**:
+4. **Legacy Positional Fallback**:
    ```bash
    ./hailstone_hip 3 100000
    ```
