@@ -70,6 +70,11 @@ layout(std430, binding = 6) coherent buffer GlobalMetrics {
     uint overflowed;
 } global_metrics;
 
+// Binding 7: Steps Table
+layout(std430, binding = 7) readonly buffer StepsTable {
+    uint steps[256];
+} steps_table;
+
 // Helper functions for uint128
 bool equal(uint128 a, uint128 b) {
     return a.low == b.low && a.high == b.high;
@@ -247,38 +252,70 @@ void main() {
                 bool has_stopped_sigma = false;
                 bool dropped_below_start = false;
 
-                while (curr > 1UL) {
-                    if (curr > 0x5555555555555555UL) {
-                        overflowed = true;
-                        break;
-                    }
-                    uint64_t next_val = 3UL * curr + 1UL;
-                    steps++;
-
-                    if (!dropped_below_start) {
-                        if (next_val > max_val_64) {
-                            max_val_64 = next_val;
+                if (n_64 < 256UL) {
+                    while (curr > 1UL) {
+                        if (curr > 0x5555555555555555UL) {
+                            overflowed = true;
+                            break;
                         }
-                    }
-
-                    uint p = ctz64(next_val);
-                    if (!has_stopped_sigma) {
-                        for (uint k = 1; k <= p; ++k) {
-                            uint64_t val_k = next_val >> k;
-                            if (val_k < n_64) {
-                                stopping_time = t_steps + k;
-                                has_stopped_sigma = true;
-                                break;
+                        uint64_t next_val = 3UL * curr + 1UL;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val_64) {
+                                max_val_64 = next_val;
                             }
                         }
+                        uint p = ctz64(next_val);
+                        if (!has_stopped_sigma) {
+                            for (uint k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < n_64) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        curr = next_val >> p;
+                        steps += p;
+                        t_steps += p;
+                        if (curr < n_64) {
+                            dropped_below_start = true;
+                        }
                     }
-
-                    curr = next_val >> p;
-                    steps += p;
-                    t_steps += p;
-
-                    if (curr < n_64) {
-                        dropped_below_start = true;
+                } else {
+                    while (curr >= 256UL) {
+                        if (curr > 0x5555555555555555UL) {
+                            overflowed = true;
+                            break;
+                        }
+                        uint64_t next_val = 3UL * curr + 1UL;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val_64) {
+                                max_val_64 = next_val;
+                            }
+                        }
+                        uint p = ctz64(next_val);
+                        if (!has_stopped_sigma) {
+                            for (uint k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < n_64) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        curr = next_val >> p;
+                        steps += p;
+                        t_steps += p;
+                        if (curr < n_64) {
+                            dropped_below_start = true;
+                        }
+                    }
+                    if (!overflowed && curr > 1UL) {
+                        steps += steps_table.steps[uint(curr)];
                     }
                 }
             }
@@ -298,40 +335,77 @@ void main() {
                 bool has_stopped_sigma = false;
                 bool dropped_below_start = false;
 
-                while (greater_than(curr, one)) {
-                    bool overflow = false;
-                    uint128 next_val = mul3_add1(curr, overflow);
-                    if (overflow) {
-                        overflowed = true;
-                        break;
-                    }
-                    steps++;
-
-                    if (!dropped_below_start) {
-                        if (greater_than(next_val, max_val)) {
-                            max_val = next_val;
+                uint128 limit;
+                limit.low = 256UL;
+                limit.high = 0UL;
+                if (less_than(n, limit)) {
+                    while (greater_than(curr, one)) {
+                        bool overflow = false;
+                        uint128 next_val = mul3_add1(curr, overflow);
+                        if (overflow) {
+                            overflowed = true;
+                            break;
                         }
-                    }
-
-                    uint p = count_trailing_zeros(next_val);
-                    if (!has_stopped_sigma) {
-                        for (uint k = 1; k <= p; ++k) {
-                            uint128 val_k = shift_right(next_val, k);
-                            if (less_than(val_k, n)) {
-                                stopping_time = t_steps + k;
-                                has_stopped_sigma = true;
-                                break;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (greater_than(next_val, max_val)) {
+                                max_val = next_val;
                             }
                         }
+                        uint p = count_trailing_zeros(next_val);
+                        if (!has_stopped_sigma) {
+                            for (uint k = 1; k <= p; ++k) {
+                                uint128 val_k = shift_right(next_val, k);
+                                if (less_than(val_k, n)) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        next_val = shift_right(next_val, p);
+                        steps += p;
+                        t_steps += p;
+                        curr = next_val;
+                        if (less_than(curr, n)) {
+                            dropped_below_start = true;
+                        }
                     }
-
-                    next_val = shift_right(next_val, p);
-                    steps += p;
-                    t_steps += p;
-                    curr = next_val;
-
-                    if (less_than(curr, n)) {
-                        dropped_below_start = true;
+                } else {
+                    while (greater_than(curr, limit)) {
+                        bool overflow = false;
+                        uint128 next_val = mul3_add1(curr, overflow);
+                        if (overflow) {
+                            overflowed = true;
+                            break;
+                        }
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (greater_than(next_val, max_val)) {
+                                max_val = next_val;
+                            }
+                        }
+                        uint p = count_trailing_zeros(next_val);
+                        if (!has_stopped_sigma) {
+                            for (uint k = 1; k <= p; ++k) {
+                                uint128 val_k = shift_right(next_val, k);
+                                if (less_than(val_k, n)) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        next_val = shift_right(next_val, p);
+                        steps += p;
+                        t_steps += p;
+                        curr = next_val;
+                        if (less_than(curr, n)) {
+                            dropped_below_start = true;
+                        }
+                    }
+                    if (!overflowed && greater_than(curr, one)) {
+                        steps += steps_table.steps[uint(curr.low)];
                     }
                 }
             }

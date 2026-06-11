@@ -1,9 +1,12 @@
 #include "hip_search.hip.h"
+#include "steps_table.h"
 #include <hip/hip_runtime.h>
 #include <iostream>
 #include <chrono>
 #include <algorithm>
 #include <stdexcept>
+
+__constant__ uint32_t d_steps_table[256];
 
 #define MAX_PEAK_RECORDS 65536
 
@@ -93,38 +96,70 @@ __global__ void collatz_search_kernel(
                 bool has_stopped_sigma = false;
                 bool dropped_below_start = false;
 
-                while (curr > 1) {
-                    if (curr > 0x5555555555555555ULL) {
-                        overflowed = true;
-                        break;
-                    }
-                    uint64_t next_val = 3 * curr + 1;
-                    steps++;
-
-                    if (!dropped_below_start) {
-                        if (next_val > max_val_64) {
-                            max_val_64 = next_val;
+                if (n_64 < 256) {
+                    while (curr > 1) {
+                        if (curr > 0x5555555555555555ULL) {
+                            overflowed = true;
+                            break;
                         }
-                    }
-
-                    int p = __builtin_ctzll(next_val);
-                    if (!has_stopped_sigma) {
-                        for (int k = 1; k <= p; ++k) {
-                            uint64_t val_k = next_val >> k;
-                            if (val_k < n_64) {
-                                stopping_time = t_steps + k;
-                                has_stopped_sigma = true;
-                                break;
+                        uint64_t next_val = 3 * curr + 1;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val_64) {
+                                max_val_64 = next_val;
                             }
                         }
+                        int p = __builtin_ctzll(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < n_64) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        curr = next_val >> p;
+                        steps += p;
+                        t_steps += p;
+                        if (curr < n_64) {
+                            dropped_below_start = true;
+                        }
                     }
-
-                    curr = next_val >> p;
-                    steps += p;
-                    t_steps += p;
-
-                    if (curr < n_64) {
-                        dropped_below_start = true;
+                } else {
+                    while (curr >= 256) {
+                        if (curr > 0x5555555555555555ULL) {
+                            overflowed = true;
+                            break;
+                        }
+                        uint64_t next_val = 3 * curr + 1;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val_64) {
+                                max_val_64 = next_val;
+                            }
+                        }
+                        int p = __builtin_ctzll(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < n_64) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        curr = next_val >> p;
+                        steps += p;
+                        t_steps += p;
+                        if (curr < n_64) {
+                            dropped_below_start = true;
+                        }
+                    }
+                    if (!overflowed && curr > 1) {
+                        steps += d_steps_table[curr];
                     }
                 }
             }
@@ -147,40 +182,74 @@ __global__ void collatz_search_kernel(
                 bool has_stopped_sigma = false;
                 bool dropped_below_start = false;
 
-                while (curr > one) {
-                    bool overflow = false;
-                    uint128 next_val = mul3_add1(curr, overflow);
-                    if (overflow) {
-                        overflowed = true;
-                        break;
-                    }
-                    steps++;
-
-                    if (!dropped_below_start) {
-                        if (next_val > max_val) {
-                            max_val = next_val;
+                if (n < uint128(256)) {
+                    while (curr > one) {
+                        bool overflow = false;
+                        uint128 next_val = mul3_add1(curr, overflow);
+                        if (overflow) {
+                            overflowed = true;
+                            break;
                         }
-                    }
-
-                    int p = count_trailing_zeros(next_val);
-                    if (!has_stopped_sigma) {
-                        for (int k = 1; k <= p; ++k) {
-                            uint128 val_k = shift_right(next_val, k);
-                            if (val_k < n) {
-                                stopping_time = t_steps + k;
-                                has_stopped_sigma = true;
-                                break;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val) {
+                                max_val = next_val;
                             }
                         }
+                        int p = count_trailing_zeros(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint128 val_k = shift_right(next_val, k);
+                                if (val_k < n) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        next_val = shift_right(next_val, p);
+                        steps += p;
+                        t_steps += p;
+                        curr = next_val;
+                        if (curr < n) {
+                            dropped_below_start = true;
+                        }
                     }
-
-                    next_val = shift_right(next_val, p);
-                    steps += p;
-                    t_steps += p;
-                    curr = next_val;
-
-                    if (curr < n) {
-                        dropped_below_start = true;
+                } else {
+                    while (curr >= uint128(256)) {
+                        bool overflow = false;
+                        uint128 next_val = mul3_add1(curr, overflow);
+                        if (overflow) {
+                            overflowed = true;
+                            break;
+                        }
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val) {
+                                max_val = next_val;
+                            }
+                        }
+                        int p = count_trailing_zeros(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint128 val_k = shift_right(next_val, k);
+                                if (val_k < n) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        next_val = shift_right(next_val, p);
+                        steps += p;
+                        t_steps += p;
+                        curr = next_val;
+                        if (curr < n) {
+                            dropped_below_start = true;
+                        }
+                    }
+                    if (!overflowed && curr > one) {
+                        steps += d_steps_table[curr.low];
                     }
                 }
             }
@@ -338,6 +407,16 @@ void hip_search_range(
         start = start + uint128(1);
     }
     if (start > end) return;
+
+    static bool steps_copied = false;
+    if (!steps_copied) {
+        uint32_t steps_u32[256];
+        for (int i = 0; i < 256; ++i) {
+            steps_u32[i] = static_cast<uint32_t>(steps8[i]);
+        }
+        HIP_CHECK(hipMemcpyToSymbol(d_steps_table, steps_u32, 256 * sizeof(uint32_t)));
+        steps_copied = true;
+    }
 
     // Allocate GPU buffers once
     PeakRecord* d_max_val_peaks;

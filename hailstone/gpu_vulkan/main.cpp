@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <chrono>
 #include <vulkan/vulkan.h>
+#include "steps_table.h"
 
 #define MAX_PEAK_RECORDS 65536
 
@@ -836,6 +837,7 @@ int main(int argc, char* argv[]) {
     // Binding 4: StepsPeaks (MAX_PEAK_RECORDS * sizeof(PeakRecordGpu))
     // Binding 5: SigmaPeaks (MAX_PEAK_RECORDS * sizeof(PeakRecordGpu))
     // Binding 6: GlobalMetrics (16 bytes)
+    // Binding 7: StepsTable (1024 bytes)
     std::vector<size_t> bufferSizes = {
         sizeof(GlobalPeaksGpu),
         4,
@@ -843,13 +845,14 @@ int main(int argc, char* argv[]) {
         MAX_PEAK_RECORDS * sizeof(PeakRecordGpu),
         MAX_PEAK_RECORDS * sizeof(PeakRecordGpu),
         MAX_PEAK_RECORDS * sizeof(PeakRecordGpu),
-        sizeof(GlobalMetricsGpu)
+        sizeof(GlobalMetricsGpu),
+        256 * sizeof(uint32_t)
     };
 
-    std::vector<VkBuffer> buffers(7);
-    std::vector<VkDeviceMemory> bufferMemories(7);
+    std::vector<VkBuffer> buffers(8);
+    std::vector<VkDeviceMemory> bufferMemories(8);
 
-    for (size_t i = 0; i < 7; ++i) {
+    for (size_t i = 0; i < 8; ++i) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = bufferSizes[i];
@@ -871,14 +874,26 @@ int main(int argc, char* argv[]) {
         VK_CHECK(vkBindBufferMemory(device, buffers[i], bufferMemories[i], 0));
     }
 
+    // Copy steps table to bufferMemories[7] once at startup
+    {
+        uint32_t steps_u32[256];
+        for (int i = 0; i < 256; ++i) {
+            steps_u32[i] = static_cast<uint32_t>(steps8[i]);
+        }
+        void* data;
+        VK_CHECK(vkMapMemory(device, bufferMemories[7], 0, bufferSizes[7], 0, &data));
+        std::memcpy(data, steps_u32, bufferSizes[7]);
+        vkUnmapMemory(device, bufferMemories[7]);
+    }
+
     double mem_transfer_time_ms = 0.0;
     double total_kernel_time_ms = 0.0;
 
     // Master metrics on host (masterPeaks, maxValPeaks, stepsPeaks, sigmaPeaks are defined at start of main)
 
     // 6. Create descriptor pool & sets
-    std::vector<VkDescriptorSetLayoutBinding> bindings(7);
-    for (uint32_t i = 0; i < 7; ++i) {
+    std::vector<VkDescriptorSetLayoutBinding> bindings(8);
+    for (uint32_t i = 0; i < 8; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[i].descriptorCount = 1;
@@ -887,14 +902,14 @@ int main(int argc, char* argv[]) {
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 7;
+    layoutInfo.bindingCount = 8;
     layoutInfo.pBindings = bindings.data();
     VkDescriptorSetLayout descriptorSetLayout;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout));
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize.descriptorCount = 7;
+    poolSize.descriptorCount = 8;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -913,9 +928,9 @@ int main(int argc, char* argv[]) {
     VK_CHECK(vkAllocateDescriptorSets(device, &allocSetInfo, &descriptorSet));
 
     // Update descriptor sets with our buffers
-    std::vector<VkDescriptorBufferInfo> bufferInfos(7);
-    std::vector<VkWriteDescriptorSet> descriptorWrites(7);
-    for (uint32_t i = 0; i < 7; ++i) {
+    std::vector<VkDescriptorBufferInfo> bufferInfos(8);
+    std::vector<VkWriteDescriptorSet> descriptorWrites(8);
+    for (uint32_t i = 0; i < 8; ++i) {
         bufferInfos[i].buffer = buffers[i];
         bufferInfos[i].offset = 0;
         bufferInfos[i].range = bufferSizes[i];
@@ -928,7 +943,7 @@ int main(int argc, char* argv[]) {
         descriptorWrites[i].descriptorCount = 1;
         descriptorWrites[i].pBufferInfo = &bufferInfos[i];
     }
-    vkUpdateDescriptorSets(device, 7, descriptorWrites.data(), 0, nullptr);
+    vkUpdateDescriptorSets(device, 8, descriptorWrites.data(), 0, nullptr);
 
     // 7. Create Pipeline Layout with Push Constants
     VkPushConstantRange pushConstantRange{};

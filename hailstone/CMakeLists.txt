@@ -20,6 +20,9 @@ add_executable(hailstone_test_uint128 tests/test_uint128.cpp)
 # Cross-backend verification suite target
 add_executable(hailstone_verify tests/test_verify.cpp)
 
+# Polynomial generator utility target
+add_executable(hailstone_genpoly tools/genpoly.cpp)
+
 # Vulkan search target
 find_package(Vulkan REQUIRED)
 if(Vulkan_FOUND)

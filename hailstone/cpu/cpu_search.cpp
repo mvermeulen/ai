@@ -1,6 +1,16 @@
 #include "cpu_search.h"
+#include "steps_table.h"
 #include <chrono>
 #include <stdexcept>
+#include <cassert>
+
+#ifndef POLY_WIDTH
+#define POLY_WIDTH 8
+#endif
+
+#define CONCAT_IMPL(x, y) x##y
+#define CONCAT(x, y) CONCAT_IMPL(x, y)
+#define steps_table CONCAT(steps, POLY_WIDTH)
 
 CollatzStats compute_collatz(uint128 n) {
     CollatzStats stats;
@@ -85,6 +95,83 @@ CollatzStats compute_collatz(uint128 n) {
     return stats;
 }
 
+CollatzStats compute_collatz_poly(uint128 n) {
+    // Assert n is greater than or equal to 2^N where N is the polynomial width
+    assert(n >= uint128(1 << POLY_WIDTH));
+
+    CollatzStats stats;
+    stats.start_val = n;
+    stats.steps = 0;
+    stats.stopping_time = 0;
+    stats.max_value = n;
+    stats.overflow = false;
+
+    uint128 curr = n;
+    uint32_t t_steps = 0;
+    bool has_stopped_sigma = false;
+    bool dropped_below_start = false;
+
+    // Handle even starting values on the first step (though search normally skips evens)
+    if ((curr.low & 1) == 0) {
+        int p = count_trailing_zeros(curr);
+        curr = shift_right(curr, p);
+        stats.steps += p;
+        stats.stopping_time = 1;
+        has_stopped_sigma = true;
+        t_steps += p;
+        dropped_below_start = (curr < n);
+    }
+
+    while (curr >= uint128(1 << POLY_WIDTH)) {
+        // Since curr is odd, next step of H is 3 * curr + 1 (which is even)
+        bool overflow = false;
+        uint128 next_val = mul3_add1(curr, overflow);
+        if (overflow) {
+            stats.overflow = true;
+            return stats;
+        }
+        stats.steps++; // for the 3n + 1 step
+
+        // Update max value (only needed before the trajectory drops below the starting value)
+        if (!dropped_below_start) {
+            if (next_val > stats.max_value) {
+                stats.max_value = next_val;
+            }
+        }
+
+        // Division by 2^p to make it odd again
+        int p = count_trailing_zeros(next_val);
+        
+        // Track stopping time (sigma) on T-iterates: next_val >> 1, next_val >> 2, ..., next_val >> p
+        if (!has_stopped_sigma) {
+            for (int k = 1; k <= p; ++k) {
+                uint128 val_k = shift_right(next_val, k);
+                if (val_k < n) {
+                    stats.stopping_time = t_steps + k;
+                    has_stopped_sigma = true;
+                    break;
+                }
+            }
+        }
+
+        next_val = shift_right(next_val, p);
+        stats.steps += p;
+        t_steps += p;
+        curr = next_val;
+
+        if (curr < n) {
+            dropped_below_start = true;
+        }
+    }
+
+    // Once the value drops below 2^N, look up the remaining steps in the steps table
+    if (curr > uint128(1)) {
+        stats.steps += steps_table[curr.low];
+    }
+
+    return stats;
+}
+
 void cpu_search_range(uint128 start, uint128 end, 
                       std::vector<PeakRecord>& max_value_peaks,
                       std::vector<PeakRecord>& steps_peaks,
@@ -118,7 +205,12 @@ void cpu_search_range(uint128 start, uint128 end,
             continue;
         }
 
-        CollatzStats stats = compute_collatz(curr);
+        CollatzStats stats;
+        if (curr >= uint128(1 << POLY_WIDTH)) {
+            stats = compute_collatz_poly(curr);
+        } else {
+            stats = compute_collatz(curr);
+        }
         metrics.total_numbers_checked++;
 
         if (stats.overflow) {

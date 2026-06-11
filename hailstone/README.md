@@ -9,6 +9,17 @@ To ensure safety and compatibility for values beyond $2^{64}$, calculations are 
 
 ---
 
+## Vermeulen Polynomials & Steps Table Optimization
+
+Vermeulen polynomials and precomputed lookup tables speed up the Collatz search by filtering and shortcutting calculations:
+
+1. **Vermeulen Polynomials (`fpoly` and `mpoly`)**: For any starting value $x \equiv i \pmod{2^w}$, the sequence of odd/even steps is identical until $x$ has been divided by 2 exactly $w$ times.
+   - **Final Polynomials (`fpoly`)**: Represents the final state of the residue class after exactly $w$ divisions by 2.
+   - **Maximum Intermediate Polynomials (`mpoly`)**: Represents the peak intermediate state along the path where the ratio $\frac{3^a}{2^b}$ is maximized, used to bound peak intermediate values and prune search classes.
+2. **Polynomial Step Lookup Optimization**: Instead of running trajectories all the way to 1, the search loops (CPU, HIP, and Vulkan) terminate early when the value drops below $2^8 = 256$. The remaining steps are retrieved in $O(1)$ time from a precomputed steps lookup table (`steps8`). This reduces loop iterations, thread divergence, and instruction counts, accelerating GPU execution by up to **4.0x** and CPU execution by **79%**.
+
+---
+
 ## Architecture & Backends
 
 The project is structured with three computational backends:
