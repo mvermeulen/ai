@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <sstream>
 #include <cstring>
@@ -259,6 +260,263 @@ bool load_checkpoint(const std::string& filename,
     
     ifs.close();
     return true;
+}
+
+void vulkan_search_range_internal(
+    unsigned __int128 start_val,
+    unsigned __int128 end_val,
+    VkDevice device,
+    VkQueue computeQueue,
+    VkCommandBuffer commandBuffer,
+    VkPipelineLayout pipelineLayout,
+    VkPipeline pipeline,
+    VkDescriptorSet descriptorSet,
+    const std::vector<VkBuffer>& buffers,
+    const std::vector<VkDeviceMemory>& bufferMemories,
+    const std::vector<VkDeviceSize>& bufferSizes,
+    GlobalPeaksGpu& masterPeaks,
+    std::vector<PeakRecordGpu>& masterMaxValPeaks,
+    std::vector<PeakRecordGpu>& masterStepsPeaks,
+    std::vector<PeakRecordGpu>& masterSigmaPeaks,
+    GlobalMetricsGpu& masterMetrics,
+    double& mem_transfer_time_ms,
+    double& total_kernel_time_ms
+) {
+    if (start_val > end_val) return;
+
+    const unsigned __int128 CHUNK_SIZE = 2000000;
+    unsigned __int128 current_chunk_start = start_val;
+
+    while (current_chunk_start <= end_val) {
+        unsigned __int128 current_chunk_end = current_chunk_start + CHUNK_SIZE - 1;
+        if (current_chunk_end > end_val) {
+            current_chunk_end = end_val;
+        }
+
+        unsigned __int128 chunk_start_val = current_chunk_start;
+        if ((chunk_start_val & 1) == 0) {
+            chunk_start_val += 1;
+        }
+
+        unsigned __int128 chunk_end_val = current_chunk_end;
+        if (chunk_end_val >= chunk_start_val) {
+            if ((chunk_end_val & 1) == 0) {
+                chunk_end_val -= 1;
+            }
+        }
+
+        if (chunk_start_val <= chunk_end_val) {
+            unsigned __int128 chunk_odds_128 = (chunk_end_val - chunk_start_val) / 2 + 1;
+            uint32_t chunk_odds = static_cast<uint32_t>(chunk_odds_128);
+
+            // Copy masterPeaks to bufferMemories[0] and reset locks/counts/metrics
+            {
+                auto start_write = std::chrono::high_resolution_clock::now();
+                void* data;
+                VK_CHECK(vkMapMemory(device, bufferMemories[0], 0, bufferSizes[0], 0, &data));
+                std::memcpy(data, &masterPeaks, sizeof(GlobalPeaksGpu));
+                vkUnmapMemory(device, bufferMemories[0]);
+
+                VK_CHECK(vkMapMemory(device, bufferMemories[1], 0, bufferSizes[1], 0, &data));
+                std::memset(data, 0, bufferSizes[1]);
+                vkUnmapMemory(device, bufferMemories[1]);
+
+                VK_CHECK(vkMapMemory(device, bufferMemories[2], 0, bufferSizes[2], 0, &data));
+                std::memset(data, 0, bufferSizes[2]);
+                vkUnmapMemory(device, bufferMemories[2]);
+
+                VK_CHECK(vkMapMemory(device, bufferMemories[6], 0, bufferSizes[6], 0, &data));
+                std::memset(data, 0, bufferSizes[6]);
+                vkUnmapMemory(device, bufferMemories[6]);
+                auto end_write = std::chrono::high_resolution_clock::now();
+                mem_transfer_time_ms += std::chrono::duration<double, std::milli>(end_write - start_write).count();
+            }
+
+            // Record commands
+            VK_CHECK(vkResetCommandBuffer(commandBuffer, 0));
+
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
+
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
+            PushConstantsGpu pcs{};
+            pcs.start_low = static_cast<uint64_t>(chunk_start_val);
+            pcs.start_high = static_cast<uint64_t>(chunk_start_val >> 64);
+            pcs.end_low = static_cast<uint64_t>(chunk_end_val);
+            pcs.end_high = static_cast<uint64_t>(chunk_end_val >> 64);
+            pcs.total_odds = chunk_odds;
+
+            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
+
+            uint32_t groupCount = (chunk_odds + 255) / 256;
+            vkCmdDispatch(commandBuffer, groupCount, 1, 1);
+
+            VK_CHECK(vkEndCommandBuffer(commandBuffer));
+
+            // Submit work
+            auto t_start_chunk = std::chrono::high_resolution_clock::now();
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+
+            VkFence fence;
+            VkFenceCreateInfo fenceInfo{};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &fence));
+
+            VK_CHECK(vkQueueSubmit(computeQueue, 1, &submitInfo, fence));
+            VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
+
+            auto t_end_chunk = std::chrono::high_resolution_clock::now();
+            total_kernel_time_ms += std::chrono::duration<double, std::milli>(t_end_chunk - t_start_chunk).count();
+
+            vkDestroyFence(device, fence, nullptr);
+
+            // Read results back
+            GlobalMetricsGpu chunkMetrics{};
+            PeaksCountGpu chunkCounts{};
+
+            auto start_read = std::chrono::high_resolution_clock::now();
+            {
+                void* data;
+                VK_CHECK(vkMapMemory(device, bufferMemories[6], 0, bufferSizes[6], 0, &data));
+                std::memcpy(&chunkMetrics, data, sizeof(GlobalMetricsGpu));
+                vkUnmapMemory(device, bufferMemories[6]);
+
+                VK_CHECK(vkMapMemory(device, bufferMemories[2], 0, bufferSizes[2], 0, &data));
+                std::memcpy(&chunkCounts, data, sizeof(PeaksCountGpu));
+                vkUnmapMemory(device, bufferMemories[2]);
+
+                if (chunkCounts.max_val_count > 0) {
+                    uint32_t to_copy = std::min(chunkCounts.max_val_count, (uint32_t)MAX_PEAK_RECORDS);
+                    std::vector<PeakRecordGpu> chunkMaxVal(to_copy);
+                    VK_CHECK(vkMapMemory(device, bufferMemories[3], 0, bufferSizes[3], 0, &data));
+                    std::memcpy(chunkMaxVal.data(), data, to_copy * sizeof(PeakRecordGpu));
+                    vkUnmapMemory(device, bufferMemories[3]);
+                    masterMaxValPeaks.insert(masterMaxValPeaks.end(), chunkMaxVal.begin(), chunkMaxVal.end());
+                }
+
+                if (chunkCounts.steps_count > 0) {
+                    uint32_t to_copy = std::min(chunkCounts.steps_count, (uint32_t)MAX_PEAK_RECORDS);
+                    std::vector<PeakRecordGpu> chunkSteps(to_copy);
+                    VK_CHECK(vkMapMemory(device, bufferMemories[4], 0, bufferSizes[4], 0, &data));
+                    std::memcpy(chunkSteps.data(), data, to_copy * sizeof(PeakRecordGpu));
+                    vkUnmapMemory(device, bufferMemories[4]);
+                    masterStepsPeaks.insert(masterStepsPeaks.end(), chunkSteps.begin(), chunkSteps.end());
+                }
+
+                if (chunkCounts.sigma_count > 0) {
+                    uint32_t to_copy = std::min(chunkCounts.sigma_count, (uint32_t)MAX_PEAK_RECORDS);
+                    std::vector<PeakRecordGpu> chunkSigma(to_copy);
+                    VK_CHECK(vkMapMemory(device, bufferMemories[5], 0, bufferSizes[5], 0, &data));
+                    std::memcpy(chunkSigma.data(), data, to_copy * sizeof(PeakRecordGpu));
+                    vkUnmapMemory(device, bufferMemories[5]);
+                    masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
+                }
+            }
+            auto end_read = std::chrono::high_resolution_clock::now();
+            mem_transfer_time_ms += std::chrono::duration<double, std::milli>(end_read - start_read).count();
+
+            // Accumulate metrics
+            masterMetrics.total_checked += chunkMetrics.total_checked;
+            masterMetrics.total_steps += chunkMetrics.total_steps;
+            masterMetrics.skipped_mod6 += chunkMetrics.skipped_mod6;
+            masterMetrics.overflowed += chunkMetrics.overflowed;
+
+            // Update master peaks based on this chunk's results
+            GlobalPeaksGpu chunkPeaks{};
+            {
+                void* data;
+                VK_CHECK(vkMapMemory(device, bufferMemories[0], 0, bufferSizes[0], 0, &data));
+                std::memcpy(&chunkPeaks, data, sizeof(GlobalPeaksGpu));
+                vkUnmapMemory(device, bufferMemories[0]);
+            }
+
+            unsigned __int128 current_master_val = masterPeaks.max_val.high;
+            current_master_val = (current_master_val << 64) | masterPeaks.max_val.low;
+            unsigned __int128 chunk_max_val = chunkPeaks.max_val.high;
+            chunk_max_val = (chunk_max_val << 64) | chunkPeaks.max_val.low;
+
+            if (chunk_max_val > current_master_val) {
+                masterPeaks.max_val = chunkPeaks.max_val;
+            }
+            if (chunkPeaks.max_steps > masterPeaks.max_steps) {
+                masterPeaks.max_steps = chunkPeaks.max_steps;
+            }
+            if (chunkPeaks.max_sigma > masterPeaks.max_sigma) {
+                masterPeaks.max_sigma = chunkPeaks.max_sigma;
+            }
+        }
+
+        current_chunk_start += CHUNK_SIZE;
+    }
+}
+
+void vulkan_search_block_0(
+    unsigned __int128 start_val,
+    unsigned __int128 end_val,
+    VkDevice device,
+    VkQueue computeQueue,
+    VkCommandBuffer commandBuffer,
+    VkPipelineLayout pipelineLayout,
+    VkPipeline pipeline,
+    VkDescriptorSet descriptorSet,
+    const std::vector<VkBuffer>& buffers,
+    const std::vector<VkDeviceMemory>& bufferMemories,
+    const std::vector<VkDeviceSize>& bufferSizes,
+    GlobalPeaksGpu& masterPeaks,
+    std::vector<PeakRecordGpu>& masterMaxValPeaks,
+    std::vector<PeakRecordGpu>& masterStepsPeaks,
+    std::vector<PeakRecordGpu>& masterSigmaPeaks,
+    GlobalMetricsGpu& masterMetrics,
+    double& mem_transfer_time_ms,
+    double& total_kernel_time_ms
+) {
+    if (end_val >= (unsigned __int128)0x100000000ULL) {
+        throw std::invalid_argument("vulkan_search_block_0: range extends beyond block 0");
+    }
+    vulkan_search_range_internal(
+        start_val, end_val, device, computeQueue, commandBuffer,
+        pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+        masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+        masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+    );
+}
+
+void vulkan_search_blocks_gt_0(
+    unsigned __int128 start_val,
+    unsigned __int128 end_val,
+    VkDevice device,
+    VkQueue computeQueue,
+    VkCommandBuffer commandBuffer,
+    VkPipelineLayout pipelineLayout,
+    VkPipeline pipeline,
+    VkDescriptorSet descriptorSet,
+    const std::vector<VkBuffer>& buffers,
+    const std::vector<VkDeviceMemory>& bufferMemories,
+    const std::vector<VkDeviceSize>& bufferSizes,
+    GlobalPeaksGpu& masterPeaks,
+    std::vector<PeakRecordGpu>& masterMaxValPeaks,
+    std::vector<PeakRecordGpu>& masterStepsPeaks,
+    std::vector<PeakRecordGpu>& masterSigmaPeaks,
+    GlobalMetricsGpu& masterMetrics,
+    double& mem_transfer_time_ms,
+    double& total_kernel_time_ms
+) {
+    if (start_val < (unsigned __int128)0x100000000ULL) {
+        throw std::invalid_argument("vulkan_search_blocks_gt_0: range starts below block 1");
+    }
+    vulkan_search_range_internal(
+        start_val, end_val, device, computeQueue, commandBuffer,
+        pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+        masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+        masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+    );
 }
 
 void print_help() {
@@ -713,176 +971,33 @@ int main(int argc, char* argv[]) {
     VkCommandBuffer commandBuffer;
     VK_CHECK(vkAllocateCommandBuffers(device, &cmdBufferAllocInfo, &commandBuffer));
 
-    const unsigned __int128 CHUNK_SIZE = 2000000;
-    unsigned __int128 current_chunk_start = start_val;
-
-    while (current_chunk_start <= end_val) {
-        unsigned __int128 current_chunk_end = current_chunk_start + CHUNK_SIZE - 1;
-        if (current_chunk_end > end_val) {
-            current_chunk_end = end_val;
+    unsigned __int128 block_boundary = 0x100000000ULL;
+    if (start_val < block_boundary) {
+        unsigned __int128 block_0_end = end_val;
+        if (end_val >= block_boundary) {
+            block_0_end = block_boundary - 1;
         }
-
-        unsigned __int128 chunk_start_val = current_chunk_start;
-        if ((chunk_start_val & 1) == 0) {
-            chunk_start_val += 1;
+        vulkan_search_block_0(
+            start_val, block_0_end, device, computeQueue, commandBuffer,
+            pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+            masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+            masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+        );
+        if (end_val >= block_boundary) {
+            vulkan_search_blocks_gt_0(
+                block_boundary, end_val, device, computeQueue, commandBuffer,
+                pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+                masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+                masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+            );
         }
-
-        unsigned __int128 chunk_end_val = current_chunk_end;
-        if (chunk_end_val >= chunk_start_val) {
-            if ((chunk_end_val & 1) == 0) {
-                chunk_end_val -= 1;
-            }
-        }
-
-        if (chunk_start_val <= chunk_end_val) {
-            unsigned __int128 chunk_odds_128 = (chunk_end_val - chunk_start_val) / 2 + 1;
-            uint32_t chunk_odds = static_cast<uint32_t>(chunk_odds_128);
-
-            // Copy masterPeaks to bufferMemories[0] and reset locks/counts/metrics
-            {
-                auto start_write = std::chrono::high_resolution_clock::now();
-                void* data;
-                VK_CHECK(vkMapMemory(device, bufferMemories[0], 0, bufferSizes[0], 0, &data));
-                std::memcpy(data, &masterPeaks, sizeof(GlobalPeaksGpu));
-                vkUnmapMemory(device, bufferMemories[0]);
-
-                VK_CHECK(vkMapMemory(device, bufferMemories[1], 0, bufferSizes[1], 0, &data));
-                std::memset(data, 0, bufferSizes[1]);
-                vkUnmapMemory(device, bufferMemories[1]);
-
-                VK_CHECK(vkMapMemory(device, bufferMemories[2], 0, bufferSizes[2], 0, &data));
-                std::memset(data, 0, bufferSizes[2]);
-                vkUnmapMemory(device, bufferMemories[2]);
-
-                VK_CHECK(vkMapMemory(device, bufferMemories[6], 0, bufferSizes[6], 0, &data));
-                std::memset(data, 0, bufferSizes[6]);
-                vkUnmapMemory(device, bufferMemories[6]);
-                auto end_write = std::chrono::high_resolution_clock::now();
-                mem_transfer_time_ms += std::chrono::duration<double, std::milli>(end_write - start_write).count();
-            }
-
-            // Record commands
-            VK_CHECK(vkResetCommandBuffer(commandBuffer, 0));
-
-            VkCommandBufferBeginInfo beginInfo{};
-            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
-
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-
-            PushConstantsGpu pcs{};
-            pcs.start_low = static_cast<uint64_t>(chunk_start_val);
-            pcs.start_high = static_cast<uint64_t>(chunk_start_val >> 64);
-            pcs.end_low = static_cast<uint64_t>(chunk_end_val);
-            pcs.end_high = static_cast<uint64_t>(chunk_end_val >> 64);
-            pcs.total_odds = chunk_odds;
-
-            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
-
-            uint32_t groupCount = (chunk_odds + 255) / 256;
-            vkCmdDispatch(commandBuffer, groupCount, 1, 1);
-
-            VK_CHECK(vkEndCommandBuffer(commandBuffer));
-
-            // Submit work
-            auto t_start_chunk = std::chrono::high_resolution_clock::now();
-
-            VkSubmitInfo submitInfo{};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers = &commandBuffer;
-
-            VkFence fence;
-            VkFenceCreateInfo fenceInfo{};
-            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &fence));
-
-            VK_CHECK(vkQueueSubmit(computeQueue, 1, &submitInfo, fence));
-            VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
-
-            auto t_end_chunk = std::chrono::high_resolution_clock::now();
-            total_kernel_time_ms += std::chrono::duration<double, std::milli>(t_end_chunk - t_start_chunk).count();
-
-            vkDestroyFence(device, fence, nullptr);
-
-            // Read results back
-            GlobalMetricsGpu chunkMetrics{};
-            PeaksCountGpu chunkCounts{};
-
-            auto start_read = std::chrono::high_resolution_clock::now();
-            {
-                void* data;
-                VK_CHECK(vkMapMemory(device, bufferMemories[6], 0, bufferSizes[6], 0, &data));
-                std::memcpy(&chunkMetrics, data, sizeof(GlobalMetricsGpu));
-                vkUnmapMemory(device, bufferMemories[6]);
-
-                VK_CHECK(vkMapMemory(device, bufferMemories[2], 0, bufferSizes[2], 0, &data));
-                std::memcpy(&chunkCounts, data, sizeof(PeaksCountGpu));
-                vkUnmapMemory(device, bufferMemories[2]);
-
-                if (chunkCounts.max_val_count > 0) {
-                    uint32_t to_copy = std::min(chunkCounts.max_val_count, (uint32_t)MAX_PEAK_RECORDS);
-                    std::vector<PeakRecordGpu> chunkMaxVal(to_copy);
-                    VK_CHECK(vkMapMemory(device, bufferMemories[3], 0, bufferSizes[3], 0, &data));
-                    std::memcpy(chunkMaxVal.data(), data, to_copy * sizeof(PeakRecordGpu));
-                    vkUnmapMemory(device, bufferMemories[3]);
-                    masterMaxValPeaks.insert(masterMaxValPeaks.end(), chunkMaxVal.begin(), chunkMaxVal.end());
-                }
-
-                if (chunkCounts.steps_count > 0) {
-                    uint32_t to_copy = std::min(chunkCounts.steps_count, (uint32_t)MAX_PEAK_RECORDS);
-                    std::vector<PeakRecordGpu> chunkSteps(to_copy);
-                    VK_CHECK(vkMapMemory(device, bufferMemories[4], 0, bufferSizes[4], 0, &data));
-                    std::memcpy(chunkSteps.data(), data, to_copy * sizeof(PeakRecordGpu));
-                    vkUnmapMemory(device, bufferMemories[4]);
-                    masterStepsPeaks.insert(masterStepsPeaks.end(), chunkSteps.begin(), chunkSteps.end());
-                }
-
-                if (chunkCounts.sigma_count > 0) {
-                    uint32_t to_copy = std::min(chunkCounts.sigma_count, (uint32_t)MAX_PEAK_RECORDS);
-                    std::vector<PeakRecordGpu> chunkSigma(to_copy);
-                    VK_CHECK(vkMapMemory(device, bufferMemories[5], 0, bufferSizes[5], 0, &data));
-                    std::memcpy(chunkSigma.data(), data, to_copy * sizeof(PeakRecordGpu));
-                    vkUnmapMemory(device, bufferMemories[5]);
-                    masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
-                }
-            }
-            auto end_read = std::chrono::high_resolution_clock::now();
-            mem_transfer_time_ms += std::chrono::duration<double, std::milli>(end_read - start_read).count();
-
-            // Accumulate metrics
-            masterMetrics.total_checked += chunkMetrics.total_checked;
-            masterMetrics.total_steps += chunkMetrics.total_steps;
-            masterMetrics.skipped_mod6 += chunkMetrics.skipped_mod6;
-            masterMetrics.overflowed += chunkMetrics.overflowed;
-
-            // Update master peaks based on this chunk's results
-            GlobalPeaksGpu chunkPeaks{};
-            {
-                void* data;
-                VK_CHECK(vkMapMemory(device, bufferMemories[0], 0, bufferSizes[0], 0, &data));
-                std::memcpy(&chunkPeaks, data, sizeof(GlobalPeaksGpu));
-                vkUnmapMemory(device, bufferMemories[0]);
-            }
-
-            unsigned __int128 current_master_val = masterPeaks.max_val.high;
-            current_master_val = (current_master_val << 64) | masterPeaks.max_val.low;
-            unsigned __int128 chunk_max_val = chunkPeaks.max_val.high;
-            chunk_max_val = (chunk_max_val << 64) | chunkPeaks.max_val.low;
-
-            if (chunk_max_val > current_master_val) {
-                masterPeaks.max_val = chunkPeaks.max_val;
-            }
-            if (chunkPeaks.max_steps > masterPeaks.max_steps) {
-                masterPeaks.max_steps = chunkPeaks.max_steps;
-            }
-            if (chunkPeaks.max_sigma > masterPeaks.max_sigma) {
-                masterPeaks.max_sigma = chunkPeaks.max_sigma;
-            }
-        }
-
-        current_chunk_start += CHUNK_SIZE;
+    } else {
+        vulkan_search_blocks_gt_0(
+            start_val, end_val, device, computeQueue, commandBuffer,
+            pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+            masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+            masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+        );
     }
 
     std::cout << "\n=== Vulkan Search Completed ===" << std::endl;

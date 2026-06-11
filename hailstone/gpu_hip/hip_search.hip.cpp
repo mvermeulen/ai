@@ -3,6 +3,7 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <stdexcept>
 
 #define MAX_PEAK_RECORDS 65536
 
@@ -429,4 +430,34 @@ void hip_search_range(
     HIP_CHECK(hipFree(d_sigma_count));
     HIP_CHECK(hipFree(d_global_peaks));
     HIP_CHECK(hipFree(d_metrics));
+}
+
+void hip_search_block_0(
+    uint128 start_num,
+    uint128 end_num,
+    std::vector<PeakRecord>& max_value_peaks,
+    std::vector<PeakRecord>& steps_peaks,
+    std::vector<PeakRecord>& sigma_peaks,
+    PeakState& global_peaks,
+    SearchMetrics& metrics
+) {
+    if (end_num >= uint128(0x100000000ULL)) {
+        throw std::invalid_argument("hip_search_block_0: range extends beyond block 0");
+    }
+    hip_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+}
+
+void hip_search_blocks_gt_0(
+    uint128 start_num,
+    uint128 end_num,
+    std::vector<PeakRecord>& max_value_peaks,
+    std::vector<PeakRecord>& steps_peaks,
+    std::vector<PeakRecord>& sigma_peaks,
+    PeakState& global_peaks,
+    SearchMetrics& metrics
+) {
+    if (start_num < uint128(0x100000000ULL)) {
+        throw std::invalid_argument("hip_search_blocks_gt_0: range starts below block 1");
+    }
+    hip_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
 }

@@ -1,5 +1,6 @@
 #include "cpu_search.h"
 #include <chrono>
+#include <stdexcept>
 
 CollatzStats compute_collatz(uint128 n) {
     CollatzStats stats;
@@ -162,4 +163,28 @@ void cpu_search_range(uint128 start, uint128 end,
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> diff = end_time - start_time;
     metrics.elapsed_seconds += diff.count();
+}
+
+void cpu_search_block_0(uint128 start_num, uint128 end_num,
+                        std::vector<PeakRecord>& max_value_peaks,
+                        std::vector<PeakRecord>& steps_peaks,
+                        std::vector<PeakRecord>& sigma_peaks,
+                        PeakState& global_peaks,
+                        SearchMetrics& metrics) {
+    if (end_num >= uint128(0x100000000ULL)) {
+        throw std::invalid_argument("cpu_search_block_0: range extends beyond block 0");
+    }
+    cpu_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+}
+
+void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
+                            std::vector<PeakRecord>& max_value_peaks,
+                            std::vector<PeakRecord>& steps_peaks,
+                            std::vector<PeakRecord>& sigma_peaks,
+                            PeakState& global_peaks,
+                            SearchMetrics& metrics) {
+    if (start_num < uint128(0x100000000ULL)) {
+        throw std::invalid_argument("cpu_search_blocks_gt_0: range starts below block 1");
+    }
+    cpu_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
 }

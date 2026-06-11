@@ -372,8 +372,22 @@ int main(int argc, char *argv[]) {
 
   SearchMetrics metrics = {0};
 
-  cpu_search_range(start, end, max_value_peaks, steps_peaks, sigma_peaks,
-                   global_peaks, metrics);
+  uint128 block_boundary(0x100000000ULL);
+  if (start < block_boundary) {
+    uint128 block_0_end = end;
+    if (end >= block_boundary) {
+      block_0_end = block_boundary - uint128(1);
+    }
+    cpu_search_block_0(start, block_0_end, max_value_peaks, steps_peaks,
+                       sigma_peaks, global_peaks, metrics);
+    if (end >= block_boundary) {
+      cpu_search_blocks_gt_0(block_boundary, end, max_value_peaks, steps_peaks,
+                             sigma_peaks, global_peaks, metrics);
+    }
+  } else {
+    cpu_search_blocks_gt_0(start, end, max_value_peaks, steps_peaks,
+                           sigma_peaks, global_peaks, metrics);
+  }
 
   std::cout << "\n=== Search Completed ===" << std::endl;
   std::cout << "Elapsed Time: " << std::fixed << std::setprecision(4)

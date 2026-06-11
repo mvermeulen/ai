@@ -15,4 +15,18 @@ void cpu_search_range(uint128 start, uint128 end,
                       PeakState& global_peaks,
                       SearchMetrics& metrics);
 
+void cpu_search_block_0(uint128 start_num, uint128 end_num,
+                        std::vector<PeakRecord>& max_value_peaks,
+                        std::vector<PeakRecord>& steps_peaks,
+                        std::vector<PeakRecord>& sigma_peaks,
+                        PeakState& global_peaks,
+                        SearchMetrics& metrics);
+
+void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
+                            std::vector<PeakRecord>& max_value_peaks,
+                            std::vector<PeakRecord>& steps_peaks,
+                            std::vector<PeakRecord>& sigma_peaks,
+                            PeakState& global_peaks,
+                            SearchMetrics& metrics);
+
 #endif // HAILSTONE_CPU_SEARCH_H
