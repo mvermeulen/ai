@@ -73,6 +73,36 @@ This will build:
 
 ---
 
+## Usage & Command-Line Options
+
+The search executables (`hailstone_cpu`, `hailstone_vulkan`, and `hailstone_hip`) accept command-line options to configure the search range. We define a **block** as $2^{32}$ items.
+
+### Available Options
+* `-h, --help`: Show help and usage instructions.
+* `--start-num, --start_num VALUE`: Starting number of the search range (default: `3`).
+* `--end-num, --end_num VALUE`: Ending number of the search range (default: `100000`).
+* `--start-block, --start_block INDEX`: Starting block index (each block is $2^{32}$ items, overrides `--start-num`).
+* `--end-block, --end_block INDEX`: Ending block index (each block is $2^{32}$ items, overrides `--end-num`).
+* `--num-blocks, --num_blocks COUNT`: Number of blocks to check (each block is $2^{32}$ items, overrides `--end-num`/`--end-block`).
+
+*Note: Backward-compatible positional arguments (`[start] [end]`) are still supported as a fallback if no named options are provided.*
+
+### Examples
+1. **Numeric Range**:
+   ```bash
+   ./hailstone_cpu --start-num 3 --end-num 100000
+   ```
+2. **Block Range** (e.g. 8GB test configuration covering blocks 0 and 1):
+   ```bash
+   ./hailstone_vulkan --start-block 0 --num-blocks 2
+   ```
+3. **Legacy Positional Fallback**:
+   ```bash
+   ./hailstone_hip 3 100000
+   ```
+
+---
+
 ## Verification & Benchmarks
 
 ### 1. Run Verification Suite

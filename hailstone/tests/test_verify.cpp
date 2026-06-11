@@ -164,24 +164,51 @@ bool compare_results(const RunResults& ref, const RunResults& target) {
     return passed;
 }
 
+struct TestRun {
+    std::string name;
+    std::string args;
+};
+
 int main() {
     std::cout << "=== Cross-Backend Verification Engine ===" << std::endl;
 
-    std::vector<std::string> test_ranges = {
-        "3 100",
-        "3 1000",
-        "100 1000",
-        "1000 10000",
-        "27 27" // single peak value
-    };
-
     bool all_passed = true;
 
-    for (const auto& range : test_ranges) {
-        std::cout << "\nTesting range: [" << range << "]" << std::endl;
+    // 1. Verify --help output works for all binaries
+    std::cout << "\nVerifying --help output..." << std::endl;
+    for (const std::string& bin : {"./hailstone_cpu", "./hailstone_vulkan", "./hailstone_hip"}) {
+        if (file_exists(bin)) {
+            try {
+                std::string help_out = run_command(bin + " --help");
+                if (help_out.find("Usage:") != std::string::npos && help_out.find("--start-block") != std::string::npos) {
+                    std::cout << "  [PASS] " << bin << " --help matches expectations." << std::endl;
+                } else {
+                    std::cerr << "  [FAIL] " << bin << " --help did not output correct help text!" << std::endl;
+                    all_passed = false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "  [FAIL] " << bin << " --help failed to execute: " << e.what() << std::endl;
+                all_passed = false;
+            }
+        }
+    }
+
+    std::vector<TestRun> test_runs = {
+        {"Positional 3 100", "3 100"},
+        {"Positional 3 1000", "3 1000"},
+        {"Positional 100 1000", "100 1000"},
+        {"Positional 1000 10000", "1000 10000"},
+        {"Positional 27 27", "27 27"},
+        {"Named --start-num and --end-num", "--start-num 3 --end-num 1000"},
+        {"Named --start_num and --end_num (underscores)", "--start_num 100 --end_num 1000"},
+        {"Named mix dashes/underscores", "--start_num 1000 --end-num 10000"}
+    };
+
+    for (const auto& run : test_runs) {
+        std::cout << "\nTesting run: [" << run.name << " | args: " << run.args << "]" << std::endl;
 
         // Run CPU (golden reference)
-        std::string cpu_cmd = "./hailstone_cpu " + range;
+        std::string cpu_cmd = "./hailstone_cpu " + run.args;
         std::string cpu_out;
         try {
             cpu_out = run_command(cpu_cmd);
@@ -193,7 +220,7 @@ int main() {
 
         // Run Vulkan
         if (file_exists("./hailstone_vulkan")) {
-            std::string vulkan_cmd = "./hailstone_vulkan " + range;
+            std::string vulkan_cmd = "./hailstone_vulkan " + run.args;
             std::string vulkan_out;
             try {
                 vulkan_out = run_command(vulkan_cmd);
@@ -215,7 +242,7 @@ int main() {
 
         // Run HIP
         if (file_exists("./hailstone_hip")) {
-            std::string hip_cmd = "./hailstone_hip " + range;
+            std::string hip_cmd = "./hailstone_hip " + run.args;
             std::string hip_out;
             try {
                 hip_out = run_command(hip_cmd);

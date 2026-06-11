@@ -1,0 +1,5 @@
+CompileFlags:
+  CompilationDatabase: "hailstone/build"
+  Add:
+    - "--rocm-device-lib-path=/usr/lib/llvm-21/lib/clang/21/amdgcn/bitcode"
+

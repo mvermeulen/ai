@@ -152,17 +152,150 @@ void filter_and_print_peaks(const std::string& name, std::vector<PeakRecordGpu>&
     }
 }
 
+void print_help() {
+    std::cout << "Usage: hailstone_vulkan [options] [positional_start] [positional_end]\n\n"
+              << "Options:\n"
+              << "  -h, --help                 Show this help message\n"
+              << "  --start-num, --start_num VALUE  Starting number of the search range (default: 3)\n"
+              << "  --end-num, --end_num VALUE      Ending number of the search range (default: 100000)\n"
+              << "  --start-block, --start_block INDEX Starting block index (each block is 2^32 items, overrides start-num)\n"
+              << "  --end-block, --end_block INDEX     Ending block index (overrides end-num)\n"
+              << "  --num-blocks, --num_blocks COUNT   Number of blocks to check (overrides end-num/end-block)\n\n"
+              << "Note: Positional parameters can still be used as a fallback if no named options are provided.\n";
+}
+
+unsigned __int128 block_to_num(uint64_t block) {
+    unsigned __int128 res = block;
+    return res << 32;
+}
+
 int main(int argc, char* argv[]) {
     std::cout << "=== Hailstone Vulkan Compute Search ===" << std::endl;
 
     uint128_gpu start = {3, 0};
     uint128_gpu end = {100000, 0};
 
-    if (argc > 1) {
-        start = parse_uint128_gpu(argv[1]);
+    bool has_start_num = false;
+    bool has_end_num = false;
+    bool has_start_block = false;
+    bool has_end_block = false;
+    bool has_num_blocks = false;
+
+    uint128_gpu opt_start_num = {0, 0};
+    uint128_gpu opt_end_num = {0, 0};
+    uint64_t opt_start_block = 0;
+    uint64_t opt_end_block = 0;
+    uint64_t opt_num_blocks = 0;
+
+    std::vector<std::string> positional_args;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            print_help();
+            return 0;
+        } else if (arg == "--start-block" || arg == "--start_block") {
+            if (i + 1 < argc) {
+                opt_start_block = std::stoull(argv[++i]);
+                has_start_block = true;
+            } else {
+                std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+                return 1;
+            }
+        } else if (arg == "--end-block" || arg == "--end_block") {
+            if (i + 1 < argc) {
+                opt_end_block = std::stoull(argv[++i]);
+                has_end_block = true;
+            } else {
+                std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+                return 1;
+            }
+        } else if (arg == "--num-blocks" || arg == "--num_blocks") {
+            if (i + 1 < argc) {
+                opt_num_blocks = std::stoull(argv[++i]);
+                has_num_blocks = true;
+            } else {
+                std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+                return 1;
+            }
+        } else if (arg == "--start-num" || arg == "--start_num") {
+            if (i + 1 < argc) {
+                opt_start_num = parse_uint128_gpu(argv[++i]);
+                has_start_num = true;
+            } else {
+                std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+                return 1;
+            }
+        } else if (arg == "--end-num" || arg == "--end_num") {
+            if (i + 1 < argc) {
+                opt_end_num = parse_uint128_gpu(argv[++i]);
+                has_end_num = true;
+            } else {
+                std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+                return 1;
+            }
+        } else if (arg[0] == '-') {
+            std::cerr << "Unknown option: " << arg << std::endl;
+            print_help();
+            return 1;
+        } else {
+            positional_args.push_back(arg);
+        }
     }
-    if (argc > 2) {
-        end = parse_uint128_gpu(argv[2]);
+
+    if (has_start_block || has_start_num || has_end_block || has_end_num || has_num_blocks) {
+        if (!positional_args.empty()) {
+            std::cerr << "Error: Cannot mix named options and positional arguments." << std::endl;
+            print_help();
+            return 1;
+        }
+
+        if (has_start_block || has_start_num) {
+            if (has_start_num) {
+                start = opt_start_num;
+            } else {
+                unsigned __int128 start_val = block_to_num(opt_start_block);
+                if (start_val < 3) {
+                    start_val = 3;
+                }
+                start.low = static_cast<uint64_t>(start_val);
+                start.high = static_cast<uint64_t>(start_val >> 64);
+            }
+        }
+
+        if (has_end_num || has_end_block || has_num_blocks) {
+            if (has_end_num) {
+                end = opt_end_num;
+            } else if (has_num_blocks) {
+                uint64_t base_block = 0;
+                if (has_start_block) {
+                    base_block = opt_start_block;
+                } else if (has_start_num) {
+                    unsigned __int128 start_val = opt_start_num.high;
+                    start_val = (start_val << 64) | opt_start_num.low;
+                    base_block = static_cast<uint64_t>(start_val >> 32);
+                }
+                unsigned __int128 end_val = block_to_num(base_block + opt_num_blocks);
+                end.low = static_cast<uint64_t>(end_val);
+                end.high = static_cast<uint64_t>(end_val >> 64);
+            } else {
+                unsigned __int128 end_val = block_to_num(opt_end_block + 1);
+                end.low = static_cast<uint64_t>(end_val);
+                end.high = static_cast<uint64_t>(end_val >> 64);
+            }
+        }
+    } else {
+        if (positional_args.size() > 0) {
+            start = parse_uint128_gpu(positional_args[0]);
+        }
+        if (positional_args.size() > 1) {
+            end = parse_uint128_gpu(positional_args[1]);
+        }
+        if (positional_args.size() > 2) {
+            std::cerr << "Error: Too many positional arguments." << std::endl;
+            print_help();
+            return 1;
+        }
     }
 
     std::cout << "Searching range: [" << u128_to_string(start) << ", " << u128_to_string(end) << "]" << std::endl;
