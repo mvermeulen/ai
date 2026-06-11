@@ -1,6 +1,8 @@
 #version 450
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
+layout(constant_id = 0) const bool USE_64BIT = false;
+
 layout(local_size_x = 256) in;
 
 struct uint128 {
@@ -181,24 +183,33 @@ void main() {
     bool active_thread = (g_id < pcs.total_odds);
 
     // Compute the starting odd integer n
-    uint128 start_pct;
-    start_pct.low = pcs.start_low;
-    start_pct.high = pcs.start_high;
+    uint128 n;
+    uint64_t n_64 = 0UL;
 
-    // n = start_pct + 2 * g_id
-    uint128 step_val;
-    step_val.low = uint64_t(g_id) * 2UL;
-    step_val.high = 0UL;
-    uint128 n = add(start_pct, step_val);
-
-    if (active_thread) {
-        // Skip modulo 6 filter: skip if n % 6 == 5
-        // As in C++: (n.high + n.low) % 3 == 2
-        uint64_t sum_mod3 = (n.high % 3UL + n.low % 3UL) % 3UL;
-        if (sum_mod3 == 2UL) {
-            atomicAdd(global_metrics.skipped_mod6, 1);
-            atomicAdd(global_metrics.total_checked, 1);
-            active_thread = false;
+    if (USE_64BIT) {
+        n_64 = pcs.start_low + uint64_t(g_id) * 2UL;
+        if (active_thread) {
+            if (n_64 % 3UL == 2UL) {
+                atomicAdd(global_metrics.skipped_mod6, 1);
+                atomicAdd(global_metrics.total_checked, 1);
+                active_thread = false;
+            }
+        }
+    } else {
+        uint128 start_pct;
+        start_pct.low = pcs.start_low;
+        start_pct.high = pcs.start_high;
+        uint128 step_val;
+        step_val.low = uint64_t(g_id) * 2UL;
+        step_val.high = 0UL;
+        n = add(start_pct, step_val);
+        if (active_thread) {
+            uint64_t sum_mod3 = (n.high % 3UL + n.low % 3UL) % 3UL;
+            if (sum_mod3 == 2UL) {
+                atomicAdd(global_metrics.skipped_mod6, 1);
+                atomicAdd(global_metrics.total_checked, 1);
+                active_thread = false;
+            }
         }
     }
 
@@ -216,58 +227,112 @@ void main() {
     uint128 max_val;
     max_val.low = 0UL;
     max_val.high = 0UL;
+    uint64_t max_val_64 = 0UL;
     bool overflowed = false;
 
     if (active_thread) {
-        max_val = n;
-        if (equal(n, one)) {
-            steps = 0;
-            stopping_time = 0;
-            max_val = one;
-        } else if (equal(n, two)) {
-            steps = 1;
-            stopping_time = 1;
-            max_val = two;
-        } else {
-            uint128 curr = n;
-            uint t_steps = 0;
-            bool has_stopped_sigma = false;
-            bool dropped_below_start = false;
+        if (USE_64BIT) {
+            max_val_64 = n_64;
+            if (n_64 == 1UL) {
+                steps = 0;
+                stopping_time = 0;
+                max_val_64 = 1UL;
+            } else if (n_64 == 2UL) {
+                steps = 1;
+                stopping_time = 1;
+                max_val_64 = 2UL;
+            } else {
+                uint64_t curr = n_64;
+                uint t_steps = 0;
+                bool has_stopped_sigma = false;
+                bool dropped_below_start = false;
 
-            while (greater_than(curr, one)) {
-                bool overflow = false;
-                uint128 next_val = mul3_add1(curr, overflow);
-                if (overflow) {
-                    overflowed = true;
-                    break;
-                }
-                steps++;
-
-                if (!dropped_below_start) {
-                    if (greater_than(next_val, max_val)) {
-                        max_val = next_val;
+                while (curr > 1UL) {
+                    if (curr > 0x5555555555555555UL) {
+                        overflowed = true;
+                        break;
                     }
-                }
+                    uint64_t next_val = 3UL * curr + 1UL;
+                    steps++;
 
-                uint p = count_trailing_zeros(next_val);
-                if (!has_stopped_sigma) {
-                    for (uint k = 1; k <= p; ++k) {
-                        uint128 val_k = shift_right(next_val, k);
-                        if (less_than(val_k, n)) {
-                            stopping_time = t_steps + k;
-                            has_stopped_sigma = true;
-                            break;
+                    if (!dropped_below_start) {
+                        if (next_val > max_val_64) {
+                            max_val_64 = next_val;
                         }
                     }
+
+                    uint p = ctz64(next_val);
+                    if (!has_stopped_sigma) {
+                        for (uint k = 1; k <= p; ++k) {
+                            uint64_t val_k = next_val >> k;
+                            if (val_k < n_64) {
+                                stopping_time = t_steps + k;
+                                has_stopped_sigma = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    curr = next_val >> p;
+                    steps += p;
+                    t_steps += p;
+
+                    if (curr < n_64) {
+                        dropped_below_start = true;
+                    }
                 }
+            }
+        } else {
+            max_val = n;
+            if (equal(n, one)) {
+                steps = 0;
+                stopping_time = 0;
+                max_val = one;
+            } else if (equal(n, two)) {
+                steps = 1;
+                stopping_time = 1;
+                max_val = two;
+            } else {
+                uint128 curr = n;
+                uint t_steps = 0;
+                bool has_stopped_sigma = false;
+                bool dropped_below_start = false;
 
-                next_val = shift_right(next_val, p);
-                steps += p;
-                t_steps += p;
-                curr = next_val;
+                while (greater_than(curr, one)) {
+                    bool overflow = false;
+                    uint128 next_val = mul3_add1(curr, overflow);
+                    if (overflow) {
+                        overflowed = true;
+                        break;
+                    }
+                    steps++;
 
-                if (less_than(curr, n)) {
-                    dropped_below_start = true;
+                    if (!dropped_below_start) {
+                        if (greater_than(next_val, max_val)) {
+                            max_val = next_val;
+                        }
+                    }
+
+                    uint p = count_trailing_zeros(next_val);
+                    if (!has_stopped_sigma) {
+                        for (uint k = 1; k <= p; ++k) {
+                            uint128 val_k = shift_right(next_val, k);
+                            if (less_than(val_k, n)) {
+                                stopping_time = t_steps + k;
+                                has_stopped_sigma = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    next_val = shift_right(next_val, p);
+                    steps += p;
+                    t_steps += p;
+                    curr = next_val;
+
+                    if (less_than(curr, n)) {
+                        dropped_below_start = true;
+                    }
                 }
             }
         }
@@ -281,6 +346,13 @@ void main() {
         } else {
             atomicAdd(global_metrics.total_steps, steps);
         }
+    }
+
+    if (active_thread && USE_64BIT) {
+        max_val.low = max_val_64;
+        max_val.high = 0UL;
+        n.low = n_64;
+        n.high = 0UL;
     }
 
     // Workgroup reduction & prefix scan to log local peaks

@@ -174,7 +174,117 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
     if (end_num >= uint128(0x100000000ULL)) {
         throw std::invalid_argument("cpu_search_block_0: range extends beyond block 0");
     }
-    cpu_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    uint64_t start_64 = start_num.low;
+    uint64_t end_64 = end_num.low;
+
+    uint64_t curr = start_64;
+    if ((curr & 1) == 0) {
+        metrics.numbers_skipped_even++;
+        curr += 1;
+    }
+
+    for (; curr <= end_64; curr += 2) {
+        uint64_t sum_mod3 = curr % 3;
+        if (sum_mod3 == 2) {
+            metrics.numbers_skipped_mod6++;
+            metrics.total_numbers_checked++;
+            continue;
+        }
+
+        uint64_t val = curr;
+        uint32_t steps = 0;
+        uint32_t stopping_time = 0;
+        uint64_t max_val = curr;
+        bool overflowed = false;
+
+        if (val == 1) {
+            steps = 0;
+            stopping_time = 0;
+            max_val = 1;
+        } else if (val == 2) {
+            steps = 1;
+            stopping_time = 1;
+            max_val = 2;
+        } else {
+            uint64_t temp_curr = val;
+            uint32_t t_steps = 0;
+            bool has_stopped_sigma = false;
+            bool dropped_below_start = false;
+
+            while (temp_curr > 1) {
+                if (temp_curr > 0x5555555555555555ULL) {
+                    overflowed = true;
+                    break;
+                }
+                uint64_t next_val = 3 * temp_curr + 1;
+                steps++;
+
+                if (!dropped_below_start) {
+                    if (next_val > max_val) {
+                        max_val = next_val;
+                    }
+                }
+
+                int p = ctz64(next_val);
+                if (!has_stopped_sigma) {
+                    for (int k = 1; k <= p; ++k) {
+                        uint64_t val_k = next_val >> k;
+                        if (val_k < val) {
+                            stopping_time = t_steps + k;
+                            has_stopped_sigma = true;
+                            break;
+                        }
+                    }
+                }
+
+                next_val >>= p;
+                steps += p;
+                t_steps += p;
+                temp_curr = next_val;
+
+                if (temp_curr < val) {
+                    dropped_below_start = true;
+                }
+            }
+        }
+
+        metrics.total_numbers_checked++;
+        if (overflowed) {
+            metrics.numbers_overflowed++;
+            continue;
+        }
+
+        metrics.total_steps_computed += steps;
+
+        uint128 u128_max_val(max_val);
+        if (u128_max_val > global_peaks.current_max_value) {
+            global_peaks.current_max_value = u128_max_val;
+            max_value_peaks.push_back({uint128(curr), u128_max_val});
+        }
+
+        if (steps > global_peaks.current_max_steps) {
+            global_peaks.current_max_steps = steps;
+            steps_peaks.push_back({uint128(curr), uint128(steps)});
+        }
+
+        if (stopping_time > global_peaks.current_max_sigma) {
+            global_peaks.current_max_sigma = stopping_time;
+            sigma_peaks.push_back({uint128(curr), uint128(stopping_time)});
+        }
+    }
+
+    if (end_64 >= start_64) {
+        uint64_t diff = end_64 + 1 - start_64;
+        uint64_t evens = diff >> 1;
+        metrics.numbers_skipped_even += evens;
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = end_time - start_time;
+    metrics.elapsed_seconds += diff.count();
 }
 
 void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,

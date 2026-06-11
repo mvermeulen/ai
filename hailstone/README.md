@@ -18,6 +18,8 @@ The project is structured with three computational backends:
 
 To resolve peak buffer limits on the GPU side, the host executes the searches in consecutive chunks of size `2,000,000` values, feeding the global peak thresholds back to the device to prevent candidate log buffer overflows.
 
+To optimize execution, searches lying completely within Block 0 (starting values under $2^{32}$) automatically run using native 64-bit integer arithmetic instead of the custom 128-bit integer type, yielding up to a 3x speedup across CPU and GPU backends.
+
 ---
 
 ## Directory Structure

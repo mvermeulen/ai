@@ -945,7 +945,17 @@ int main(int argc, char* argv[]) {
     VkPipelineLayout pipelineLayout;
     VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
 
-    // 8. Create Compute Pipeline
+    // 8. Create Compute Pipelines with Specialization Constants
+    VkSpecializationMapEntry specEntry{};
+    specEntry.constantID = 0;
+    specEntry.offset = 0;
+    specEntry.size = sizeof(VkBool32);
+
+    VkSpecializationInfo specInfo{};
+    specInfo.mapEntryCount = 1;
+    specInfo.pMapEntries = &specEntry;
+    specInfo.dataSize = sizeof(VkBool32);
+
     VkComputePipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -953,8 +963,19 @@ int main(int argc, char* argv[]) {
     pipelineInfo.stage.module = shaderModule;
     pipelineInfo.stage.pName = "main";
     pipelineInfo.layout = pipelineLayout;
-    VkPipeline pipeline;
-    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline));
+    pipelineInfo.stage.pSpecializationInfo = &specInfo;
+
+    // Create pipeline for block 0 (use_64bit = VK_TRUE)
+    VkBool32 use_64bit_block0 = VK_TRUE;
+    specInfo.pData = &use_64bit_block0;
+    VkPipeline pipeline_block0;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0));
+
+    // Create pipeline for blocks > 0 (use_64bit = VK_FALSE)
+    VkBool32 use_64bit_gt0 = VK_FALSE;
+    specInfo.pData = &use_64bit_gt0;
+    VkPipeline pipeline_blocks_gt_0;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0));
 
     // 9. Command Pool & Command Buffer
     VkCommandPoolCreateInfo commandPoolInfo{};
@@ -979,14 +1000,14 @@ int main(int argc, char* argv[]) {
         }
         vulkan_search_block_0(
             start_val, block_0_end, device, computeQueue, commandBuffer,
-            pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+            pipelineLayout, pipeline_block0, descriptorSet, buffers, bufferMemories, bufferSizes,
             masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
             masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
         );
         if (end_val >= block_boundary) {
             vulkan_search_blocks_gt_0(
                 block_boundary, end_val, device, computeQueue, commandBuffer,
-                pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+                pipelineLayout, pipeline_blocks_gt_0, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
             );
@@ -994,7 +1015,7 @@ int main(int argc, char* argv[]) {
     } else {
         vulkan_search_blocks_gt_0(
             start_val, end_val, device, computeQueue, commandBuffer,
-            pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+            pipelineLayout, pipeline_blocks_gt_0, descriptorSet, buffers, bufferMemories, bufferSizes,
             masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
             masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
         );
@@ -1023,7 +1044,8 @@ int main(int argc, char* argv[]) {
 
     // 13. Clean up Vulkan
     vkDestroyCommandPool(device, commandPool, nullptr);
-    vkDestroyPipeline(device, pipeline, nullptr);
+    vkDestroyPipeline(device, pipeline_block0, nullptr);
+    vkDestroyPipeline(device, pipeline_blocks_gt_0, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyShaderModule(device, shaderModule, nullptr);
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
