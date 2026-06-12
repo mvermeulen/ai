@@ -2,6 +2,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 layout(constant_id = 0) const bool USE_64BIT = false;
+layout(constant_id = 1) const bool USE_SUFFIX_FIRST = false;
 
 layout(local_size_x = 256) in;
 
@@ -12,11 +13,15 @@ struct uint128 {
 
 // Push Constants
 layout(push_constant) uniform PushConstants {
-    uint64_t start_low;
-    uint64_t start_high;
-    uint64_t end_low;
-    uint64_t end_high;
-    uint total_odds;
+    uint64_t start_prefix_low;
+    uint64_t start_prefix_high;
+    uint64_t start_val_low;
+    uint64_t start_val_high;
+    uint64_t end_val_low;
+    uint64_t end_val_high;
+    uint allowed_suffixes_size;
+    uint cutoff_width;
+    uint total_work_items;
 } pcs;
 
 // Binding 0: Current global maximum metrics (used for peak checks)
@@ -75,6 +80,11 @@ layout(std430, binding = 7) readonly buffer StepsTable {
     uint steps[256];
 } steps_table;
 
+// Binding 8: Allowed Suffixes Buffer
+layout(std430, binding = 8) readonly buffer AllowedSuffixes {
+    uint allowed[];
+} allowed_suffixes;
+
 // Helper functions for uint128
 bool equal(uint128 a, uint128 b) {
     return a.low == b.low && a.high == b.high;
@@ -118,6 +128,22 @@ uint128 shift_right(uint128 a, uint p) {
     } else if (p < 128) {
         res.low = a.high >> (p - 64);
         res.high = 0UL;
+    }
+    return res;
+}
+
+uint128 shift_left(uint128 a, uint p) {
+    uint128 res;
+    res.low = 0UL;
+    res.high = 0UL;
+    if (p <= 0) {
+        return a;
+    } else if (p < 64) {
+        res.high = (a.high << p) | (a.low >> (64 - p));
+        res.low = a.low << p;
+    } else if (p < 128) {
+        res.high = a.low << (p - 64);
+        res.low = 0UL;
     }
     return res;
 }
@@ -185,35 +211,88 @@ void main() {
     uint g_id = gl_GlobalInvocationID.x;
     uint l_id = gl_LocalInvocationID.x;
 
-    bool active_thread = (g_id < pcs.total_odds);
-
-    // Compute the starting odd integer n
+    bool active_thread;
     uint128 n;
     uint64_t n_64 = 0UL;
 
-    if (USE_64BIT) {
-        n_64 = pcs.start_low + uint64_t(g_id) * 2UL;
+    if (USE_SUFFIX_FIRST) {
+        active_thread = (g_id < pcs.total_work_items);
         if (active_thread) {
-            if (n_64 % 3UL == 2UL) {
-                atomicAdd(global_metrics.skipped_mod6, 1);
-                atomicAdd(global_metrics.total_checked, 1);
-                active_thread = false;
+            uint prefix_index = g_id / pcs.allowed_suffixes_size;
+            uint suffix_index = g_id % pcs.allowed_suffixes_size;
+            uint suffix = allowed_suffixes.allowed[suffix_index];
+
+            if (USE_64BIT) {
+                uint64_t prefix = pcs.start_prefix_low + uint64_t(prefix_index);
+                uint64_t curr = (prefix << pcs.cutoff_width) | uint64_t(suffix);
+                n_64 = curr;
+
+                if (curr < pcs.start_val_low || curr > pcs.end_val_low) {
+                    active_thread = false;
+                } else {
+                    uint64_t mult = (1UL << pcs.cutoff_width) % 3UL;
+                    uint64_t base_mod3 = ((prefix % 3UL) * mult) % 3UL;
+                    if ((base_mod3 + suffix) % 3UL == 2UL) {
+                        atomicAdd(global_metrics.skipped_mod6, 1);
+                        atomicAdd(global_metrics.total_checked, 1);
+                        active_thread = false;
+                    }
+                }
+            } else {
+                uint128 start_prefix;
+                start_prefix.low = pcs.start_prefix_low;
+                start_prefix.high = pcs.start_prefix_high;
+                uint128 prefix = add(start_prefix, uint128(uint64_t(prefix_index), 0UL));
+                uint128 curr = add(shift_left(prefix, pcs.cutoff_width), uint128(uint64_t(suffix), 0UL));
+                n = curr;
+
+                uint128 start_val;
+                start_val.low = pcs.start_val_low;
+                start_val.high = pcs.start_val_high;
+                uint128 end_val;
+                end_val.low = pcs.end_val_low;
+                end_val.high = pcs.end_val_high;
+
+                if (less_than(curr, start_val) || greater_than(curr, end_val)) {
+                    active_thread = false;
+                } else {
+                    uint64_t prefix_mod3 = (prefix.high % 3UL + prefix.low % 3UL) % 3UL;
+                    uint64_t mult = (1UL << pcs.cutoff_width) % 3UL;
+                    uint64_t base_mod3 = (prefix_mod3 * mult) % 3UL;
+                    if ((base_mod3 + suffix) % 3UL == 2UL) {
+                        atomicAdd(global_metrics.skipped_mod6, 1);
+                        atomicAdd(global_metrics.total_checked, 1);
+                        active_thread = false;
+                    }
+                }
             }
         }
     } else {
-        uint128 start_pct;
-        start_pct.low = pcs.start_low;
-        start_pct.high = pcs.start_high;
-        uint128 step_val;
-        step_val.low = uint64_t(g_id) * 2UL;
-        step_val.high = 0UL;
-        n = add(start_pct, step_val);
-        if (active_thread) {
-            uint64_t sum_mod3 = (n.high % 3UL + n.low % 3UL) % 3UL;
-            if (sum_mod3 == 2UL) {
-                atomicAdd(global_metrics.skipped_mod6, 1);
-                atomicAdd(global_metrics.total_checked, 1);
-                active_thread = false;
+        active_thread = (g_id < pcs.total_work_items);
+        if (USE_64BIT) {
+            n_64 = pcs.start_val_low + uint64_t(g_id) * 2UL;
+            if (active_thread) {
+                if (n_64 % 3UL == 2UL) {
+                    atomicAdd(global_metrics.skipped_mod6, 1);
+                    atomicAdd(global_metrics.total_checked, 1);
+                    active_thread = false;
+                }
+            }
+        } else {
+            uint128 start_pct;
+            start_pct.low = pcs.start_val_low;
+            start_pct.high = pcs.start_val_high;
+            uint128 step_val;
+            step_val.low = uint64_t(g_id) * 2UL;
+            step_val.high = 0UL;
+            n = add(start_pct, step_val);
+            if (active_thread) {
+                uint64_t sum_mod3 = (n.high % 3UL + n.low % 3UL) % 3UL;
+                if (sum_mod3 == 2UL) {
+                    atomicAdd(global_metrics.skipped_mod6, 1);
+                    atomicAdd(global_metrics.total_checked, 1);
+                    active_thread = false;
+                }
             }
         }
     }

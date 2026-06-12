@@ -8,6 +8,7 @@
 #include <cassert>
 #include <iomanip>
 #include <chrono>
+#include <map>
 #include <vulkan/vulkan.h>
 #include "steps_table.h"
 
@@ -43,11 +44,15 @@ struct GlobalMetricsGpu {
 };
 
 struct PushConstantsGpu {
-    uint64_t start_low;
-    uint64_t start_high;
-    uint64_t end_low;
-    uint64_t end_high;
-    uint32_t total_odds;
+    uint64_t start_prefix_low;
+    uint64_t start_prefix_high;
+    uint64_t start_val_low;
+    uint64_t start_val_high;
+    uint64_t end_val_low;
+    uint64_t end_val_high;
+    uint32_t allowed_suffixes_size;
+    uint32_t cutoff_width;
+    uint32_t total_work_items;
 };
 
 // Error check helper
@@ -59,6 +64,64 @@ struct PushConstantsGpu {
             exit(1); \
         } \
     } while (0)
+
+std::vector<uint32_t> generate_allowed_suffixes(int width) {
+    int total_suffixes = 1 << width;
+    struct PolyKey {
+        uint32_t pow2;
+        uint32_t pow3;
+        uint64_t add;
+        bool operator<(const PolyKey& o) const {
+            if (pow2 != o.pow2) return pow2 < o.pow2;
+            if (pow3 != o.pow3) return pow3 < o.pow3;
+            return add < o.add;
+        }
+    };
+
+    struct ClassInfo {
+        int first_suffix = -1;
+        bool has_even = false;
+    };
+    std::map<PolyKey, ClassInfo> classes;
+    std::vector<PolyKey> suffix_polys(total_suffixes);
+
+    for (int i = 0; i < total_suffixes; ++i) {
+        uint64_t bits = i;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+        }
+        PolyKey key{pow2, pow3, bits};
+        suffix_polys[i] = key;
+        
+        auto& info = classes[key];
+        if (info.first_suffix == -1) {
+            info.first_suffix = i;
+        }
+        if (i % 2 == 0) {
+            info.has_even = true;
+        }
+    }
+
+    std::vector<uint32_t> allowed;
+    for (int i = 0; i < total_suffixes; ++i) {
+        const auto& key = suffix_polys[i];
+        const auto& info = classes[key];
+        if (info.first_suffix == i && !info.has_even) {
+            allowed.push_back(i);
+        }
+    }
+    return allowed;
+}
 
 std::vector<char> read_file(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -266,6 +329,8 @@ bool load_checkpoint(const std::string& filename,
 void vulkan_search_range_internal(
     unsigned __int128 start_val,
     unsigned __int128 end_val,
+    int cutoff_width,
+    uint32_t allowed_suffixes_size,
     VkDevice device,
     VkQueue computeQueue,
     VkCommandBuffer commandBuffer,
@@ -295,20 +360,34 @@ void vulkan_search_range_internal(
         }
 
         unsigned __int128 chunk_start_val = current_chunk_start;
-        if ((chunk_start_val & 1) == 0) {
+        if (cutoff_width == 0 && (chunk_start_val & 1) == 0) {
             chunk_start_val += 1;
         }
 
         unsigned __int128 chunk_end_val = current_chunk_end;
-        if (chunk_end_val >= chunk_start_val) {
+        if (cutoff_width == 0 && chunk_end_val >= chunk_start_val) {
             if ((chunk_end_val & 1) == 0) {
                 chunk_end_val -= 1;
             }
         }
 
         if (chunk_start_val <= chunk_end_val) {
-            unsigned __int128 chunk_odds_128 = (chunk_end_val - chunk_start_val) / 2 + 1;
-            uint32_t chunk_odds = static_cast<uint32_t>(chunk_odds_128);
+            uint32_t total_work_items = 0;
+            unsigned __int128 start_prefix = 0;
+            unsigned __int128 end_prefix = 0;
+            uint32_t groupCount = 0;
+
+            if (cutoff_width > 0) {
+                start_prefix = chunk_start_val >> cutoff_width;
+                end_prefix = chunk_end_val >> cutoff_width;
+                uint64_t num_prefixes = static_cast<uint64_t>(end_prefix - start_prefix + 1);
+                total_work_items = static_cast<uint32_t>(num_prefixes * allowed_suffixes_size);
+                groupCount = (total_work_items + 255) / 256;
+            } else {
+                unsigned __int128 chunk_odds_128 = (chunk_end_val - chunk_start_val) / 2 + 1;
+                total_work_items = static_cast<uint32_t>(chunk_odds_128);
+                groupCount = (total_work_items + 255) / 256;
+            }
 
             // Copy masterPeaks to bufferMemories[0] and reset locks/counts/metrics
             {
@@ -344,15 +423,17 @@ void vulkan_search_range_internal(
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
             PushConstantsGpu pcs{};
-            pcs.start_low = static_cast<uint64_t>(chunk_start_val);
-            pcs.start_high = static_cast<uint64_t>(chunk_start_val >> 64);
-            pcs.end_low = static_cast<uint64_t>(chunk_end_val);
-            pcs.end_high = static_cast<uint64_t>(chunk_end_val >> 64);
-            pcs.total_odds = chunk_odds;
+            pcs.start_prefix_low = static_cast<uint64_t>(start_prefix);
+            pcs.start_prefix_high = static_cast<uint64_t>(start_prefix >> 64);
+            pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
+            pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
+            pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
+            pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
+            pcs.allowed_suffixes_size = allowed_suffixes_size;
+            pcs.cutoff_width = cutoff_width;
+            pcs.total_work_items = total_work_items;
 
             vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
-
-            uint32_t groupCount = (chunk_odds + 255) / 256;
             vkCmdDispatch(commandBuffer, groupCount, 1, 1);
 
             VK_CHECK(vkEndCommandBuffer(commandBuffer));
@@ -461,6 +542,8 @@ void vulkan_search_range_internal(
 void vulkan_search_block_0(
     unsigned __int128 start_val,
     unsigned __int128 end_val,
+    int cutoff_width,
+    uint32_t allowed_suffixes_size,
     VkDevice device,
     VkQueue computeQueue,
     VkCommandBuffer commandBuffer,
@@ -482,7 +565,7 @@ void vulkan_search_block_0(
         throw std::invalid_argument("vulkan_search_block_0: range extends beyond block 0");
     }
     vulkan_search_range_internal(
-        start_val, end_val, device, computeQueue, commandBuffer,
+        start_val, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
         pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
         masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
         masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
@@ -492,6 +575,8 @@ void vulkan_search_block_0(
 void vulkan_search_blocks_gt_0(
     unsigned __int128 start_val,
     unsigned __int128 end_val,
+    int cutoff_width,
+    uint32_t allowed_suffixes_size,
     VkDevice device,
     VkQueue computeQueue,
     VkCommandBuffer commandBuffer,
@@ -513,7 +598,7 @@ void vulkan_search_blocks_gt_0(
         throw std::invalid_argument("vulkan_search_blocks_gt_0: range starts below block 1");
     }
     vulkan_search_range_internal(
-        start_val, end_val, device, computeQueue, commandBuffer,
+        start_val, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
         pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
         masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
         masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
@@ -530,7 +615,8 @@ void print_help() {
               << "  --end-block, --end_block INDEX     Ending block index (overrides end-num)\n"
               << "  --num-blocks, --num_blocks COUNT   Number of blocks to check (overrides end-num/end-block)\n"
               << "  --checkpoint, --checkpoint_file FILE Checkpoint file path (default: hailstone.chk)\n"
-              << "  --no-checkpoint, --no_checkpoint     Disable saving and restoring checkpoints\n\n"
+              << "  --no-checkpoint, --no_checkpoint     Disable saving and restoring checkpoints\n"
+              << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, or 20)\n\n"
               << "Note: Positional parameters can still be used as a fallback if no named options are provided.\n";
 }
 
@@ -559,6 +645,7 @@ int main(int argc, char* argv[]) {
 
     bool checkpoint_enabled = true;
     std::string checkpoint_file = "hailstone.chk";
+    int cutoff_width = 20;
 
     std::vector<std::string> positional_args;
 
@@ -617,6 +704,13 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "--no-checkpoint" || arg == "--no_checkpoint") {
             checkpoint_enabled = false;
+        } else if (arg == "--cutoff-width" || arg == "--cutoff_width") {
+            if (i + 1 < argc) {
+                cutoff_width = std::stoi(argv[++i]);
+            } else {
+                std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+                return 1;
+            }
         } else if (arg[0] == '-') {
             std::cerr << "Unknown option: " << arg << std::endl;
             print_help();
@@ -624,6 +718,11 @@ int main(int argc, char* argv[]) {
         } else {
             positional_args.push_back(arg);
         }
+    }
+
+    if (cutoff_width != 0 && cutoff_width != 8 && cutoff_width != 12 && cutoff_width != 16 && cutoff_width != 20) {
+        std::cerr << "Error: --cutoff-width must be 8, 12, 16, or 20." << std::endl;
+        return 1;
     }
 
     bool has_range_options = has_start_block || has_start_num || has_end_block || has_end_num || has_num_blocks;
@@ -838,7 +937,18 @@ int main(int argc, char* argv[]) {
     // Binding 5: SigmaPeaks (MAX_PEAK_RECORDS * sizeof(PeakRecordGpu))
     // Binding 6: GlobalMetrics (16 bytes)
     // Binding 7: StepsTable (1024 bytes)
-    std::vector<size_t> bufferSizes = {
+    std::vector<uint32_t> allowed_suffixes;
+    if (cutoff_width > 0) {
+        std::cout << "Using Suffix-First Search with width: " << cutoff_width << std::endl;
+        std::cout << "Generating allowed suffixes... " << std::flush;
+        allowed_suffixes = generate_allowed_suffixes(cutoff_width);
+        std::cout << allowed_suffixes.size() << " allowed suffixes generated." << std::endl;
+    } else {
+        allowed_suffixes = { 0 };
+    }
+    size_t allowed_suffixes_buf_size = allowed_suffixes.size() * sizeof(uint32_t);
+
+    std::vector<VkDeviceSize> bufferSizes = {
         sizeof(GlobalPeaksGpu),
         4,
         sizeof(PeaksCountGpu),
@@ -846,13 +956,14 @@ int main(int argc, char* argv[]) {
         MAX_PEAK_RECORDS * sizeof(PeakRecordGpu),
         MAX_PEAK_RECORDS * sizeof(PeakRecordGpu),
         sizeof(GlobalMetricsGpu),
-        256 * sizeof(uint32_t)
+        256 * sizeof(uint32_t),
+        allowed_suffixes_buf_size
     };
 
-    std::vector<VkBuffer> buffers(8);
-    std::vector<VkDeviceMemory> bufferMemories(8);
+    std::vector<VkBuffer> buffers(9);
+    std::vector<VkDeviceMemory> bufferMemories(9);
 
-    for (size_t i = 0; i < 8; ++i) {
+    for (size_t i = 0; i < 9; ++i) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = bufferSizes[i];
@@ -886,14 +997,22 @@ int main(int argc, char* argv[]) {
         vkUnmapMemory(device, bufferMemories[7]);
     }
 
+    // Copy allowed suffixes to bufferMemories[8] once at startup
+    {
+        void* data;
+        VK_CHECK(vkMapMemory(device, bufferMemories[8], 0, bufferSizes[8], 0, &data));
+        std::memcpy(data, allowed_suffixes.data(), bufferSizes[8]);
+        vkUnmapMemory(device, bufferMemories[8]);
+    }
+
     double mem_transfer_time_ms = 0.0;
     double total_kernel_time_ms = 0.0;
 
     // Master metrics on host (masterPeaks, maxValPeaks, stepsPeaks, sigmaPeaks are defined at start of main)
 
     // 6. Create descriptor pool & sets
-    std::vector<VkDescriptorSetLayoutBinding> bindings(8);
-    for (uint32_t i = 0; i < 8; ++i) {
+    std::vector<VkDescriptorSetLayoutBinding> bindings(9);
+    for (uint32_t i = 0; i < 9; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[i].descriptorCount = 1;
@@ -902,14 +1021,14 @@ int main(int argc, char* argv[]) {
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 8;
+    layoutInfo.bindingCount = 9;
     layoutInfo.pBindings = bindings.data();
     VkDescriptorSetLayout descriptorSetLayout;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout));
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize.descriptorCount = 8;
+    poolSize.descriptorCount = 9;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -928,9 +1047,9 @@ int main(int argc, char* argv[]) {
     VK_CHECK(vkAllocateDescriptorSets(device, &allocSetInfo, &descriptorSet));
 
     // Update descriptor sets with our buffers
-    std::vector<VkDescriptorBufferInfo> bufferInfos(8);
-    std::vector<VkWriteDescriptorSet> descriptorWrites(8);
-    for (uint32_t i = 0; i < 8; ++i) {
+    std::vector<VkDescriptorBufferInfo> bufferInfos(9);
+    std::vector<VkWriteDescriptorSet> descriptorWrites(9);
+    for (uint32_t i = 0; i < 9; ++i) {
         bufferInfos[i].buffer = buffers[i];
         bufferInfos[i].offset = 0;
         bufferInfos[i].range = bufferSizes[i];
@@ -943,7 +1062,7 @@ int main(int argc, char* argv[]) {
         descriptorWrites[i].descriptorCount = 1;
         descriptorWrites[i].pBufferInfo = &bufferInfos[i];
     }
-    vkUpdateDescriptorSets(device, 8, descriptorWrites.data(), 0, nullptr);
+    vkUpdateDescriptorSets(device, 9, descriptorWrites.data(), 0, nullptr);
 
     // 7. Create Pipeline Layout with Push Constants
     VkPushConstantRange pushConstantRange{};
@@ -961,15 +1080,27 @@ int main(int argc, char* argv[]) {
     VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
 
     // 8. Create Compute Pipelines with Specialization Constants
-    VkSpecializationMapEntry specEntry{};
-    specEntry.constantID = 0;
-    specEntry.offset = 0;
-    specEntry.size = sizeof(VkBool32);
+    struct SpecializationData {
+        VkBool32 use_64bit;
+        VkBool32 use_suffix_first;
+    };
+
+    std::vector<VkSpecializationMapEntry> specEntries(2);
+    specEntries[0].constantID = 0;
+    specEntries[0].offset = offsetof(SpecializationData, use_64bit);
+    specEntries[0].size = sizeof(VkBool32);
+
+    specEntries[1].constantID = 1;
+    specEntries[1].offset = offsetof(SpecializationData, use_suffix_first);
+    specEntries[1].size = sizeof(VkBool32);
+
+    SpecializationData specData;
 
     VkSpecializationInfo specInfo{};
-    specInfo.mapEntryCount = 1;
-    specInfo.pMapEntries = &specEntry;
-    specInfo.dataSize = sizeof(VkBool32);
+    specInfo.mapEntryCount = 2;
+    specInfo.pMapEntries = specEntries.data();
+    specInfo.dataSize = sizeof(SpecializationData);
+    specInfo.pData = &specData;
 
     VkComputePipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
@@ -980,17 +1111,30 @@ int main(int argc, char* argv[]) {
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.stage.pSpecializationInfo = &specInfo;
 
-    // Create pipeline for block 0 (use_64bit = VK_TRUE)
-    VkBool32 use_64bit_block0 = VK_TRUE;
-    specInfo.pData = &use_64bit_block0;
-    VkPipeline pipeline_block0;
-    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0));
+    // Create 4 pipelines:
+    // 1) Block 0 Standard: use_64bit = VK_TRUE, use_suffix_first = VK_FALSE
+    specData.use_64bit = VK_TRUE;
+    specData.use_suffix_first = VK_FALSE;
+    VkPipeline pipeline_block0_std;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0_std));
 
-    // Create pipeline for blocks > 0 (use_64bit = VK_FALSE)
-    VkBool32 use_64bit_gt0 = VK_FALSE;
-    specInfo.pData = &use_64bit_gt0;
-    VkPipeline pipeline_blocks_gt_0;
-    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0));
+    // 2) Blocks > 0 Standard: use_64bit = VK_FALSE, use_suffix_first = VK_FALSE
+    specData.use_64bit = VK_FALSE;
+    specData.use_suffix_first = VK_FALSE;
+    VkPipeline pipeline_blocks_gt_0_std;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0_std));
+
+    // 3) Block 0 Suffix-First: use_64bit = VK_TRUE, use_suffix_first = VK_TRUE
+    specData.use_64bit = VK_TRUE;
+    specData.use_suffix_first = VK_TRUE;
+    VkPipeline pipeline_block0_sf;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0_sf));
+
+    // 4) Blocks > 0 Suffix-First: use_64bit = VK_FALSE, use_suffix_first = VK_TRUE
+    specData.use_64bit = VK_FALSE;
+    specData.use_suffix_first = VK_TRUE;
+    VkPipeline pipeline_blocks_gt_0_sf;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0_sf));
 
     // 9. Command Pool & Command Buffer
     VkCommandPoolCreateInfo commandPoolInfo{};
@@ -1008,32 +1152,84 @@ int main(int argc, char* argv[]) {
     VK_CHECK(vkAllocateCommandBuffers(device, &cmdBufferAllocInfo, &commandBuffer));
 
     unsigned __int128 block_boundary = 0x100000000ULL;
-    if (start_val < block_boundary) {
-        unsigned __int128 block_0_end = end_val;
-        if (end_val >= block_boundary) {
-            block_0_end = block_boundary - 1;
+    uint32_t allowed_suffixes_size = static_cast<uint32_t>(allowed_suffixes.size());
+
+    if (cutoff_width > 0) {
+        unsigned __int128 threshold_val = (unsigned __int128)1 << cutoff_width;
+        if (start_val < threshold_val) {
+            unsigned __int128 standard_end = (end_val < threshold_val) ? end_val : (threshold_val - 1);
+            std::cout << "Running standard search on boundary range ["
+                      << u128_to_string({static_cast<uint64_t>(start_val), static_cast<uint64_t>(start_val >> 64)})
+                      << ", "
+                      << u128_to_string({static_cast<uint64_t>(standard_end), static_cast<uint64_t>(standard_end >> 64)})
+                      << "]" << std::endl;
+            vulkan_search_block_0(
+                start_val, standard_end, 0, 1, device, computeQueue, commandBuffer,
+                pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
+                masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+                masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+            );
+            start_val = standard_end + 1;
         }
-        vulkan_search_block_0(
-            start_val, block_0_end, device, computeQueue, commandBuffer,
-            pipelineLayout, pipeline_block0, descriptorSet, buffers, bufferMemories, bufferSizes,
-            masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
-            masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
-        );
-        if (end_val >= block_boundary) {
+
+        if (start_val <= end_val) {
+            if (start_val < block_boundary) {
+                unsigned __int128 block_0_end = end_val;
+                if (end_val >= block_boundary) {
+                    block_0_end = block_boundary - 1;
+                }
+                vulkan_search_block_0(
+                    start_val, block_0_end, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
+                    pipelineLayout, pipeline_block0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
+                    masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+                    masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+                );
+                if (end_val >= block_boundary) {
+                    vulkan_search_blocks_gt_0(
+                        block_boundary, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
+                        pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
+                        masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+                        masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+                    );
+                }
+            } else {
+                vulkan_search_blocks_gt_0(
+                    start_val, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
+                    pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
+                    masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+                    masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+                );
+            }
+        }
+    } else {
+        // Cutoff width = 0 (Standard Search)
+        if (start_val < block_boundary) {
+            unsigned __int128 block_0_end = end_val;
+            if (end_val >= block_boundary) {
+                block_0_end = block_boundary - 1;
+            }
+            vulkan_search_block_0(
+                start_val, block_0_end, 0, 1, device, computeQueue, commandBuffer,
+                pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
+                masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+                masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+            );
+            if (end_val >= block_boundary) {
+                vulkan_search_blocks_gt_0(
+                    block_boundary, end_val, 0, 1, device, computeQueue, commandBuffer,
+                    pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
+                    masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+                    masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+                );
+            }
+        } else {
             vulkan_search_blocks_gt_0(
-                block_boundary, end_val, device, computeQueue, commandBuffer,
-                pipelineLayout, pipeline_blocks_gt_0, descriptorSet, buffers, bufferMemories, bufferSizes,
+                start_val, end_val, 0, 1, device, computeQueue, commandBuffer,
+                pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
             );
         }
-    } else {
-        vulkan_search_blocks_gt_0(
-            start_val, end_val, device, computeQueue, commandBuffer,
-            pipelineLayout, pipeline_blocks_gt_0, descriptorSet, buffers, bufferMemories, bufferSizes,
-            masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
-            masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
-        );
     }
 
     std::cout << "\n=== Vulkan Search Completed ===" << std::endl;
@@ -1059,14 +1255,16 @@ int main(int argc, char* argv[]) {
 
     // 13. Clean up Vulkan
     vkDestroyCommandPool(device, commandPool, nullptr);
-    vkDestroyPipeline(device, pipeline_block0, nullptr);
-    vkDestroyPipeline(device, pipeline_blocks_gt_0, nullptr);
+    vkDestroyPipeline(device, pipeline_block0_std, nullptr);
+    vkDestroyPipeline(device, pipeline_blocks_gt_0_std, nullptr);
+    vkDestroyPipeline(device, pipeline_block0_sf, nullptr);
+    vkDestroyPipeline(device, pipeline_blocks_gt_0_sf, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyShaderModule(device, shaderModule, nullptr);
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
-    for (size_t i = 0; i < 7; ++i) {
+    for (size_t i = 0; i < 9; ++i) {
         vkDestroyBuffer(device, buffers[i], nullptr);
         vkFreeMemory(device, bufferMemories[i], nullptr);
     }

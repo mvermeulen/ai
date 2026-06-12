@@ -452,6 +452,32 @@ int main() {
         }
     }
 
+    // 6. Scenario 4: Suffix-First Self-Comparison (Standard vs Suffix-First)
+    std::cout << "\nRunning Scenario 4: Suffix-First self-comparison (Standard vs Suffix-First)..." << std::endl;
+    for (const std::string& bin : {"./hailstone_cpu", "./hailstone_hip", "./hailstone_vulkan"}) {
+        if (file_exists(bin)) {
+            std::cout << "Verifying " << bin << " peaks are identical with --cutoff-width 0 and --cutoff-width 20..." << std::endl;
+            
+            std::string std_cmd = bin + " --cutoff-width 0 --no-checkpoint 3 100000";
+            std::string sf_cmd = bin + " --cutoff-width 20 --no-checkpoint 3 100000";
+            
+            try {
+                RunResults std_res = parse_output(bin + "_std", run_command(std_cmd));
+                RunResults sf_res = parse_output(bin + "_sf", run_command(sf_cmd));
+                
+                if (compare_results(std_res, sf_res)) {
+                    std::cout << "  [PASS] " << bin << " self-comparison matches exactly." << std::endl;
+                } else {
+                    std::cout << "  [FAIL] " << bin << " self-comparison mismatch!" << std::endl;
+                    all_passed = false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "  [FAIL] Error running self-comparison for " << bin << ": " << e.what() << std::endl;
+                all_passed = false;
+            }
+        }
+    }
+
     if (all_passed) {
         std::cout << "\nALL BACKENDS VERIFIED SUCCESSFULLY!" << std::endl;
         return 0;
