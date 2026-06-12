@@ -7,7 +7,7 @@
 CollatzStats compute_collatz(uint128 n);
 
 // Computes Collatz statistics using polynomial precomputed tables once value is below 2^N.
-CollatzStats compute_collatz_poly(uint128 n);
+CollatzStats compute_collatz_poly(uint128 n, uint32_t current_max_steps);
 
 // Searches a range of odd numbers [start, end] for peaks.
 // Appends newly found peaks to the respective vectors and updates the global_peaks state.

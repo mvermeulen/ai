@@ -96,7 +96,7 @@ CollatzStats compute_collatz(uint128 n) {
     return stats;
 }
 
-CollatzStats compute_collatz_poly(uint128 n) {
+CollatzStats compute_collatz_poly(uint128 n, uint32_t current_max_steps) {
     // Assert n is greater than or equal to 2^N where N is the polynomial width
     assert(n >= uint128(1 << POLY_WIDTH));
 
@@ -125,6 +125,9 @@ CollatzStats compute_collatz_poly(uint128 n) {
 
     while (curr >= uint128(1 << POLY_WIDTH)) {
         if (curr.high == 0 && dropped_below_start && has_stopped_sigma) {
+            if (stats.steps + 1050 < current_max_steps) {
+                return stats;
+            }
             uint64_t curr_64 = curr.low;
             while (curr_64 >= (1 << POLY_WIDTH)) {
                 uint64_t next_val = 3 * curr_64 + 1;
@@ -221,7 +224,7 @@ void cpu_search_range(uint128 start, uint128 end,
 
         CollatzStats stats;
         if (curr >= uint128(1 << POLY_WIDTH)) {
-            stats = compute_collatz_poly(curr);
+            stats = compute_collatz_poly(curr, global_peaks.current_max_steps);
         } else {
             stats = compute_collatz(curr);
         }
@@ -636,7 +639,7 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
 
             CollatzStats stats;
             if (curr >= uint128(1 << POLY_WIDTH)) {
-                stats = compute_collatz_poly(curr);
+                stats = compute_collatz_poly(curr, global_peaks.current_max_steps);
             } else {
                 stats = compute_collatz(curr);
             }
