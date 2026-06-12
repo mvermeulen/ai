@@ -94,7 +94,31 @@ The GPU results confirm that the optimization delivers a substantial speedup on 
 
 ---
 
-## 5. Recommendation
+## 5. CPU 64-bit Loop Transition Optimization
 
-*   **CPU Backend**: Keep the optimization **disabled**. Preserve the simple, instruction-light baseline loop.
+We implemented and evaluated another CPU optimization: transitioning the trajectory calculation from 128-bit `uint128` operations to native 64-bit `uint64_t` operations inside `compute_collatz_poly` once the value drops below $2^{32}$. 
+
+At this point in the trajectory:
+1. The value is guaranteed to have dropped below the starting range `n` (since for Block index $\ge 1$, all search values are $\ge 2^{32}$). Thus, `dropped_below_start` is true and peak tracking (`max_value`) is no longer required.
+2. The stopping time has been resolved (`has_stopped_sigma = true`), so we do not need to track `stopping_time`.
+3. The remaining operations are guaranteed to fit within 64-bit types without overflow.
+
+By switching from 128-bit multi-precision loop steps to a native 64-bit loop body, we bypass the overhead of `uint128` operations and compiler emulation.
+
+### Performance Results (Block 100, Range: 5,000,000 values)
+
+| Configuration | Throughput (numbers/s) | Speedup |
+| :--- | :--- | :--- |
+| **CPU Baseline** | **6.95 M numbers/s** (0.1631 s) | **1.00x** (Baseline) |
+| **CPU 64-bit Optimized** | **10.53 M numbers/s** (0.1076 s) | **1.515x** (51.5% speedup) |
+
+This demonstrates that transitioning to native 64-bit types as early as possible yields a significant performance boost on the CPU.
+
+---
+
+## 6. Recommendation
+
+*   **CPU Backend**:
+    *   Keep the polynomial trajectory jump (`fpoly`) optimization **disabled** due to math and branching overhead.
+    *   **Enable** the 64-bit loop transition optimization inside `compute_collatz_poly`. It delivers a **1.51x speedup** on Block 100 search ranges.
 *   **GPU Backends**: **Enable** the `fpoly8` trajectory jump optimization on both the HIP and Vulkan backends. It provides a robust speedup (1.2x - 1.5x) that scales positively into very large search ranges.
