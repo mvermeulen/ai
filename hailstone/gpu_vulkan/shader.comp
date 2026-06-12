@@ -602,6 +602,25 @@ void main() {
 
                         // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
                         while (greater_than(curr, limit) && !overflowed) {
+                            if (curr.high == 0UL) {
+                                if (steps + 1050 < init_max_steps) {
+                                    curr = one;
+                                    break;
+                                }
+                                uint64_t curr_64 = curr.low;
+                                while (curr_64 >= 256UL) {
+                                    uint r = uint(curr_64 & 255UL);
+                                    poly p = fpoly_table.polys[r];
+                                    uint64_t next_val = (curr_64 >> 8) * uint64_t(p.mul3) + uint64_t(p.add);
+                                    uint extra_div = ctz64(next_val);
+                                    curr_64 = next_val >> extra_div;
+                                    steps += p.steps + extra_div;
+                                }
+                                curr.low = curr_64;
+                                curr.high = 0UL;
+                                break;
+                            }
+
                             uint r = uint(curr.low & 255UL);
                             poly p = fpoly_table.polys[r];
 

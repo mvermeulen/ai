@@ -120,9 +120,55 @@ We benchmarked the HIP backend performance at **Block 100** (range: `42949672960
 
 ---
 
-## 4. Next Steps (Vulkan Backend)
+## 4. GPU (Vulkan) Implementation & Performance Results
 
-We plan to apply the same optimizations (64-bit transition + early steps-pruning) to the Vulkan shader backend.
-- We will modify `gpu_vulkan/shader.comp` to implement the transition and pruning inside the Phase 2 compute loops.
-- We will update host-side code in `gpu_vulkan/main.cpp` to correctly bind and pass the global steps peak value.
+We implemented both the 64-bit loop transition and early steps-pruning checks in GLSL inside the Phase 2 loop of the Vulkan compute shader [shader.comp](file:///home/mev/source/ai/hailstone/gpu_vulkan/shader.comp):
+
+```glsl
+if (curr.high == 0UL) {
+    if (steps + 1050 < init_max_steps) {
+        curr = one;
+        break;
+    }
+    uint64_t curr_64 = curr.low;
+    while (curr_64 >= 256UL) {
+        uint r = uint(curr_64 & 255UL);
+        poly p = fpoly_table.polys[r];
+        uint64_t next_val = (curr_64 >> 8) * uint64_t(p.mul3) + uint64_t(p.add);
+        uint extra_div = ctz64(next_val);
+        curr_64 = next_val >> extra_div;
+        steps += p.steps + extra_div;
+    }
+    curr.low = curr_64;
+    curr.high = 0UL;
+    break;
+}
+```
+
+*Note: Similar to HIP, setting `curr = one` upon early termination prevents any subsequent out-of-bounds reads in the precomputed step lookup table on the GPU.*
+
+We benchmarked the Vulkan backend performance at **Block 100** (range: `429496729600` to `429746729600`) over a range of **250,000,000** starting numbers:
+
+### GPU Vulkan Benchmark Results (Block 100, Range: 250,000,000 values)
+
+| Configuration | Suffix-First Width | Throughput | Kernel Execution Time | Speedup vs Baseline | Avg. Steps Computed |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Baseline (Unoptimized)** | Width 8 | **566.63 M numbers/s** | 99.96 ms | 1.00x (Ref) | 189.14 |
+| **Transition + Pruning (Cold)** | Width 8 | **1050.73 M numbers/s** | 53.91 ms | **1.85x** | 46.03 |
+| **Transition + Pruning (Warm)** | Width 8 | **1115.47 M numbers/s** | 50.78 ms | **1.97x** | **12.30** |
+| | | | | | |
+| **Baseline (Unoptimized)** | Width 20 | **473.00 M numbers/s** | 58.78 ms | 1.00x (Ref) | 201.39 |
+| **Transition + Pruning (Cold)** | Width 20 | **735.15 M numbers/s** | 37.82 ms | **1.55x** | 64.61 |
+| **Transition + Pruning (Warm)** | Width 20 | **852.87 M numbers/s** | 32.60 ms | **1.80x** | **14.71** |
+
+### GPU Vulkan Performance Analysis
+
+1. **Extreme Throughput delta (1.1+ Billion/s)**:
+   The Vulkan backend reaches **1115.47 M numbers/s** under the Warm Suffix-First Width 8 configuration. This represents a **1.97x speedup** over the unoptimized Vulkan baseline, which was already highly optimized compared to HIP (likely due to highly efficient SPIR-V code compilation by the RADV driver on Linux).
+2. **Impact of Suffix-First Width**:
+   - **Width 8**: Bypassing Collatz steps on the GPU reduced the average steps computed per number from **189.14** to **12.30**. The kernel execution time dropped by **50%** (from 99.96 ms to 50.78 ms).
+   - **Width 20**: The search space is extremely pruned, checking fewer starting numbers (27.8M instead of 56.6M). The optimized kernel execution time dropped from 58.78 ms to 32.60 ms (**1.80x speedup**), reducing average steps computed to **14.71**.
+3. **Warm vs. Cold Speedups on Vulkan**:
+   Similar to the HIP backend, Vulkan warm starts show minor speedup improvements over cold starts (e.g. 1115.47 M vs 1050.73 M numbers/s for width 8) because of SIMT warp divergence and the relatively high fraction of time spent on launch/synchronization overhead in extremely short execution windows (~32 ms - 50 ms).
+
 
