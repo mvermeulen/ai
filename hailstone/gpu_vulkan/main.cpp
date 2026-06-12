@@ -11,6 +11,16 @@
 #include <map>
 #include <vulkan/vulkan.h>
 #include "steps_table.h"
+#define POLY_WIDTH 8
+#include "fpoly_table.h"
+
+struct poly_gpu {
+    uint32_t mul3;
+    uint32_t div2;
+    uint32_t steps;
+    uint32_t add;
+    uint32_t smaller;
+};
 
 #define MAX_PEAK_RECORDS 65536
 
@@ -957,13 +967,14 @@ int main(int argc, char* argv[]) {
         MAX_PEAK_RECORDS * sizeof(PeakRecordGpu),
         sizeof(GlobalMetricsGpu),
         256 * sizeof(uint32_t),
-        allowed_suffixes_buf_size
+        allowed_suffixes_buf_size,
+        256 * sizeof(poly_gpu)
     };
 
-    std::vector<VkBuffer> buffers(9);
-    std::vector<VkDeviceMemory> bufferMemories(9);
+    std::vector<VkBuffer> buffers(10);
+    std::vector<VkDeviceMemory> bufferMemories(10);
 
-    for (size_t i = 0; i < 9; ++i) {
+    for (size_t i = 0; i < 10; ++i) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = bufferSizes[i];
@@ -1005,14 +1016,30 @@ int main(int argc, char* argv[]) {
         vkUnmapMemory(device, bufferMemories[8]);
     }
 
+    // Copy fpoly8 table to bufferMemories[9] once at startup
+    {
+        poly_gpu fpoly_u32[256];
+        for (int i = 0; i < 256; ++i) {
+            fpoly_u32[i].mul3 = static_cast<uint32_t>(fpoly8[i].mul3);
+            fpoly_u32[i].div2 = static_cast<uint32_t>(fpoly8[i].div2);
+            fpoly_u32[i].steps = static_cast<uint32_t>(fpoly8[i].steps);
+            fpoly_u32[i].add = static_cast<uint32_t>(fpoly8[i].add);
+            fpoly_u32[i].smaller = static_cast<uint32_t>(fpoly8[i].smaller);
+        }
+        void* data;
+        VK_CHECK(vkMapMemory(device, bufferMemories[9], 0, bufferSizes[9], 0, &data));
+        std::memcpy(data, fpoly_u32, bufferSizes[9]);
+        vkUnmapMemory(device, bufferMemories[9]);
+    }
+
     double mem_transfer_time_ms = 0.0;
     double total_kernel_time_ms = 0.0;
 
     // Master metrics on host (masterPeaks, maxValPeaks, stepsPeaks, sigmaPeaks are defined at start of main)
 
     // 6. Create descriptor pool & sets
-    std::vector<VkDescriptorSetLayoutBinding> bindings(9);
-    for (uint32_t i = 0; i < 9; ++i) {
+    std::vector<VkDescriptorSetLayoutBinding> bindings(10);
+    for (uint32_t i = 0; i < 10; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindings[i].descriptorCount = 1;
@@ -1021,14 +1048,14 @@ int main(int argc, char* argv[]) {
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 9;
+    layoutInfo.bindingCount = 10;
     layoutInfo.pBindings = bindings.data();
     VkDescriptorSetLayout descriptorSetLayout;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout));
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize.descriptorCount = 9;
+    poolSize.descriptorCount = 10;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1047,9 +1074,9 @@ int main(int argc, char* argv[]) {
     VK_CHECK(vkAllocateDescriptorSets(device, &allocSetInfo, &descriptorSet));
 
     // Update descriptor sets with our buffers
-    std::vector<VkDescriptorBufferInfo> bufferInfos(9);
-    std::vector<VkWriteDescriptorSet> descriptorWrites(9);
-    for (uint32_t i = 0; i < 9; ++i) {
+    std::vector<VkDescriptorBufferInfo> bufferInfos(10);
+    std::vector<VkWriteDescriptorSet> descriptorWrites(10);
+    for (uint32_t i = 0; i < 10; ++i) {
         bufferInfos[i].buffer = buffers[i];
         bufferInfos[i].offset = 0;
         bufferInfos[i].range = bufferSizes[i];
@@ -1062,7 +1089,7 @@ int main(int argc, char* argv[]) {
         descriptorWrites[i].descriptorCount = 1;
         descriptorWrites[i].pBufferInfo = &bufferInfos[i];
     }
-    vkUpdateDescriptorSets(device, 9, descriptorWrites.data(), 0, nullptr);
+    vkUpdateDescriptorSets(device, 10, descriptorWrites.data(), 0, nullptr);
 
     // 7. Create Pipeline Layout with Push Constants
     VkPushConstantRange pushConstantRange{};
@@ -1264,7 +1291,7 @@ int main(int argc, char* argv[]) {
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
-    for (size_t i = 0; i < 9; ++i) {
+    for (size_t i = 0; i < 10; ++i) {
         vkDestroyBuffer(device, buffers[i], nullptr);
         vkFreeMemory(device, bufferMemories[i], nullptr);
     }

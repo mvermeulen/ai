@@ -1,5 +1,9 @@
 #include "hip_search.hip.h"
 #include "steps_table.h"
+#ifndef POLY_WIDTH
+#define POLY_WIDTH 8
+#endif
+#include "fpoly_table.h"
 #include <hip/hip_runtime.h>
 #include <iostream>
 #include <chrono>
@@ -8,6 +12,27 @@
 #include <map>
 
 __constant__ uint32_t d_steps_table[256];
+__constant__ poly d_fpoly_table[256];
+
+__device__ inline uint128 mul_uint64_check_overflow(uint128 a, uint64_t b, bool& overflow) {
+    if (b == 0) {
+        overflow = false;
+        return uint128(0, 0);
+    }
+    unsigned __int128 low_prod = (unsigned __int128)a.low * b;
+    uint64_t low_prod_low = (uint64_t)low_prod;
+    uint64_t low_prod_high = (uint64_t)(low_prod >> 64);
+
+    unsigned __int128 high_prod = (unsigned __int128)a.high * b;
+    unsigned __int128 final_high = high_prod + low_prod_high;
+
+    if (final_high > 0xFFFFFFFFFFFFFFFFULL) {
+        overflow = true;
+        return uint128(0, 0);
+    }
+    overflow = false;
+    return uint128(low_prod_low, (uint64_t)final_high);
+}
 
 #define MAX_PEAK_RECORDS 65536
 
@@ -217,36 +242,87 @@ __global__ void collatz_search_kernel(
                         }
                     }
                 } else {
-                    while (curr >= uint128(256)) {
-                        bool overflow = false;
-                        uint128 next_val = mul3_add1(curr, overflow);
-                        if (overflow) {
-                            overflowed = true;
-                            break;
-                        }
-                        steps++;
-                        if (!dropped_below_start) {
-                            if (next_val > max_val) {
-                                max_val = next_val;
-                            }
-                        }
-                        int p = count_trailing_zeros(next_val);
-                        if (!has_stopped_sigma) {
-                            for (int k = 1; k <= p; ++k) {
-                                uint128 val_k = shift_right(next_val, k);
-                                if (val_k < n) {
-                                    stopping_time = t_steps + k;
-                                    has_stopped_sigma = true;
-                                    break;
+                    // Initial polynomial check and possible immediate jump
+                    bool init_odd = ((n.low & 1) != 0);
+                    if (init_odd && !dropped_below_start) {
+                        uint32_t initial_suffix = n.low & 255;
+                        poly init_p = d_fpoly_table[initial_suffix];
+                        if (init_p.smaller) {
+                            dropped_below_start = true;
+                            has_stopped_sigma = true;
+
+                            bool overflow = false;
+                            uint128 next_val = mul_uint64_check_overflow(shift_right(curr, 8), init_p.mul3, overflow);
+                            if (overflow) {
+                                overflowed = true;
+                            } else {
+                                next_val = add_check_overflow(next_val, uint128(init_p.add), overflow);
+                                if (overflow) {
+                                    overflowed = true;
+                                } else {
+                                    int extra_div = count_trailing_zeros(next_val);
+                                    curr = shift_right(next_val, extra_div);
+                                    steps += init_p.steps + extra_div;
                                 }
                             }
                         }
-                        next_val = shift_right(next_val, p);
-                        steps += p;
-                        t_steps += p;
-                        curr = next_val;
-                        if (curr < n) {
-                            dropped_below_start = true;
+                    }
+
+                    if (!overflowed) {
+                        // Phase 1 Loop: standard Collatz iterations before dropped_below_start is true
+                        while (curr >= uint128(256) && !dropped_below_start) {
+                            bool overflow = false;
+                            uint128 next_val = mul3_add1(curr, overflow);
+                            if (overflow) {
+                                overflowed = true;
+                                break;
+                            }
+                            steps++;
+
+                            if (next_val > max_val) {
+                                max_val = next_val;
+                            }
+
+                            int p = count_trailing_zeros(next_val);
+                            if (!has_stopped_sigma) {
+                                for (int k = 1; k <= p; ++k) {
+                                    uint128 val_k = shift_right(next_val, k);
+                                    if (val_k < n) {
+                                        stopping_time = t_steps + k;
+                                        has_stopped_sigma = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            next_val = shift_right(next_val, p);
+                            steps += p;
+                            t_steps += p;
+                            curr = next_val;
+                            if (curr < n) {
+                                dropped_below_start = true;
+                            }
+                        }
+
+                        // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
+                        while (curr >= uint128(256) && !overflowed) {
+                            uint32_t r = curr.low & 255;
+                            poly p = d_fpoly_table[r];
+                            
+                            bool overflow = false;
+                            uint128 next_val = mul_uint64_check_overflow(shift_right(curr, 8), p.mul3, overflow);
+                            if (overflow) {
+                                overflowed = true;
+                                break;
+                            }
+                            next_val = add_check_overflow(next_val, uint128(p.add), overflow);
+                            if (overflow) {
+                                overflowed = true;
+                                break;
+                            }
+                            
+                            int extra_div = count_trailing_zeros(next_val);
+                            curr = shift_right(next_val, extra_div);
+                            steps += p.steps + extra_div;
                         }
                     }
                     if (!overflowed && curr > one) {
@@ -416,6 +492,7 @@ void hip_search_range(
             steps_u32[i] = static_cast<uint32_t>(steps8[i]);
         }
         HIP_CHECK(hipMemcpyToSymbol(d_steps_table, steps_u32, 256 * sizeof(uint32_t)));
+        HIP_CHECK(hipMemcpyToSymbol(d_fpoly_table, fpoly8, 256 * sizeof(poly)));
         steps_copied = true;
     }
 
@@ -906,36 +983,87 @@ __global__ void collatz_search_kernel_suffix_first(
                         }
                     }
                 } else {
-                    while (curr >= uint128(256)) {
-                        bool overflow = false;
-                        uint128 next_val = mul3_add1(curr, overflow);
-                        if (overflow) {
-                            overflowed = true;
-                            break;
-                        }
-                        steps++;
-                        if (!dropped_below_start) {
-                            if (next_val > max_val) {
-                                max_val = next_val;
-                            }
-                        }
-                        int p = count_trailing_zeros(next_val);
-                        if (!has_stopped_sigma) {
-                            for (int k = 1; k <= p; ++k) {
-                                uint128 val_k = shift_right(next_val, k);
-                                if (val_k < n) {
-                                    stopping_time = t_steps + k;
-                                    has_stopped_sigma = true;
-                                    break;
+                    // Initial polynomial check and possible immediate jump
+                    bool init_odd = ((n.low & 1) != 0);
+                    if (init_odd && !dropped_below_start) {
+                        uint32_t initial_suffix = n.low & 255;
+                        poly init_p = d_fpoly_table[initial_suffix];
+                        if (init_p.smaller) {
+                            dropped_below_start = true;
+                            has_stopped_sigma = true;
+
+                            bool overflow = false;
+                            uint128 next_val = mul_uint64_check_overflow(shift_right(curr, 8), init_p.mul3, overflow);
+                            if (overflow) {
+                                overflowed = true;
+                            } else {
+                                next_val = add_check_overflow(next_val, uint128(init_p.add), overflow);
+                                if (overflow) {
+                                    overflowed = true;
+                                } else {
+                                    int extra_div = count_trailing_zeros(next_val);
+                                    curr = shift_right(next_val, extra_div);
+                                    steps += init_p.steps + extra_div;
                                 }
                             }
                         }
-                        next_val = shift_right(next_val, p);
-                        steps += p;
-                        t_steps += p;
-                        curr = next_val;
-                        if (curr < n) {
-                            dropped_below_start = true;
+                    }
+
+                    if (!overflowed) {
+                        // Phase 1 Loop: standard Collatz iterations before dropped_below_start is true
+                        while (curr >= uint128(256) && !dropped_below_start) {
+                            bool overflow = false;
+                            uint128 next_val = mul3_add1(curr, overflow);
+                            if (overflow) {
+                                overflowed = true;
+                                break;
+                            }
+                            steps++;
+
+                            if (next_val > max_val) {
+                                max_val = next_val;
+                            }
+
+                            int p = count_trailing_zeros(next_val);
+                            if (!has_stopped_sigma) {
+                                for (int k = 1; k <= p; ++k) {
+                                    uint128 val_k = shift_right(next_val, k);
+                                    if (val_k < n) {
+                                        stopping_time = t_steps + k;
+                                        has_stopped_sigma = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            next_val = shift_right(next_val, p);
+                            steps += p;
+                            t_steps += p;
+                            curr = next_val;
+                            if (curr < n) {
+                                dropped_below_start = true;
+                            }
+                        }
+
+                        // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
+                        while (curr >= uint128(256) && !overflowed) {
+                            uint32_t r = curr.low & 255;
+                            poly p = d_fpoly_table[r];
+                            
+                            bool overflow = false;
+                            uint128 next_val = mul_uint64_check_overflow(shift_right(curr, 8), p.mul3, overflow);
+                            if (overflow) {
+                                overflowed = true;
+                                break;
+                            }
+                            next_val = add_check_overflow(next_val, uint128(p.add), overflow);
+                            if (overflow) {
+                                overflowed = true;
+                                break;
+                            }
+                            
+                            int extra_div = count_trailing_zeros(next_val);
+                            curr = shift_right(next_val, extra_div);
+                            steps += p.steps + extra_div;
                         }
                     }
                     if (!overflowed && curr > one) {
@@ -1079,6 +1207,7 @@ void hip_search_range_suffix_first(
             steps_u32[i] = static_cast<uint32_t>(steps8[i]);
         }
         HIP_CHECK(hipMemcpyToSymbol(d_steps_table, steps_u32, 256 * sizeof(uint32_t)));
+        HIP_CHECK(hipMemcpyToSymbol(d_fpoly_table, fpoly8, 256 * sizeof(poly)));
         steps_copied = true;
     }
 
