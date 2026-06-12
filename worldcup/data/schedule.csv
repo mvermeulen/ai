@@ -1,76 +1,76 @@
 match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty_score,away_penalty_score,status,host_city
 1,group,A,2026-06-11,MEX,RSA,2,0,-1,-1,final,Guadalajara
-2,group,A,2026-06-12,KOR,CZE,2,1,-1,-1,final,Monterrey
-3,group,B,2026-06-13,CAN,SUI,-1,-1,-1,-1,scheduled,Vancouver
-4,group,B,2026-06-14,QAT,BIH,-1,-1,-1,-1,scheduled,Toronto
-5,group,C,2026-06-15,BRA,MAR,-1,-1,-1,-1,scheduled,New York/New Jersey
-6,group,C,2026-06-11,SCO,HAI,-1,-1,-1,-1,scheduled,Boston
+2,group,A,2026-06-11,KOR,CZE,2,1,-1,-1,final,Monterrey
+3,group,B,2026-06-24,CAN,SUI,-1,-1,-1,-1,scheduled,Vancouver
+4,group,B,2026-06-24,QAT,BIH,-1,-1,-1,-1,scheduled,Toronto
+5,group,C,2026-06-13,BRA,MAR,-1,-1,-1,-1,scheduled,New York/New Jersey
+6,group,C,2026-06-13,SCO,HAI,-1,-1,-1,-1,scheduled,Boston
 7,group,D,2026-06-12,USA,PAR,0,0,-1,-1,upcoming,Seattle
-8,group,D,2026-06-13,AUS,TUR,-1,-1,-1,-1,scheduled,San Francisco
-9,group,E,2026-06-14,GER,ECU,-1,-1,-1,-1,scheduled,Houston
-10,group,E,2026-06-15,CIV,CUW,-1,-1,-1,-1,scheduled,Dallas
-11,group,F,2026-06-11,NED,JPN,-1,-1,-1,-1,scheduled,Houston
-12,group,F,2026-06-12,TUN,SWE,-1,-1,-1,-1,scheduled,Miami
-13,group,G,2026-06-13,BEL,IRN,-1,-1,-1,-1,scheduled,New York/New Jersey
-14,group,G,2026-06-14,EGY,NZL,-1,-1,-1,-1,scheduled,Philadelphia
-15,group,H,2026-06-15,ESP,URU,-1,-1,-1,-1,scheduled,Miami
-16,group,H,2026-06-11,KSA,CPV,-1,-1,-1,-1,scheduled,Boston
-17,group,I,2026-06-12,FRA,SEN,-1,-1,-1,-1,scheduled,Toronto
-18,group,I,2026-06-13,NOR,IRQ,-1,-1,-1,-1,scheduled,Seattle
-19,group,J,2026-06-14,ARG,AUT,0,0,-1,-1,upcoming,Houston
-20,group,J,2026-06-15,ALG,JOR,-1,-1,-1,-1,scheduled,Kansas City
-21,group,K,2026-06-11,POR,COL,-1,-1,-1,-1,scheduled,San Francisco
-22,group,K,2026-06-12,UZB,COD,-1,-1,-1,-1,scheduled,Los Angeles
-23,group,L,2026-06-13,ENG,CRO,-1,-1,-1,-1,scheduled,Boston
-24,group,L,2026-06-14,PAN,GHA,-1,-1,-1,-1,scheduled,Atlanta
-25,group,A,2026-06-16,MEX,KOR,-1,-1,-1,-1,scheduled,Guadalajara
-26,group,A,2026-06-17,RSA,CZE,-1,-1,-1,-1,scheduled,Monterrey
+8,group,D,2026-06-14,AUS,TUR,-1,-1,-1,-1,scheduled,San Francisco
+9,group,E,2026-06-25,GER,ECU,-1,-1,-1,-1,scheduled,Houston
+10,group,E,2026-06-25,CIV,CUW,-1,-1,-1,-1,scheduled,Dallas
+11,group,F,2026-06-14,NED,JPN,-1,-1,-1,-1,scheduled,Houston
+12,group,F,2026-06-14,TUN,SWE,-1,-1,-1,-1,scheduled,Miami
+13,group,G,2026-06-21,BEL,IRN,-1,-1,-1,-1,scheduled,New York/New Jersey
+14,group,G,2026-06-21,EGY,NZL,-1,-1,-1,-1,scheduled,Philadelphia
+15,group,H,2026-06-26,ESP,URU,-1,-1,-1,-1,scheduled,Miami
+16,group,H,2026-06-26,KSA,CPV,-1,-1,-1,-1,scheduled,Boston
+17,group,I,2026-06-16,FRA,SEN,-1,-1,-1,-1,scheduled,Toronto
+18,group,I,2026-06-16,NOR,IRQ,-1,-1,-1,-1,scheduled,Seattle
+19,group,J,2026-06-22,ARG,AUT,0,0,-1,-1,upcoming,Houston
+20,group,J,2026-06-22,ALG,JOR,-1,-1,-1,-1,scheduled,Kansas City
+21,group,K,2026-06-27,POR,COL,-1,-1,-1,-1,scheduled,San Francisco
+22,group,K,2026-06-27,UZB,COD,-1,-1,-1,-1,scheduled,Los Angeles
+23,group,L,2026-06-17,ENG,CRO,-1,-1,-1,-1,scheduled,Boston
+24,group,L,2026-06-17,PAN,GHA,-1,-1,-1,-1,scheduled,Atlanta
+25,group,A,2026-06-18,MEX,KOR,-1,-1,-1,-1,scheduled,Guadalajara
+26,group,A,2026-06-18,RSA,CZE,-1,-1,-1,-1,scheduled,Monterrey
 27,group,B,2026-06-18,CAN,QAT,-1,-1,-1,-1,scheduled,Vancouver
-28,group,B,2026-06-19,SUI,BIH,-1,-1,-1,-1,scheduled,Toronto
-29,group,C,2026-06-20,BRA,SCO,-1,-1,-1,-1,scheduled,New York/New Jersey
-30,group,C,2026-06-21,MAR,HAI,-1,-1,-1,-1,scheduled,Boston
-31,group,D,2026-06-16,USA,AUS,-1,-1,-1,-1,scheduled,Seattle
-32,group,D,2026-06-17,PAR,TUR,-1,-1,-1,-1,scheduled,San Francisco
-33,group,E,2026-06-18,GER,CIV,-1,-1,-1,-1,scheduled,Houston
-34,group,E,2026-06-19,ECU,CUW,-1,-1,-1,-1,scheduled,Dallas
-35,group,F,2026-06-20,NED,TUN,-1,-1,-1,-1,scheduled,Houston
-36,group,F,2026-06-21,JPN,SWE,-1,-1,-1,-1,scheduled,Miami
-37,group,G,2026-06-16,BEL,EGY,-1,-1,-1,-1,scheduled,New York/New Jersey
-38,group,G,2026-06-17,IRN,NZL,-1,-1,-1,-1,scheduled,Philadelphia
-39,group,H,2026-06-18,ESP,KSA,-1,-1,-1,-1,scheduled,Miami
-40,group,H,2026-06-19,URU,CPV,-1,-1,-1,-1,scheduled,Boston
-41,group,I,2026-06-20,FRA,NOR,-1,-1,-1,-1,scheduled,Toronto
-42,group,I,2026-06-21,SEN,IRQ,-1,-1,-1,-1,scheduled,Seattle
+28,group,B,2026-06-18,SUI,BIH,-1,-1,-1,-1,scheduled,Toronto
+29,group,C,2026-06-24,BRA,SCO,-1,-1,-1,-1,scheduled,New York/New Jersey
+30,group,C,2026-06-24,MAR,HAI,-1,-1,-1,-1,scheduled,Boston
+31,group,D,2026-06-19,USA,AUS,-1,-1,-1,-1,scheduled,Seattle
+32,group,D,2026-06-19,PAR,TUR,-1,-1,-1,-1,scheduled,San Francisco
+33,group,E,2026-06-20,GER,CIV,-1,-1,-1,-1,scheduled,Houston
+34,group,E,2026-06-20,ECU,CUW,-1,-1,-1,-1,scheduled,Dallas
+35,group,F,2026-06-25,NED,TUN,-1,-1,-1,-1,scheduled,Houston
+36,group,F,2026-06-25,JPN,SWE,-1,-1,-1,-1,scheduled,Miami
+37,group,G,2026-06-15,BEL,EGY,-1,-1,-1,-1,scheduled,New York/New Jersey
+38,group,G,2026-06-15,IRN,NZL,-1,-1,-1,-1,scheduled,Philadelphia
+39,group,H,2026-06-21,ESP,KSA,-1,-1,-1,-1,scheduled,Miami
+40,group,H,2026-06-21,URU,CPV,-1,-1,-1,-1,scheduled,Boston
+41,group,I,2026-06-26,FRA,NOR,-1,-1,-1,-1,scheduled,Toronto
+42,group,I,2026-06-26,SEN,IRQ,-1,-1,-1,-1,scheduled,Seattle
 43,group,J,2026-06-16,ARG,ALG,-1,-1,-1,-1,scheduled,Houston
 44,group,J,2026-06-17,AUT,JOR,-1,-1,-1,-1,scheduled,Kansas City
-45,group,K,2026-06-18,POR,UZB,-1,-1,-1,-1,scheduled,San Francisco
-46,group,K,2026-06-19,COL,COD,-1,-1,-1,-1,scheduled,Los Angeles
-47,group,L,2026-06-20,ENG,PAN,-1,-1,-1,-1,scheduled,Boston
-48,group,L,2026-06-21,CRO,GHA,-1,-1,-1,-1,scheduled,Atlanta
-49,group,A,2026-06-22,MEX,CZE,-1,-1,-1,-1,scheduled,Guadalajara
-50,group,A,2026-06-23,RSA,KOR,-1,-1,-1,-1,scheduled,Monterrey
-51,group,B,2026-06-24,CAN,BIH,0,0,-1,-1,upcoming,Vancouver
-52,group,B,2026-06-25,SUI,QAT,-1,-1,-1,-1,scheduled,Toronto
-53,group,C,2026-06-26,BRA,HAI,-1,-1,-1,-1,scheduled,New York/New Jersey
-54,group,C,2026-06-27,MAR,SCO,-1,-1,-1,-1,scheduled,Boston
-55,group,D,2026-06-22,USA,TUR,-1,-1,-1,-1,scheduled,Seattle
-56,group,D,2026-06-23,PAR,AUS,-1,-1,-1,-1,scheduled,San Francisco
-57,group,E,2026-06-24,GER,CUW,-1,-1,-1,-1,scheduled,Houston
-58,group,E,2026-06-25,ECU,CIV,-1,-1,-1,-1,scheduled,Dallas
-59,group,F,2026-06-26,NED,SWE,-1,-1,-1,-1,scheduled,Houston
-60,group,F,2026-06-27,JPN,TUN,-1,-1,-1,-1,scheduled,Miami
-61,group,G,2026-06-22,BEL,NZL,-1,-1,-1,-1,scheduled,New York/New Jersey
-62,group,G,2026-06-23,IRN,EGY,-1,-1,-1,-1,scheduled,Philadelphia
-63,group,H,2026-06-24,ESP,CPV,-1,-1,-1,-1,scheduled,Miami
-64,group,H,2026-06-25,URU,KSA,-1,-1,-1,-1,scheduled,Boston
-65,group,I,2026-06-26,FRA,IRQ,0,0,-1,-1,upcoming,Toronto
-66,group,I,2026-06-27,SEN,NOR,-1,-1,-1,-1,scheduled,Seattle
-67,group,J,2026-06-22,ARG,JOR,-1,-1,-1,-1,scheduled,Houston
-68,group,J,2026-06-23,AUT,ALG,-1,-1,-1,-1,scheduled,Kansas City
-69,group,K,2026-06-24,POR,COD,-1,-1,-1,-1,scheduled,San Francisco
-70,group,K,2026-06-25,COL,UZB,-1,-1,-1,-1,scheduled,Los Angeles
-71,group,L,2026-06-26,ENG,GHA,-1,-1,-1,-1,scheduled,Boston
-72,group,L,2026-06-27,CRO,PAN,-1,-1,-1,-1,scheduled,Atlanta
+45,group,K,2026-06-23,POR,UZB,-1,-1,-1,-1,scheduled,San Francisco
+46,group,K,2026-06-23,COL,COD,-1,-1,-1,-1,scheduled,Los Angeles
+47,group,L,2026-06-27,ENG,PAN,-1,-1,-1,-1,scheduled,Boston
+48,group,L,2026-06-27,CRO,GHA,-1,-1,-1,-1,scheduled,Atlanta
+49,group,A,2026-06-24,MEX,CZE,-1,-1,-1,-1,scheduled,Guadalajara
+50,group,A,2026-06-24,RSA,KOR,-1,-1,-1,-1,scheduled,Monterrey
+51,group,B,2026-06-12,CAN,BIH,0,0,-1,-1,upcoming,Vancouver
+52,group,B,2026-06-13,SUI,QAT,-1,-1,-1,-1,scheduled,Toronto
+53,group,C,2026-06-19,BRA,HAI,-1,-1,-1,-1,scheduled,New York/New Jersey
+54,group,C,2026-06-19,MAR,SCO,-1,-1,-1,-1,scheduled,Boston
+55,group,D,2026-06-25,USA,TUR,-1,-1,-1,-1,scheduled,Seattle
+56,group,D,2026-06-25,PAR,AUS,-1,-1,-1,-1,scheduled,San Francisco
+57,group,E,2026-06-14,GER,CUW,-1,-1,-1,-1,scheduled,Houston
+58,group,E,2026-06-14,ECU,CIV,-1,-1,-1,-1,scheduled,Dallas
+59,group,F,2026-06-20,NED,SWE,-1,-1,-1,-1,scheduled,Houston
+60,group,F,2026-06-21,JPN,TUN,-1,-1,-1,-1,scheduled,Miami
+61,group,G,2026-06-26,BEL,NZL,-1,-1,-1,-1,scheduled,New York/New Jersey
+62,group,G,2026-06-26,IRN,EGY,-1,-1,-1,-1,scheduled,Philadelphia
+63,group,H,2026-06-15,ESP,CPV,-1,-1,-1,-1,scheduled,Miami
+64,group,H,2026-06-15,URU,KSA,-1,-1,-1,-1,scheduled,Boston
+65,group,I,2026-06-22,FRA,IRQ,0,0,-1,-1,upcoming,Toronto
+66,group,I,2026-06-22,SEN,NOR,-1,-1,-1,-1,scheduled,Seattle
+67,group,J,2026-06-27,ARG,JOR,-1,-1,-1,-1,scheduled,Houston
+68,group,J,2026-06-27,AUT,ALG,-1,-1,-1,-1,scheduled,Kansas City
+69,group,K,2026-06-17,POR,COD,-1,-1,-1,-1,scheduled,San Francisco
+70,group,K,2026-06-17,COL,UZB,-1,-1,-1,-1,scheduled,Los Angeles
+71,group,L,2026-06-23,ENG,GHA,-1,-1,-1,-1,scheduled,Boston
+72,group,L,2026-06-23,CRO,PAN,-1,-1,-1,-1,scheduled,Atlanta
 73,knockout_r32,N/A,2026-06-28,RUNNER_UP_GROUP_A,RUNNER_UP_GROUP_B,-1,-1,-1,-1,scheduled,Los Angeles
 74,knockout_r32,N/A,2026-06-29,WINNER_GROUP_E,THIRD_GROUP_A_B_C_D_F,-1,-1,-1,-1,scheduled,Boston
 75,knockout_r32,N/A,2026-06-29,WINNER_GROUP_F,RUNNER_UP_GROUP_C,-1,-1,-1,-1,scheduled,Monterrey
