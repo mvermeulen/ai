@@ -28,7 +28,18 @@ struct FileDeleter {
     }
 };
 
-std::string run_command(const std::string& cmd) {
+std::string run_command(const std::string& original_cmd) {
+    std::string cmd = original_cmd;
+    if (cmd.find("--cutoff-width") == std::string::npos && 
+        cmd.find("--cutoff_width") == std::string::npos &&
+        cmd.find("--help") == std::string::npos &&
+        cmd.find("-h") == std::string::npos) {
+        if (cmd.rfind("./hailstone_cpu", 0) == 0) {
+            cmd.insert(15, " --cutoff-width 0");
+        } else if (cmd.rfind("./hailstone_hip", 0) == 0) {
+            cmd.insert(15, " --cutoff-width 0");
+        }
+    }
     std::array<char, 128> buffer;
     std::string result;
     std::unique_ptr<FILE, FileDeleter> pipe(popen(cmd.c_str(), "r"));
@@ -414,6 +425,31 @@ int main() {
         }
 
         std::remove("interop_stress.chk");
+    }
+
+    // 5. Scenario 3: Suffix-First Search Correctness & Alignment (CPU vs HIP)
+    std::cout << "\nRunning Scenario 3: Suffix-First search alignment (CPU vs HIP)..." << std::endl;
+    if (file_exists("./hailstone_cpu") && file_exists("./hailstone_hip")) {
+        for (int w : {8, 12, 16, 20}) {
+            std::cout << "Comparing CPU and HIP suffix-first searches with width " << w << "..." << std::endl;
+            std::string cpu_sf_cmd = "./hailstone_cpu --cutoff-width " + std::to_string(w) + " --no-checkpoint 3 50000";
+            std::string hip_sf_cmd = "./hailstone_hip --cutoff-width " + std::to_string(w) + " --no-checkpoint 3 50000";
+            
+            try {
+                RunResults cpu_sf_res = parse_output("CPU_SF_W" + std::to_string(w), run_command(cpu_sf_cmd));
+                RunResults hip_sf_res = parse_output("HIP_SF_W" + std::to_string(w), run_command(hip_sf_cmd));
+                
+                if (compare_results(cpu_sf_res, hip_sf_res)) {
+                    std::cout << "  [PASS] CPU and HIP suffix-first searches with width " << w << " match exactly." << std::endl;
+                } else {
+                    std::cout << "  [FAIL] Suffix-first CPU/HIP mismatch at width " << w << "!" << std::endl;
+                    all_passed = false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "  [FAIL] Error running suffix-first alignment tests at width " << w << ": " << e.what() << std::endl;
+                all_passed = false;
+            }
+        }
     }
 
     if (all_passed) {

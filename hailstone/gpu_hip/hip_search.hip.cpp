@@ -5,6 +5,7 @@
 #include <chrono>
 #include <algorithm>
 #include <stdexcept>
+#include <map>
 
 __constant__ uint32_t d_steps_table[256];
 
@@ -625,3 +626,643 @@ void hip_search_blocks_gt_0(
     }
     hip_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
 }
+
+std::vector<uint32_t> generate_allowed_suffixes(int width) {
+    int total_suffixes = 1 << width;
+    struct PolyKey {
+        uint32_t pow2;
+        uint32_t pow3;
+        uint64_t add;
+        bool operator<(const PolyKey& o) const {
+            if (pow2 != o.pow2) return pow2 < o.pow2;
+            if (pow3 != o.pow3) return pow3 < o.pow3;
+            return add < o.add;
+        }
+    };
+
+    struct ClassInfo {
+        int first_suffix = -1;
+        bool has_even = false;
+    };
+    std::map<PolyKey, ClassInfo> classes;
+    std::vector<PolyKey> suffix_polys(total_suffixes);
+
+    for (int i = 0; i < total_suffixes; ++i) {
+        uint64_t bits = i;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+        }
+        PolyKey key{pow2, pow3, bits};
+        suffix_polys[i] = key;
+        
+        auto& info = classes[key];
+        if (info.first_suffix == -1) {
+            info.first_suffix = i;
+        }
+        if (i % 2 == 0) {
+            info.has_even = true;
+        }
+    }
+
+    std::vector<uint32_t> allowed;
+    for (int i = 0; i < total_suffixes; ++i) {
+        const auto& key = suffix_polys[i];
+        const auto& info = classes[key];
+        if (info.first_suffix == i && !info.has_even) {
+            allowed.push_back(i);
+        }
+    }
+    return allowed;
+}
+
+template <bool USE_64BIT>
+__global__ void collatz_search_kernel_suffix_first(
+    uint128 start_prefix,
+    uint128 start_val,
+    uint128 end_val,
+    uint32_t allowed_suffixes_size,
+    const uint32_t* d_allowed_suffixes,
+    int width,
+    uint64_t total_work_items,
+    PeakRecord* max_value_peaks,
+    int* max_value_count,
+    PeakRecord* steps_peaks,
+    int* steps_count,
+    PeakRecord* sigma_peaks,
+    int* sigma_count,
+    PeakState* global_peaks,
+    SearchMetrics* metrics
+) {
+    __shared__ uint64_t shared_max_val_low[256];
+    __shared__ uint64_t shared_max_val_high[256];
+    __shared__ uint32_t shared_steps[256];
+    __shared__ uint32_t shared_sigma[256];
+
+    uint128 init_max_val = global_peaks->current_max_value;
+    uint32_t init_max_steps = global_peaks->current_max_steps;
+    uint32_t init_max_sigma = global_peaks->current_max_sigma;
+
+    int l_id = threadIdx.x;
+    int g_id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    bool active_thread = (g_id < total_work_items);
+
+    uint128 n(0, 0);
+    uint64_t n_64 = 0ULL;
+    uint64_t start_64 = start_val.low;
+    uint64_t end_64 = end_val.low;
+
+    uint64_t prefix_index = g_id / allowed_suffixes_size;
+    uint32_t suffix_index = g_id % allowed_suffixes_size;
+    
+    if (active_thread) {
+        uint32_t suffix = d_allowed_suffixes[suffix_index];
+        if (USE_64BIT) {
+            uint64_t prefix = start_prefix.low + prefix_index;
+            uint64_t curr = (prefix << width) | suffix;
+            n_64 = curr;
+            
+            if (curr < start_64 || curr > end_64) {
+                active_thread = false;
+            } else {
+                uint64_t mult = (1ULL << width) % 3;
+                uint64_t base_mod3 = ((prefix % 3) * mult) % 3;
+                if ((base_mod3 + suffix) % 3 == 2) {
+                    atomicAdd(&(metrics->numbers_skipped_mod6), 1);
+                    atomicAdd(&(metrics->total_numbers_checked), 1);
+                    active_thread = false;
+                }
+            }
+        } else {
+            uint128 prefix = start_prefix + uint128(prefix_index);
+            uint128 curr = shift_left(prefix, width) + uint128(suffix);
+            n = curr;
+            
+            if (curr < start_val || curr > end_val) {
+                active_thread = false;
+            } else {
+                uint64_t prefix_mod3 = (prefix.high % 3 + prefix.low % 3) % 3;
+                uint64_t mult = (1ULL << width) % 3;
+                uint64_t base_mod3 = (prefix_mod3 * mult) % 3;
+                if ((base_mod3 + suffix) % 3 == 2) {
+                    atomicAdd(&(metrics->numbers_skipped_mod6), 1);
+                    atomicAdd(&(metrics->total_numbers_checked), 1);
+                    active_thread = false;
+                }
+            }
+        }
+    }
+
+    uint32_t steps = 0;
+    uint32_t stopping_time = 0;
+    uint128 max_val(0, 0);
+    uint64_t max_val_64 = 0ULL;
+    bool overflowed = false;
+
+    if (active_thread) {
+        if (USE_64BIT) {
+            max_val_64 = n_64;
+            if (n_64 == 1) {
+                steps = 0;
+                stopping_time = 0;
+                max_val_64 = 1;
+            } else if (n_64 == 2) {
+                steps = 1;
+                stopping_time = 1;
+                max_val_64 = 2;
+            } else {
+                uint64_t curr = n_64;
+                uint32_t t_steps = 0;
+                bool has_stopped_sigma = false;
+                bool dropped_below_start = false;
+
+                if (n_64 < 256) {
+                    while (curr > 1) {
+                        if (curr > 0x5555555555555555ULL) {
+                            overflowed = true;
+                            break;
+                        }
+                        uint64_t next_val = 3 * curr + 1;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val_64) {
+                                max_val_64 = next_val;
+                            }
+                        }
+                        int p = __builtin_ctzll(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < n_64) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        curr = next_val >> p;
+                        steps += p;
+                        t_steps += p;
+                        if (curr < n_64) {
+                            dropped_below_start = true;
+                        }
+                    }
+                } else {
+                    while (curr >= 256) {
+                        if (curr > 0x5555555555555555ULL) {
+                            overflowed = true;
+                            break;
+                        }
+                        uint64_t next_val = 3 * curr + 1;
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val_64) {
+                                max_val_64 = next_val;
+                            }
+                        }
+                        int p = __builtin_ctzll(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < n_64) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        curr = next_val >> p;
+                        steps += p;
+                        t_steps += p;
+                        if (curr < n_64) {
+                            dropped_below_start = true;
+                        }
+                    }
+                    if (!overflowed && curr > 1) {
+                        steps += d_steps_table[curr];
+                    }
+                }
+            }
+        } else {
+            max_val = n;
+            uint128 one(1);
+            uint128 two(2);
+
+            if (n == one) {
+                steps = 0;
+                stopping_time = 0;
+                max_val = one;
+            } else if (n == two) {
+                steps = 1;
+                stopping_time = 1;
+                max_val = two;
+            } else {
+                uint128 curr = n;
+                uint32_t t_steps = 0;
+                bool has_stopped_sigma = false;
+                bool dropped_below_start = false;
+
+                if (n < uint128(256)) {
+                    while (curr > one) {
+                        bool overflow = false;
+                        uint128 next_val = mul3_add1(curr, overflow);
+                        if (overflow) {
+                            overflowed = true;
+                            break;
+                        }
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val) {
+                                max_val = next_val;
+                            }
+                        }
+                        int p = count_trailing_zeros(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint128 val_k = shift_right(next_val, k);
+                                if (val_k < n) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        next_val = shift_right(next_val, p);
+                        steps += p;
+                        t_steps += p;
+                        curr = next_val;
+                        if (curr < n) {
+                            dropped_below_start = true;
+                        }
+                    }
+                } else {
+                    while (curr >= uint128(256)) {
+                        bool overflow = false;
+                        uint128 next_val = mul3_add1(curr, overflow);
+                        if (overflow) {
+                            overflowed = true;
+                            break;
+                        }
+                        steps++;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val) {
+                                max_val = next_val;
+                            }
+                        }
+                        int p = count_trailing_zeros(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint128 val_k = shift_right(next_val, k);
+                                if (val_k < n) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+                        next_val = shift_right(next_val, p);
+                        steps += p;
+                        t_steps += p;
+                        curr = next_val;
+                        if (curr < n) {
+                            dropped_below_start = true;
+                        }
+                    }
+                    if (!overflowed && curr > one) {
+                        steps += d_steps_table[curr.low];
+                    }
+                }
+            }
+        }
+    }
+
+    if (active_thread) {
+        atomicAdd((unsigned long long*)&(metrics->total_numbers_checked), 1ULL);
+        if (overflowed) {
+            atomicAdd((unsigned long long*)&(metrics->numbers_overflowed), 1ULL);
+            active_thread = false;
+        } else {
+            atomicAdd((unsigned long long*)&(metrics->total_steps_computed), (unsigned long long)steps);
+        }
+    }
+
+    if (active_thread && USE_64BIT) {
+        max_val = uint128(max_val_64);
+        n = uint128(n_64);
+    }
+
+    shared_max_val_low[l_id] = active_thread ? max_val.low : 0ULL;
+    shared_max_val_high[l_id] = active_thread ? max_val.high : 0ULL;
+    shared_steps[l_id] = active_thread ? steps : 0;
+    shared_sigma[l_id] = active_thread ? stopping_time : 0;
+    __syncthreads();
+
+    for (uint32_t stride = 1; stride < 256; stride *= 2) {
+        uint64_t temp_low = 0ULL;
+        uint64_t temp_high = 0ULL;
+        if (l_id >= stride) {
+            temp_low = shared_max_val_low[l_id - stride];
+            temp_high = shared_max_val_high[l_id - stride];
+        }
+        __syncthreads();
+        if (l_id >= stride) {
+            uint128 temp(temp_low, temp_high);
+            uint128 my_val(shared_max_val_low[l_id], shared_max_val_high[l_id]);
+            if (temp > my_val) {
+                shared_max_val_low[l_id] = temp.low;
+                shared_max_val_high[l_id] = temp.high;
+            }
+        }
+        __syncthreads();
+    }
+
+    for (uint32_t stride = 1; stride < 256; stride *= 2) {
+        uint32_t temp_steps = 0;
+        if (l_id >= stride) {
+            temp_steps = shared_steps[l_id - stride];
+        }
+        __syncthreads();
+        if (l_id >= stride) {
+            if (temp_steps > shared_steps[l_id]) {
+                shared_steps[l_id] = temp_steps;
+            }
+        }
+        __syncthreads();
+    }
+
+    for (uint32_t stride = 1; stride < 256; stride *= 2) {
+        uint32_t temp_sigma = 0;
+        if (l_id >= stride) {
+            temp_sigma = shared_sigma[l_id - stride];
+        }
+        __syncthreads();
+        if (l_id >= stride) {
+            if (temp_sigma > shared_sigma[l_id]) {
+                shared_sigma[l_id] = temp_sigma;
+            }
+        }
+        __syncthreads();
+    }
+
+    if (active_thread) {
+        uint128 prev_max_val = (l_id == 0) ? uint128(0, 0) : uint128(shared_max_val_low[l_id - 1], shared_max_val_high[l_id - 1]);
+
+        if (max_val > prev_max_val) {
+            if (max_val > init_max_val) {
+                int idx = atomicAdd(max_value_count, 1);
+                if (idx < MAX_PEAK_RECORDS) {
+                    max_value_peaks[idx].start_val = n;
+                    max_value_peaks[idx].metric_val = max_val;
+                }
+
+                if (max_val > global_peaks->current_max_value) {
+                    global_peaks->current_max_value = max_val;
+                }
+            }
+        }
+
+        uint32_t prev_steps = (l_id == 0) ? 0 : shared_steps[l_id - 1];
+        if (steps > prev_steps) {
+            if (steps > init_max_steps) {
+                int idx = atomicAdd(steps_count, 1);
+                if (idx < MAX_PEAK_RECORDS) {
+                    steps_peaks[idx].start_val = n;
+                    steps_peaks[idx].metric_val = uint128(steps);
+                }
+
+                atomicMax(&(global_peaks->current_max_steps), steps);
+            }
+        }
+
+        uint32_t prev_sigma = (l_id == 0) ? 0 : shared_sigma[l_id - 1];
+        if (stopping_time > prev_sigma) {
+            if (stopping_time > init_max_sigma) {
+                int idx = atomicAdd(sigma_count, 1);
+                if (idx < MAX_PEAK_RECORDS) {
+                    sigma_peaks[idx].start_val = n;
+                    sigma_peaks[idx].metric_val = uint128(stopping_time);
+                }
+
+                atomicMax(&(global_peaks->current_max_sigma), stopping_time);
+            }
+        }
+    }
+}
+
+void hip_search_range_suffix_first(
+    uint128 start,
+    uint128 end,
+    int width,
+    const std::vector<uint32_t>& allowed_suffixes,
+    std::vector<PeakRecord>& max_value_peaks,
+    std::vector<PeakRecord>& steps_peaks,
+    std::vector<PeakRecord>& sigma_peaks,
+    PeakState& global_peaks,
+    SearchMetrics& metrics
+) {
+    if (start > end) return;
+
+    static bool steps_copied = false;
+    if (!steps_copied) {
+        uint32_t steps_u32[256];
+        for (int i = 0; i < 256; ++i) {
+            steps_u32[i] = static_cast<uint32_t>(steps8[i]);
+        }
+        HIP_CHECK(hipMemcpyToSymbol(d_steps_table, steps_u32, 256 * sizeof(uint32_t)));
+        steps_copied = true;
+    }
+
+    uint32_t* d_allowed_suffixes;
+    HIP_CHECK(hipMalloc(&d_allowed_suffixes, allowed_suffixes.size() * sizeof(uint32_t)));
+    HIP_CHECK(hipMemcpy(d_allowed_suffixes, allowed_suffixes.data(), allowed_suffixes.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
+
+    PeakRecord* d_max_val_peaks;
+    PeakRecord* d_steps_peaks;
+    PeakRecord* d_sigma_peaks;
+    int* d_max_val_count;
+    int* d_steps_count;
+    int* d_sigma_count;
+    PeakState* d_global_peaks;
+    SearchMetrics* d_metrics;
+
+    HIP_CHECK(hipMalloc(&d_max_val_peaks, MAX_PEAK_RECORDS * sizeof(PeakRecord)));
+    HIP_CHECK(hipMalloc(&d_steps_peaks, MAX_PEAK_RECORDS * sizeof(PeakRecord)));
+    HIP_CHECK(hipMalloc(&d_sigma_peaks, MAX_PEAK_RECORDS * sizeof(PeakRecord)));
+    HIP_CHECK(hipMalloc(&d_max_val_count, sizeof(int)));
+    HIP_CHECK(hipMalloc(&d_steps_count, sizeof(int)));
+    HIP_CHECK(hipMalloc(&d_sigma_count, sizeof(int)));
+    HIP_CHECK(hipMalloc(&d_global_peaks, sizeof(PeakState)));
+    HIP_CHECK(hipMalloc(&d_metrics, sizeof(SearchMetrics)));
+
+    SearchMetrics masterMetrics = {0};
+    PeakState masterPeaks = global_peaks;
+    std::vector<PeakRecord> masterMaxValPeaks = max_value_peaks;
+    std::vector<PeakRecord> masterStepsPeaks = steps_peaks;
+    std::vector<PeakRecord> masterSigmaPeaks = sigma_peaks;
+
+    const uint64_t CHUNK_SIZE = 2000000;
+    uint128 current_chunk_start = start;
+
+    double total_kernel_time = 0.0;
+    uint64_t total_numbers_processed = 0;
+
+    while (current_chunk_start <= end) {
+        uint128 current_chunk_end = current_chunk_start + uint128(CHUNK_SIZE - 1);
+        if (current_chunk_end > end) {
+            current_chunk_end = end;
+        }
+
+        uint128 start_prefix = shift_right(current_chunk_start, width);
+        uint128 end_prefix = shift_right(current_chunk_end, width);
+        uint64_t num_prefixes = (end_prefix - start_prefix + uint128(1)).low;
+        uint64_t total_work_items = num_prefixes * allowed_suffixes.size();
+
+        if (total_work_items > 0) {
+            int zero = 0;
+            SearchMetrics initial_chunk_metrics = {0};
+
+            HIP_CHECK(hipMemcpy(d_max_val_count, &zero, sizeof(int), hipMemcpyHostToDevice));
+            HIP_CHECK(hipMemcpy(d_steps_count, &zero, sizeof(int), hipMemcpyHostToDevice));
+            HIP_CHECK(hipMemcpy(d_sigma_count, &zero, sizeof(int), hipMemcpyHostToDevice));
+            HIP_CHECK(hipMemcpy(d_global_peaks, &masterPeaks, sizeof(PeakState), hipMemcpyHostToDevice));
+            HIP_CHECK(hipMemcpy(d_metrics, &initial_chunk_metrics, sizeof(SearchMetrics), hipMemcpyHostToDevice));
+
+            int threads_per_block = 256;
+            int blocks = (total_work_items + threads_per_block - 1) / threads_per_block;
+
+            auto t_start = std::chrono::high_resolution_clock::now();
+
+            bool use_64bit = (end < uint128(0x100000000ULL));
+            if (use_64bit) {
+                hipLaunchKernelGGL(collatz_search_kernel_suffix_first<true>, dim3(blocks), dim3(threads_per_block), 0, 0,
+                    start_prefix, current_chunk_start, current_chunk_end,
+                    (uint32_t)allowed_suffixes.size(), d_allowed_suffixes, width, total_work_items,
+                    d_max_val_peaks, d_max_val_count,
+                    d_steps_peaks, d_steps_count,
+                    d_sigma_peaks, d_sigma_count,
+                    d_global_peaks, d_metrics
+                );
+            } else {
+                hipLaunchKernelGGL(collatz_search_kernel_suffix_first<false>, dim3(blocks), dim3(threads_per_block), 0, 0,
+                    start_prefix, current_chunk_start, current_chunk_end,
+                    (uint32_t)allowed_suffixes.size(), d_allowed_suffixes, width, total_work_items,
+                    d_max_val_peaks, d_max_val_count,
+                    d_steps_peaks, d_steps_count,
+                    d_sigma_peaks, d_sigma_count,
+                    d_global_peaks, d_metrics
+                );
+            }
+
+            HIP_CHECK(hipDeviceSynchronize());
+
+            auto t_end = std::chrono::high_resolution_clock::now();
+            total_kernel_time += std::chrono::duration<double>(t_end - t_start).count();
+
+            int max_val_count = 0;
+            int steps_count = 0;
+            int sigma_count = 0;
+            SearchMetrics chunkMetrics = {0};
+            PeakState chunkPeaks;
+
+            HIP_CHECK(hipMemcpy(&max_val_count, d_max_val_count, sizeof(int), hipMemcpyDeviceToHost));
+            HIP_CHECK(hipMemcpy(&steps_count, d_steps_count, sizeof(int), hipMemcpyDeviceToHost));
+            HIP_CHECK(hipMemcpy(&sigma_count, d_sigma_count, sizeof(int), hipMemcpyDeviceToHost));
+            HIP_CHECK(hipMemcpy(&chunkPeaks, d_global_peaks, sizeof(PeakState), hipMemcpyDeviceToHost));
+            HIP_CHECK(hipMemcpy(&chunkMetrics, d_metrics, sizeof(SearchMetrics), hipMemcpyDeviceToHost));
+
+            masterMetrics.total_numbers_checked += chunkMetrics.total_numbers_checked;
+            masterMetrics.total_steps_computed += chunkMetrics.total_steps_computed;
+            masterMetrics.numbers_skipped_mod6 += chunkMetrics.numbers_skipped_mod6;
+            masterMetrics.numbers_overflowed += chunkMetrics.numbers_overflowed;
+
+            if (max_val_count > 0) {
+                int to_copy = std::min(max_val_count, (int)MAX_PEAK_RECORDS);
+                std::vector<PeakRecord> chunkMaxVal(to_copy);
+                HIP_CHECK(hipMemcpy(chunkMaxVal.data(), d_max_val_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
+                masterMaxValPeaks.insert(masterMaxValPeaks.end(), chunkMaxVal.begin(), chunkMaxVal.end());
+            }
+
+            if (steps_count > 0) {
+                int to_copy = std::min(steps_count, (int)MAX_PEAK_RECORDS);
+                std::vector<PeakRecord> chunkSteps(to_copy);
+                HIP_CHECK(hipMemcpy(chunkSteps.data(), d_steps_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
+                masterStepsPeaks.insert(masterStepsPeaks.end(), chunkSteps.begin(), chunkSteps.end());
+            }
+
+            if (sigma_count > 0) {
+                int to_copy = std::min(sigma_count, (int)MAX_PEAK_RECORDS);
+                std::vector<PeakRecord> chunkSigma(to_copy);
+                HIP_CHECK(hipMemcpy(chunkSigma.data(), d_sigma_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
+                masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
+            }
+
+            if (chunkPeaks.current_max_value > masterPeaks.current_max_value) {
+                masterPeaks.current_max_value = chunkPeaks.current_max_value;
+            }
+            if (chunkPeaks.current_max_steps > masterPeaks.current_max_steps) {
+                masterPeaks.current_max_steps = chunkPeaks.current_max_steps;
+            }
+            if (chunkPeaks.current_max_sigma > masterPeaks.current_max_sigma) {
+                masterPeaks.current_max_sigma = chunkPeaks.current_max_sigma;
+            }
+
+            total_numbers_processed += (current_chunk_end - current_chunk_start + uint128(1)).low;
+        }
+
+        current_chunk_start = current_chunk_start + uint128(CHUNK_SIZE);
+    }
+
+    filter_peaks(masterMaxValPeaks, masterMaxValPeaks.size());
+    filter_peaks(masterStepsPeaks, masterStepsPeaks.size());
+    filter_peaks(masterSigmaPeaks, masterSigmaPeaks.size());
+
+    max_value_peaks = std::move(masterMaxValPeaks);
+    steps_peaks = std::move(masterStepsPeaks);
+    sigma_peaks = std::move(masterSigmaPeaks);
+    global_peaks = masterPeaks;
+    
+    metrics.total_numbers_checked += masterMetrics.total_numbers_checked;
+    metrics.total_steps_computed += masterMetrics.total_steps_computed;
+    metrics.numbers_skipped_even += total_numbers_processed / 2; // Approximate even numbers skipped
+    metrics.numbers_skipped_mod6 += masterMetrics.numbers_skipped_mod6;
+    metrics.numbers_overflowed += masterMetrics.numbers_overflowed;
+    metrics.elapsed_seconds += total_kernel_time;
+
+    HIP_CHECK(hipFree(d_allowed_suffixes));
+    HIP_CHECK(hipFree(d_max_val_peaks));
+    HIP_CHECK(hipFree(d_steps_peaks));
+    HIP_CHECK(hipFree(d_sigma_peaks));
+    HIP_CHECK(hipFree(d_max_val_count));
+    HIP_CHECK(hipFree(d_steps_count));
+    HIP_CHECK(hipFree(d_sigma_count));
+    HIP_CHECK(hipFree(d_global_peaks));
+    HIP_CHECK(hipFree(d_metrics));
+}
+
+void hip_search_block_0_suffix_first(
+    uint128 start_num,
+    uint128 end_num,
+    int width,
+    const std::vector<uint32_t>& allowed_suffixes,
+    std::vector<PeakRecord>& max_value_peaks,
+    std::vector<PeakRecord>& steps_peaks,
+    std::vector<PeakRecord>& sigma_peaks,
+    PeakState& global_peaks,
+    SearchMetrics& metrics
+) {
+    if (end_num >= uint128(0x100000000ULL)) {
+        throw std::invalid_argument("hip_search_block_0_suffix_first: range extends beyond block 0");
+    }
+    hip_search_range_suffix_first(start_num, end_num, width, allowed_suffixes, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+}
+

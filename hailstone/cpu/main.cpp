@@ -195,7 +195,9 @@ void print_help() {
             << "  --checkpoint, --checkpoint_file FILE Checkpoint file path "
                "(default: hailstone.chk)\n"
             << "  --no-checkpoint, --no_checkpoint     Disable saving and "
-               "restoring checkpoints\n\n"
+               "restoring checkpoints\n"
+            << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with "
+               "given bit-width (8, 12, 16, or 20)\n\n"
             << "Note: Positional parameters can still be used as a fallback if "
                "no named options are provided.\n";
 }
@@ -226,6 +228,7 @@ int main(int argc, char *argv[]) {
 
   bool checkpoint_enabled = true;
   std::string checkpoint_file = "hailstone.chk";
+  int cutoff_width = 20;
 
   std::vector<std::string> positional_args;
 
@@ -284,6 +287,13 @@ int main(int argc, char *argv[]) {
       }
     } else if (arg == "--no-checkpoint" || arg == "--no_checkpoint") {
       checkpoint_enabled = false;
+    } else if (arg == "--cutoff-width" || arg == "--cutoff_width") {
+      if (i + 1 < argc) {
+        cutoff_width = std::stoi(argv[++i]);
+      } else {
+        std::cerr << "Error: " << arg << " requires an argument." << std::endl;
+        return 1;
+      }
     } else if (arg[0] == '-') {
       std::cerr << "Unknown option: " << arg << std::endl;
       print_help();
@@ -292,6 +302,12 @@ int main(int argc, char *argv[]) {
       positional_args.push_back(arg);
     }
   }
+
+  if (cutoff_width != 0 && cutoff_width != 8 && cutoff_width != 12 && cutoff_width != 16 && cutoff_width != 20) {
+    std::cerr << "Error: --cutoff-width must be 8, 12, 16, or 20." << std::endl;
+    return 1;
+  }
+
 
   bool has_range_options = has_start_block || has_start_num || has_end_block ||
                            has_end_num || has_num_blocks;
@@ -372,22 +388,59 @@ int main(int argc, char *argv[]) {
 
   SearchMetrics metrics = {0};
 
-  uint128 block_boundary(0x100000000ULL);
-  if (start < block_boundary) {
-    uint128 block_0_end = end;
-    if (end >= block_boundary) {
-      block_0_end = block_boundary - uint128(1);
+  if (cutoff_width > 0) {
+    std::cout << "Using Suffix-First Search with width: " << cutoff_width << std::endl;
+    std::cout << "Generating allowed suffixes... " << std::flush;
+    auto allowed_suffixes = generate_allowed_suffixes(cutoff_width);
+    std::cout << allowed_suffixes.size() << " allowed suffixes generated." << std::endl;
+
+    uint128 threshold(1 << cutoff_width);
+    if (start < threshold) {
+      uint128 standard_end = (end < threshold) ? end : (threshold - uint128(1));
+      std::cout << "Running standard search on boundary range [" << to_string(start) << ", " << to_string(standard_end) << "]" << std::endl;
+      cpu_search_block_0(start, standard_end, max_value_peaks, steps_peaks,
+                         sigma_peaks, global_peaks, metrics);
+      start = standard_end + uint128(1);
     }
-    cpu_search_block_0(start, block_0_end, max_value_peaks, steps_peaks,
-                       sigma_peaks, global_peaks, metrics);
-    if (end >= block_boundary) {
-      cpu_search_blocks_gt_0(block_boundary, end, max_value_peaks, steps_peaks,
-                             sigma_peaks, global_peaks, metrics);
+
+    if (start <= end) {
+      uint128 block_boundary(0x100000000ULL);
+      if (start < block_boundary) {
+        uint128 block_0_end = end;
+        if (end >= block_boundary) {
+          block_0_end = block_boundary - uint128(1);
+        }
+        cpu_search_block_0_suffix_first(start, block_0_end, cutoff_width, allowed_suffixes,
+                                        max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+        if (end >= block_boundary) {
+          cpu_search_range_suffix_first(block_boundary, end, cutoff_width, allowed_suffixes,
+                                        max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+        }
+      } else {
+        cpu_search_range_suffix_first(start, end, cutoff_width, allowed_suffixes,
+                                      max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+      }
     }
   } else {
-    cpu_search_blocks_gt_0(start, end, max_value_peaks, steps_peaks,
-                           sigma_peaks, global_peaks, metrics);
+    uint128 block_boundary(0x100000000ULL);
+    if (start < block_boundary) {
+      uint128 block_0_end = end;
+      if (end >= block_boundary) {
+        block_0_end = block_boundary - uint128(1);
+      }
+      cpu_search_block_0(start, block_0_end, max_value_peaks, steps_peaks,
+                         sigma_peaks, global_peaks, metrics);
+      if (end >= block_boundary) {
+        cpu_search_blocks_gt_0(block_boundary, end, max_value_peaks, steps_peaks,
+                               sigma_peaks, global_peaks, metrics);
+      }
+    } else {
+      cpu_search_blocks_gt_0(start, end, max_value_peaks, steps_peaks,
+                             sigma_peaks, global_peaks, metrics);
+    }
   }
+
+
 
   std::cout << "\n=== Search Completed ===" << std::endl;
   std::cout << "Elapsed Time: " << std::fixed << std::setprecision(4)

@@ -90,6 +90,21 @@ HD_ATTR uint128 shift_right(uint128 a, int p) {
     return res;
 }
 
+HD_ATTR uint128 shift_left(uint128 a, int p) {
+    uint128 res = {0, 0};
+    if (p <= 0) {
+        return a;
+    } else if (p < 64) {
+        res.high = (a.high << p) | (a.low >> (64 - p));
+        res.low = a.low << p;
+    } else if (p < 128) {
+        res.high = a.low << (p - 64);
+        res.low = 0;
+    }
+    return res;
+}
+
+
 HD_ATTR int ctz64(uint64_t val) {
     return __builtin_ctzll(val);
 }

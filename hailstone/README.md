@@ -17,6 +17,7 @@ Vermeulen polynomials and precomputed lookup tables speed up the Collatz search 
    - **Final Polynomials (`fpoly`)**: Represents the final state of the residue class after exactly $w$ divisions by 2.
    - **Maximum Intermediate Polynomials (`mpoly`)**: Represents the peak intermediate state along the path where the ratio $\frac{3^a}{2^b}$ is maximized, used to bound peak intermediate values and prune search classes.
 2. **Polynomial Step Lookup Optimization**: Instead of running trajectories all the way to 1, the search loops (CPU, HIP, and Vulkan) terminate early when the value drops below $2^8 = 256$. The remaining steps are retrieved in $O(1)$ time from a precomputed steps lookup table (`steps8`). This reduces loop iterations, thread divergence, and instruction counts, accelerating GPU execution by up to **4.0x** and CPU execution by **79%**.
+3. **Suffix-First Search (Apriori Cutoffs)**: By generating unique `fpoly` suffix equivalence classes and applying even-class exclusion and modulo 6 filtering, the search is restructured to execute only the non-redundant allowed suffixes. Suffix-First search is enabled by default with width 20 on CPU and HIP backends, pruning the checked search space by **85.17%** and yielding up to **3.23x CPU speedup** and **2.45x GPU HIP speedup**.
 
 ---
 
@@ -99,6 +100,7 @@ The search executables (`hailstone_cpu`, `hailstone_vulkan`, and `hailstone_hip`
 * `--num-blocks, --num_blocks COUNT`: Number of blocks to check (each block is $2^{32}$ items, overrides `--end-num`/`--end-block`).
 * `--checkpoint, --checkpoint_file FILE`: Checkpoint file path (default: `hailstone.chk`).
 * `--no-checkpoint, --no_checkpoint`: Disable saving and restoring checkpoints.
+* `--cutoff-width, --cutoff_width VALUE`: Configure the bit-width of Suffix-First search (accepts `8`, `12`, `16`, or `20`). Suffix-First search is enabled by default with width `20` (our fastest configuration). To disable Suffix-First and run the standard search (matching the Vulkan backend), pass `--cutoff-width 0`.
 
 ### Checkpointing & Resumption
 State checkpointing is enabled by default. Before completing, search programs save the baseline peak thresholds, the list of all peaks, and the last number checked to a checkpoint file.

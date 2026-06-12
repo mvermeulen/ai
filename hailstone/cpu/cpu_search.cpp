@@ -3,6 +3,7 @@
 #include <chrono>
 #include <stdexcept>
 #include <cassert>
+#include <map>
 
 #ifndef POLY_WIDTH
 #define POLY_WIDTH 8
@@ -390,3 +391,280 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
     }
     cpu_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
 }
+
+std::vector<uint32_t> generate_allowed_suffixes(int width) {
+    int total_suffixes = 1 << width;
+    struct PolyKey {
+        uint32_t pow2;
+        uint32_t pow3;
+        uint64_t add;
+        bool operator<(const PolyKey& o) const {
+            if (pow2 != o.pow2) return pow2 < o.pow2;
+            if (pow3 != o.pow3) return pow3 < o.pow3;
+            return add < o.add;
+        }
+    };
+
+    struct ClassInfo {
+        int first_suffix = -1;
+        bool has_even = false;
+    };
+    std::map<PolyKey, ClassInfo> classes;
+    std::vector<PolyKey> suffix_polys(total_suffixes);
+
+    for (int i = 0; i < total_suffixes; ++i) {
+        uint64_t bits = i;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+        }
+        PolyKey key{pow2, pow3, bits};
+        suffix_polys[i] = key;
+        
+        auto& info = classes[key];
+        if (info.first_suffix == -1) {
+            info.first_suffix = i;
+        }
+        if (i % 2 == 0) {
+            info.has_even = true;
+        }
+    }
+
+    std::vector<uint32_t> allowed;
+    for (int i = 0; i < total_suffixes; ++i) {
+        const auto& key = suffix_polys[i];
+        const auto& info = classes[key];
+        if (info.first_suffix == i && !info.has_even) {
+            allowed.push_back(i);
+        }
+    }
+    return allowed;
+}
+
+void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
+                                     int width,
+                                     const std::vector<uint32_t>& allowed_suffixes,
+                                     std::vector<PeakRecord>& max_value_peaks,
+                                     std::vector<PeakRecord>& steps_peaks,
+                                     std::vector<PeakRecord>& sigma_peaks,
+                                     PeakState& global_peaks,
+                                     SearchMetrics& metrics) {
+    if (end_num >= uint128(0x100000000ULL)) {
+        throw std::invalid_argument("cpu_search_block_0_suffix_first: range extends beyond block 0");
+    }
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    uint64_t start_64 = start_num.low;
+    uint64_t end_64 = end_num.low;
+
+    uint64_t start_prefix = start_64 >> width;
+    uint64_t end_prefix = end_64 >> width;
+
+    // Loop through prefixes
+    for (uint64_t x = start_prefix; x <= end_prefix; ++x) {
+        uint64_t base = x << width;
+        uint64_t x_mod3 = x % 3;
+        
+        uint64_t mult = (1ULL << width) % 3;
+        uint64_t base_mod3 = (x_mod3 * mult) % 3;
+
+        for (uint32_t suffix : allowed_suffixes) {
+            uint64_t curr = base | suffix;
+            
+            // Boundary checks
+            if (curr < start_64) continue;
+            if (curr > end_64) break; // Suffixes are ordered; subsequent ones will also exceed end_64
+
+            // Modulo 6 cutoff: if curr % 6 == 5 (equivalent to curr % 3 == 2 since curr is odd)
+            if ((base_mod3 + suffix) % 3 == 2) {
+                metrics.numbers_skipped_mod6++;
+                metrics.total_numbers_checked++;
+                continue;
+            }
+
+            uint64_t val = curr;
+            uint32_t steps = 0;
+            uint32_t stopping_time = 0;
+            uint64_t max_val = curr;
+            bool overflowed = false;
+
+            if (val == 1) {
+                steps = 0;
+                stopping_time = 0;
+                max_val = 1;
+            } else if (val == 2) {
+                steps = 1;
+                stopping_time = 1;
+                max_val = 2;
+            } else {
+                uint64_t temp_curr = val;
+                uint32_t t_steps = 0;
+                bool has_stopped_sigma = false;
+                bool dropped_below_start = false;
+
+                while (temp_curr > 1) {
+                    if (temp_curr > 0x5555555555555555ULL) {
+                        overflowed = true;
+                        break;
+                    }
+                    uint64_t next_val = 3 * temp_curr + 1;
+                    steps++;
+
+                    if (!dropped_below_start) {
+                        if (next_val > max_val) {
+                            max_val = next_val;
+                        }
+                    }
+
+                    int p = ctz64(next_val);
+                    if (!has_stopped_sigma) {
+                        for (int k = 1; k <= p; ++k) {
+                            uint64_t val_k = next_val >> k;
+                            if (val_k < val) {
+                                stopping_time = t_steps + k;
+                                has_stopped_sigma = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    next_val >>= p;
+                    steps += p;
+                    t_steps += p;
+                    temp_curr = next_val;
+
+                    if (temp_curr < val) {
+                        dropped_below_start = true;
+                    }
+                }
+            }
+
+            metrics.total_numbers_checked++;
+            if (overflowed) {
+                metrics.numbers_overflowed++;
+                continue;
+            }
+
+            metrics.total_steps_computed += steps;
+
+            uint128 u128_max_val(max_val);
+            if (u128_max_val > global_peaks.current_max_value) {
+                global_peaks.current_max_value = u128_max_val;
+                max_value_peaks.push_back({uint128(curr), u128_max_val});
+            }
+
+            if (steps > global_peaks.current_max_steps) {
+                global_peaks.current_max_steps = steps;
+                steps_peaks.push_back({uint128(curr), uint128(steps)});
+            }
+
+            if (stopping_time > global_peaks.current_max_sigma) {
+                global_peaks.current_max_sigma = stopping_time;
+                sigma_peaks.push_back({uint128(curr), uint128(stopping_time)});
+            }
+        }
+    }
+
+    // Accumulate evens skipped in the range
+    if (end_64 >= start_64) {
+        uint64_t diff = end_64 + 1 - start_64;
+        uint64_t evens = diff >> 1;
+        metrics.numbers_skipped_even += evens;
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = end_time - start_time;
+    metrics.elapsed_seconds += diff.count();
+}
+
+void cpu_search_range_suffix_first(uint128 start, uint128 end, 
+                                   int width,
+                                   const std::vector<uint32_t>& allowed_suffixes,
+                                   std::vector<PeakRecord>& max_value_peaks,
+                                   std::vector<PeakRecord>& steps_peaks,
+                                   std::vector<PeakRecord>& sigma_peaks,
+                                   PeakState& global_peaks,
+                                   SearchMetrics& metrics) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    uint128 start_prefix = shift_right(start, width);
+    uint128 end_prefix = shift_right(end, width);
+
+    uint64_t mult = (1ULL << width) % 3;
+
+    for (uint128 x = start_prefix; x <= end_prefix; x = x + uint128(1)) {
+        uint128 base = shift_left(x, width);
+        uint64_t x_mod3 = (x.high % 3 + x.low % 3) % 3;
+        uint64_t base_mod3 = (x_mod3 * mult) % 3;
+
+        for (uint32_t suffix : allowed_suffixes) {
+            uint128 curr = base + uint128(suffix);
+
+            // Boundary checks
+            if (curr < start) continue;
+            if (curr > end) break; // Suffixes are ordered; subsequent ones will exceed end
+
+            // Modulo 6 cutoff: if curr % 6 == 5 (equivalent to (curr % 3 == 2) since curr is odd)
+            if ((base_mod3 + suffix) % 3 == 2) {
+                metrics.numbers_skipped_mod6++;
+                metrics.total_numbers_checked++;
+                continue;
+            }
+
+            CollatzStats stats;
+            if (curr >= uint128(1 << POLY_WIDTH)) {
+                stats = compute_collatz_poly(curr);
+            } else {
+                stats = compute_collatz(curr);
+            }
+            metrics.total_numbers_checked++;
+
+            if (stats.overflow) {
+                metrics.numbers_overflowed++;
+                continue;
+            }
+
+            metrics.total_steps_computed += stats.steps;
+
+            // Check max_value peak
+            if (stats.max_value > global_peaks.current_max_value) {
+                global_peaks.current_max_value = stats.max_value;
+                max_value_peaks.push_back({curr, stats.max_value});
+            }
+
+            // Check steps peak
+            if (stats.steps > global_peaks.current_max_steps) {
+                global_peaks.current_max_steps = stats.steps;
+                steps_peaks.push_back({curr, uint128(stats.steps)});
+            }
+
+            // Check stopping time (sigma) peak
+            if (stats.stopping_time > global_peaks.current_max_sigma) {
+                global_peaks.current_max_sigma = stats.stopping_time;
+                sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+            }
+        }
+    }
+
+    // Accumulate evens skipped in the range
+    if (end >= start) {
+        uint128 diff = end + uint128(1) - start;
+        uint128 evens = shift_right(diff, 1);
+        metrics.numbers_skipped_even += evens.low;
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = end_time - start_time;
+    metrics.elapsed_seconds += diff.count();
+}
+
