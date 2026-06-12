@@ -5,6 +5,7 @@
 from __future__ import annotations
 import argparse
 import csv
+from datetime import date, timedelta
 import json
 import sys
 import urllib.request
@@ -31,6 +32,18 @@ def fetch_espn_scores(date_str: str | None = None) -> List[Dict[str, Any]]:
         print(f"Error fetching from ESPN: {e}", file=sys.stderr)
         return []
 
+def fetch_default_window_scores() -> List[Dict[str, Any]]:
+    """Fetch scores for yesterday and today to catch recently finished games."""
+    events_by_id: Dict[str, Dict[str, Any]] = {}
+    today = date.today()
+    for day in (today - timedelta(days=1), today):
+        day_events = fetch_espn_scores(day.strftime("%Y%m%d"))
+        for event in day_events:
+            event_id = event.get("id")
+            if event_id:
+                events_by_id[event_id] = event
+    return list(events_by_id.values())
+
 def parse_espn_games(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Parse ESPN events list into structured game dicts."""
     parsed_games = []
@@ -44,7 +57,7 @@ def parse_espn_games(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         status_name = status_type.get("name", "")
 
         # Map status to ours
-        if status_name == "STATUS_FINAL":
+        if status_name in {"STATUS_FINAL", "STATUS_FULL_TIME", "STATUS_AET", "STATUS_PENALTY_SHOOTOUT"}:
             status = "final"
         elif "IN_PROGRESS" in status_name or "HALFTIME" in status_name:
             status = "in_progress"
@@ -136,11 +149,11 @@ def main() -> int:
     args = parser.parse_args()
     schedule_path: Path = args.schedule
     
-    date_arg = None
     if args.date:
         date_arg = args.date.replace("-", "")
-
-    events = fetch_espn_scores(date_arg)
+        events = fetch_espn_scores(date_arg)
+    else:
+        events = fetch_default_window_scores()
     parsed = parse_espn_games(events)
     if not parsed:
         print("No games found on scoreboard or error occurred.")
