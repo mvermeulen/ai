@@ -79,6 +79,9 @@ Tracked when a starting value $n$ generates a trajectory whose maximum intermedi
 ## 2. Steps Peaks
 Tracked when a starting value $n$ takes more total steps to reach $1$ than any previous starting value.
 
+> [!NOTE]
+> Even starting numbers that are peaks in steps are omitted from this table because the search is restricted to odd starting numbers. While these even peaks can be mathematically computed from previous results, they have not been added here.
+
 | Starting Number ($n$) | Total Steps |
 | :--- | :--- |
 | 3 | 7 |
