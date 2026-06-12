@@ -784,15 +784,20 @@ std::string buildDashboardHtml() {
           <canvas id="history-chart"></canvas>
         </div>
         
-        <div>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h3 style="font-family: var(--font-display); font-size: 1.1rem; color: #cbd5e1;">Select Teams to Display</h3>
-            <div style="display: flex; gap: 0.5rem;">
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <h3 style="font-family: var(--font-display); font-size: 1.1rem; color: #cbd5e1; margin: 0;">Select Teams to Display</h3>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
               <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('contenders')">Reset to Top 5</button>
               <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('all')">Select All</button>
               <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('none')">Clear</button>
             </div>
           </div>
+          
+          <div id="history-group-buttons" style="display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; align-items: center;">
+            <!-- Group buttons will be dynamically inserted here -->
+          </div>
+          
           <div id="history-team-pills" style="display: flex; flex-wrap: wrap; gap: 0.5rem; max-height: 200px; overflow-y: auto; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(0,0,0,0.2);">
             <!-- Team checkboxes will be dynamically inserted here -->
           </div>
@@ -1186,6 +1191,7 @@ std::string buildDashboardHtml() {
     let historyChart = null;
     let historyData = [];
     let selectedTeams = new Set();
+    let groupTeamsMap = {};
     const checkpointLabels = {
       0: "Pre-Tournament",
       1: "1 Game",
@@ -1215,14 +1221,28 @@ std::string buildDashboardHtml() {
       const statusDiv = document.getElementById('history-rebuild-status');
       statusDiv.innerText = "Loading history data...";
       try {
-        const res = await fetch('/api/probability-history');
-        historyData = await res.json();
+        const [historyRes, standingsRes] = await Promise.all([
+          fetch('/api/probability-history'),
+          fetch('/api/standings')
+        ]);
+        historyData = await historyRes.json();
+        const standingsData = await standingsRes.json();
         statusDiv.innerText = "";
         
         if (historyData.error) {
           statusDiv.innerText = "Error: " + historyData.error;
           return;
         }
+
+        // Build groupTeamsMap
+        groupTeamsMap = {};
+        if (standingsData && standingsData.groups) {
+          for (const [groupName, teams] of Object.entries(standingsData.groups)) {
+            groupTeamsMap[groupName] = teams.map(t => t.abbr);
+          }
+        }
+        
+        renderGroupButtons();
 
         const uniqueCheckpoints = [...new Set(historyData.map(d => d.games_played))].sort((a, b) => a - b);
         const allTeams = [...new Set(historyData.map(d => d.team))].sort();
@@ -1261,6 +1281,33 @@ std::string buildDashboardHtml() {
         statusDiv.innerText = "Failed to load history data.";
         console.error(e);
       }
+    }
+
+    function renderGroupButtons() {
+      const container = document.getElementById('history-group-buttons');
+      if (!container) return;
+      container.innerHTML = '';
+      
+      const labelSpan = document.createElement('span');
+      labelSpan.style.fontSize = '0.75rem';
+      labelSpan.style.color = 'var(--text-secondary)';
+      labelSpan.style.fontWeight = '600';
+      labelSpan.style.display = 'flex';
+      labelSpan.style.alignItems = 'center';
+      labelSpan.style.marginRight = '0.5rem';
+      labelSpan.innerText = 'Filter by Group:';
+      container.appendChild(labelSpan);
+
+      const sortedGroups = Object.keys(groupTeamsMap).sort();
+      sortedGroups.forEach(groupName => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary';
+        btn.style.padding = '0.25rem 0.5rem';
+        btn.style.fontSize = '0.75rem';
+        btn.innerText = `Group ${groupName}`;
+        btn.onclick = () => selectQuickGroup(`group-${groupName}`);
+        container.appendChild(btn);
+      });
     }
 
     function renderTeamPills(teams) {
@@ -1336,6 +1383,12 @@ std::string buildDashboardHtml() {
         latestData.sort((a, b) => b.probability - a.probability);
         for (let i = 0; i < 5 && i < latestData.length; i++) {
           selectedTeams.add(latestData[i].team);
+        }
+      } else if (groupType.startsWith('group-')) {
+        const groupName = groupType.substring(6);
+        selectedTeams.clear();
+        if (groupTeamsMap[groupName]) {
+          groupTeamsMap[groupName].forEach(abbr => selectedTeams.add(abbr));
         }
       }
       
