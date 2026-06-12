@@ -1376,9 +1376,13 @@ std::string buildDashboardHtml() {
         });
       });
 
+      const maxVal = Math.max(...historyData.map(d => d.probability), 0);
+      const yMax = Math.min(1.0, Math.max(0.05, Math.ceil(maxVal * 20) / 20));
+
       if (historyChart) {
         historyChart.data.labels = xLabels;
         historyChart.data.datasets = datasets;
+        historyChart.options.scales.y.max = yMax;
         historyChart.update();
       } else {
         historyChart = new Chart(ctx, {
@@ -1420,7 +1424,7 @@ std::string buildDashboardHtml() {
                   }
                 },
                 min: 0,
-                max: 1
+                max: yMax
               }
             },
             plugins: {
