@@ -24,7 +24,9 @@ For any odd starting value `n`, if its initial suffix polynomial has `init_p.sma
 
 ## 2. CPU Backend Performance Results
 
-We ran benchmarks over a search range of 5,000,000 numbers on the CPU backend (Intel/AMD x86_64 host), comparing the optimized prototype against the standard CPU search baseline at two polynomial table widths (8 and 16):
+We ran benchmarks on the CPU backend (Intel/AMD x86_64 host) under two scenarios to evaluate the performance:
+1. A search range of 5,000,000 numbers starting at 3 (comparing polynomial widths 8 and 16).
+2. A search range of 1,000,000 numbers at **Block 100** (`[100 * 2^32, 100 * 2^32 + 1,000,000]`) with polynomial width 8, to see if scaling mitigates the CPU slowdown.
 
 ### CPU Benchmark Results (Range: 3 to 5,000,000)
 
@@ -33,11 +35,18 @@ We ran benchmarks over a search range of 5,000,000 numbers on the CPU backend (I
 | **Width 8** (`POLY_WIDTH = 8`) | **20.44 M numbers/s** (0.0554 s) | **14.02 M numbers/s** (0.0808 s) | **-31.4%** |
 | **Width 16** (`POLY_WIDTH = 16`) | **18.65 M numbers/s** (0.0383 s) | **14.87 M numbers/s** (0.0481 s) | **-20.3%** |
 
+### CPU Benchmark Results at Block 100 (`[100 * 2^32, 100 * 2^32 + 1,000,000]`)
+
+| Configuration | Baseline (Unoptimized) | Prototyped (Optimized) | Throughput Delta |
+| :--- | :--- | :--- | :--- |
+| **Block 100** (`POLY_WIDTH = 8`) | **8.84 M numbers/s** (0.0258 s) | **4.85 M numbers/s** (0.0470 s) | **-45.1%** |
+
 ### CPU Slowdown Analysis
 Although the polynomial-jump method reduces loop iterations, it degrades CPU throughput due to:
 1.  **Simple vs. Heavy Instruction Sets**:
     *   The baseline loop body uses simple hardware-friendly instructions: basic shifts, additions, and single-cycle trailing-zero count instructions (`tzcnt`/`bsf`). Modern superscalar CPUs run multiple of these per cycle.
     *   The optimized Phase 2 loop requires variable-length 128-bit shifts (`shift_right`), a full 128-bit addition with overflow checks (`add_check_overflow`), and a 128-bit multiplication check (`mul_uint64_check_overflow` which compiles into multiple 64x64->128 multiplications `mulq` and extra control flow). The ALU instruction cost of these heavy math helpers is significantly larger than the cost of the iterations saved.
+    *   **Amplification at Scale**: At Block 100, where numbers are larger, the baseline loop still relies on simple shifts/adds (`(n << 1) + n + 1`) which run quickly. The optimized loop, however, spends even more execution time in the complex `mul_uint64_check_overflow` logic. Because of this, the performance degradation actually worsens at Block 100 (from a **-31.4%** slowdown to a **-45.1%** slowdown).
 2.  **Branching Overhead**:
     *   Standard Collatz steps are highly predictable by hardware branch predictors.
     *   The optimized logic adds multiple branches in overflow and shifting checks, increasing branch misprediction penalties and stalling the CPU pipeline.
