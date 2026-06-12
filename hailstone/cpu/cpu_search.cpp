@@ -124,6 +124,19 @@ CollatzStats compute_collatz_poly(uint128 n) {
     }
 
     while (curr >= uint128(1 << POLY_WIDTH)) {
+        if (curr.high == 0 && dropped_below_start && has_stopped_sigma) {
+            uint64_t curr_64 = curr.low;
+            while (curr_64 >= (1 << POLY_WIDTH)) {
+                uint64_t next_val = 3 * curr_64 + 1;
+                stats.steps++;
+                int p = ctz64(next_val);
+                curr_64 = next_val >> p;
+                stats.steps += p;
+            }
+            curr = uint128(curr_64, 0);
+            break;
+        }
+
         // Since curr is odd, next step of H is 3 * curr + 1 (which is even)
         bool overflow = false;
         uint128 next_val = mul3_add1(curr, overflow);
