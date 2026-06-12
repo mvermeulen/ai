@@ -1527,12 +1527,13 @@ void WebServer::rebuildProbabilityHistory(int iterations) {
         return a.matchId() < b.matchId();
     });
 
-    int actualCompleted = 0;
+    std::vector<Match> completedMatches;
     for (const auto& m : matches) {
         if (m.isFinal()) {
-            actualCompleted++;
+            completedMatches.push_back(m);
         }
     }
+    int actualCompleted = completedMatches.size();
 
     std::string historyPath = "data/probability_history.csv";
     std::ofstream outFile(historyPath);
@@ -1552,7 +1553,7 @@ void WebServer::rebuildProbabilityHistory(int iterations) {
         for (const auto& [abbr, _] : tournament_.allTeams()) {
             int gp = 0;
             for (int i = 0; i < p; ++i) {
-                if (matches[i].homeTeam() == abbr || matches[i].awayTeam() == abbr) {
+                if (completedMatches[i].homeTeam() == abbr || completedMatches[i].awayTeam() == abbr) {
                     gp++;
                 }
             }
@@ -1562,14 +1563,16 @@ void WebServer::rebuildProbabilityHistory(int iterations) {
 
     // 2. Simulate each prefix and record data points aligned with their latest prefix
     for (int p = 0; p <= actualCompleted; ++p) {
-        Tournament simTour = tournament_;
-        auto& simMatches = simTour.allMatches();
-        std::sort(simMatches.begin(), simMatches.end(), [](const Match& a, const Match& b) {
-            return a.matchId() < b.matchId();
-        });
+        std::set<int> keepFinalIds;
+        for (int i = 0; i < p; ++i) {
+            keepFinalIds.insert(completedMatches[i].matchId());
+        }
 
-        for (size_t i = p; i < simMatches.size(); ++i) {
-            simMatches[i].setScore(-1, -1, -1, -1, "scheduled");
+        Tournament simTour = tournament_;
+        for (auto& match : simTour.allMatches()) {
+            if (keepFinalIds.count(match.matchId()) == 0) {
+                match.setScore(-1, -1, -1, -1, "scheduled");
+            }
         }
         simTour.computeStandings();
 
@@ -1580,7 +1583,7 @@ void WebServer::rebuildProbabilityHistory(int iterations) {
         for (const auto& [abbr, _] : simTour.allTeams()) {
             int gp = 0;
             for (int i = 0; i < p; ++i) {
-                if (matches[i].homeTeam() == abbr || matches[i].awayTeam() == abbr) {
+                if (completedMatches[i].homeTeam() == abbr || completedMatches[i].awayTeam() == abbr) {
                     gp++;
                 }
             }
