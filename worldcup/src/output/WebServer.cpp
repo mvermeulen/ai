@@ -1188,14 +1188,14 @@ std::string buildDashboardHtml() {
     let selectedTeams = new Set();
     const checkpointLabels = {
       0: "Pre-Tournament",
-      24: "24 Matches",
-      48: "48 Matches",
-      72: "Group Stage Complete",
-      88: "Round of 32 Complete",
-      96: "Round of 16 Complete",
-      100: "Quarterfinals Complete",
-      102: "Semifinals Complete",
-      104: "Final Complete"
+      1: "1 Game",
+      2: "2 Games",
+      3: "3 Games",
+      4: "4 Games",
+      5: "5 Games",
+      6: "6 Games",
+      7: "7 Games",
+      8: "8 Games"
     };
 
     function getTeamColor(abbr) {
@@ -1230,8 +1230,14 @@ std::string buildDashboardHtml() {
         renderTeamPills(allTeams);
 
         if (selectedTeams.size === 0 && uniqueCheckpoints.length > 0) {
-          const latestCp = uniqueCheckpoints[uniqueCheckpoints.length - 1];
-          const latestData = historyData.filter(d => d.games_played === latestCp);
+          const latestData = [];
+          allTeams.forEach(abbr => {
+            const teamPoints = historyData.filter(d => d.team === abbr);
+            if (teamPoints.length > 0) {
+              const maxPoint = teamPoints.reduce((max, p) => p.games_played > max.games_played ? p : max, teamPoints[0]);
+              latestData.push(maxPoint);
+            }
+          });
           latestData.sort((a, b) => b.probability - a.probability);
           for (let i = 0; i < 5 && i < latestData.length; i++) {
             selectedTeams.add(latestData[i].team);
@@ -1318,14 +1324,18 @@ std::string buildDashboardHtml() {
         selectedTeams.clear();
       } else if (groupType === 'contenders') {
         selectedTeams.clear();
-        const uniqueCheckpoints = [...new Set(historyData.map(d => d.games_played))].sort((a, b) => a - b);
-        if (uniqueCheckpoints.length > 0) {
-          const latestCp = uniqueCheckpoints[uniqueCheckpoints.length - 1];
-          const latestData = historyData.filter(d => d.games_played === latestCp);
-          latestData.sort((a, b) => b.probability - a.probability);
-          for (let i = 0; i < 5 && i < latestData.length; i++) {
-            selectedTeams.add(latestData[i].team);
+        const allTeams = [...new Set(historyData.map(d => d.team))];
+        const latestData = [];
+        allTeams.forEach(abbr => {
+          const teamPoints = historyData.filter(d => d.team === abbr);
+          if (teamPoints.length > 0) {
+            const maxPoint = teamPoints.reduce((max, p) => p.games_played > max.games_played ? p : max, teamPoints[0]);
+            latestData.push(maxPoint);
           }
+        });
+        latestData.sort((a, b) => b.probability - a.probability);
+        for (let i = 0; i < 5 && i < latestData.length; i++) {
+          selectedTeams.add(latestData[i].team);
         }
       }
       
@@ -1337,7 +1347,7 @@ std::string buildDashboardHtml() {
 
     function updateHistoryChart(checkpoints) {
       const ctx = document.getElementById('history-chart').getContext('2d');
-      const xLabels = checkpoints.map(cp => checkpointLabels[cp] || `${cp} Matches`);
+      const xLabels = checkpoints.map(cp => checkpointLabels[cp] || `${cp} Games`);
 
       const datasets = [];
       selectedTeams.forEach(abbr => {
@@ -1520,8 +1530,6 @@ void WebServer::rebuildProbabilityHistory(int iterations) {
         }
     }
 
-    std::vector<int> checkpoints = {0, 24, 48, 72, 88, 96, 100, 102, 104};
-
     std::string historyPath = "data/probability_history.csv";
     std::ofstream outFile(historyPath);
     if (!outFile.is_open()) {
@@ -1531,18 +1539,32 @@ void WebServer::rebuildProbabilityHistory(int iterations) {
 
     outFile << "games_played,team,probability\n";
 
-    for (int cp : checkpoints) {
-        if (cp > actualCompleted) {
-            break;
+    // 1. Calculate the latest prefix p where each team has played exactly g games
+    std::map<std::pair<std::string, int>, int> latestPrefixForTeamAndGames;
+    for (const auto& [abbr, _] : tournament_.allTeams()) {
+        latestPrefixForTeamAndGames[{abbr, 0}] = 0;
+    }
+    for (int p = 1; p <= actualCompleted; ++p) {
+        for (const auto& [abbr, _] : tournament_.allTeams()) {
+            int gp = 0;
+            for (int i = 0; i < p; ++i) {
+                if (matches[i].homeTeam() == abbr || matches[i].awayTeam() == abbr) {
+                    gp++;
+                }
+            }
+            latestPrefixForTeamAndGames[{abbr, gp}] = p;
         }
+    }
 
+    // 2. Simulate each prefix and record data points aligned with their latest prefix
+    for (int p = 0; p <= actualCompleted; ++p) {
         Tournament simTour = tournament_;
         auto& simMatches = simTour.allMatches();
         std::sort(simMatches.begin(), simMatches.end(), [](const Match& a, const Match& b) {
             return a.matchId() < b.matchId();
         });
 
-        for (size_t i = cp; i < simMatches.size(); ++i) {
+        for (size_t i = p; i < simMatches.size(); ++i) {
             simMatches[i].setScore(-1, -1, -1, -1, "scheduled");
         }
         simTour.computeStandings();
@@ -1551,18 +1573,20 @@ void WebServer::rebuildProbabilityHistory(int iterations) {
         mc.setModelParameters(baseRate_, alpha_, hostAdvantage_);
         auto results = mc.simulate(simTour, iterations, 12345);
 
-        std::vector<std::string> teamAbbrs;
         for (const auto& [abbr, _] : simTour.allTeams()) {
-            teamAbbrs.push_back(abbr);
-        }
-        std::sort(teamAbbrs.begin(), teamAbbrs.end());
+            int gp = 0;
+            for (int i = 0; i < p; ++i) {
+                if (matches[i].homeTeam() == abbr || matches[i].awayTeam() == abbr) {
+                    gp++;
+                }
+            }
 
-        for (const auto& abbr : teamAbbrs) {
-            double prob = results.finalProbability.at(abbr);
-            outFile << cp << "," << abbr << "," << std::fixed << std::setprecision(6) << prob << "\n";
+            if (latestPrefixForTeamAndGames.at({abbr, gp}) == p) {
+                double prob = results.finalProbability.at(abbr);
+                outFile << gp << "," << abbr << "," << std::fixed << std::setprecision(6) << prob << "\n";
+            }
         }
     }
-
     outFile.close();
     std::cout << "Successfully rebuilt probability history up to " << actualCompleted << " completed games using " << iterations << " iterations." << std::endl;
 }

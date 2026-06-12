@@ -1,4 +1,5 @@
 CompileFlags:
+  CompilationDatabase: "build"
   Add:
     - -fopenmp
     - -I/usr/lib/gcc/x86_64-linux-gnu/15/include
