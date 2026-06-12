@@ -305,6 +305,24 @@ __global__ void collatz_search_kernel(
 
                         // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
                         while (curr >= uint128(256) && !overflowed) {
+                            if (curr.high == 0) {
+                                if (steps + 1050 < init_max_steps) {
+                                    curr = one;
+                                    break;
+                                }
+                                uint64_t curr_64 = curr.low;
+                                while (curr_64 >= 256) {
+                                    uint32_t r = curr_64 & 255;
+                                    poly p = d_fpoly_table[r];
+                                    uint64_t next_val = (curr_64 >> 8) * p.mul3 + p.add;
+                                    int extra_div = __builtin_ctzll(next_val);
+                                    curr_64 = next_val >> extra_div;
+                                    steps += p.steps + extra_div;
+                                }
+                                curr = uint128(curr_64, 0);
+                                break;
+                            }
+
                             uint32_t r = curr.low & 255;
                             poly p = d_fpoly_table[r];
                             
@@ -1046,6 +1064,24 @@ __global__ void collatz_search_kernel_suffix_first(
 
                         // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
                         while (curr >= uint128(256) && !overflowed) {
+                            if (curr.high == 0) {
+                                if (steps + 1050 < init_max_steps) {
+                                    curr = one;
+                                    break;
+                                }
+                                uint64_t curr_64 = curr.low;
+                                while (curr_64 >= 256) {
+                                    uint32_t r = curr_64 & 255;
+                                    poly p = d_fpoly_table[r];
+                                    uint64_t next_val = (curr_64 >> 8) * p.mul3 + p.add;
+                                    int extra_div = __builtin_ctzll(next_val);
+                                    curr_64 = next_val >> extra_div;
+                                    steps += p.steps + extra_div;
+                                }
+                                curr = uint128(curr_64, 0);
+                                break;
+                            }
+
                             uint32_t r = curr.low & 255;
                             poly p = d_fpoly_table[r];
                             

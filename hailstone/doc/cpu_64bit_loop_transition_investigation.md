@@ -69,15 +69,60 @@ We benchmarked the throughput on the CPU backend (Intel/AMD x86_64 host) at **Bl
 
 ---
 
-## 3. GPU Investigation Proposal
+## 3. GPU (HIP) Implementation & Performance Results
 
-GPUs (both AMD/ROCm and Vulkan/SPIR-V) do not have native 128-bit register types. Instead, 128-bit structures are represented as arrays of multiple 32-bit or 64-bit registers. Performing 128-bit operations in GPU compute shaders increases **register pressure** (reducing the number of active threads/warps that can run on a Compute Unit simultaneously) and requires multiple instruction cycles.
+We implemented both the 64-bit loop transition and early steps-pruning checks inside the 128-bit Phase 2 loops in [hip_search.hip.cpp](file:///home/mev/source/ai/hailstone/gpu_hip/hip_search.hip.cpp) (for both `collatz_search_kernel` and `collatz_search_kernel_suffix_first`):
 
-### Hypothesis
-Transitioning the trajectory computation in the GPU compute kernels (`shader.comp` and `hip_search.hip.cpp`) to native 64-bit types once `curr.high == 0` should:
-1. Reduce the number of registers (VGPRs) consumed by each thread.
-2. Improve warp occupancy and instruction scheduling on the GPU.
-3. Deliver a speedup similar to the CPU backend.
+```cpp
+if (curr.high == 0) {
+    if (steps + 1050 < init_max_steps) {
+        curr = one;
+        break;
+    }
+    uint64_t curr_64 = curr.low;
+    while (curr_64 >= 256) {
+        uint32_t r = curr_64 & 255;
+        poly p = d_fpoly_table[r];
+        uint64_t next_val = (curr_64 >> 8) * p.mul3 + p.add;
+        int extra_div = __builtin_ctzll(next_val);
+        curr_64 = next_val >> extra_div;
+        steps += p.steps + extra_div;
+    }
+    curr = uint128(curr_64, 0);
+    break;
+}
+```
 
-### Future Work
-We plan to prototype a similar transition check in the 128-bit GLSL compute shader and HIP search kernel to evaluate the performance gains of the 64-bit transition optimization on GPU hardware.
+*Note: In the pruning case, we explicitly set `curr = one` before breaking. This prevents the trailing code block from incorrectly accessing the precomputed `d_steps_table` out-of-bounds since `curr` has not been fully reduced to 1.*
+
+We benchmarked the HIP backend performance at **Block 100** (range: `429496729600` to `429746729600`) over a range of **250,000,000** starting numbers:
+
+### GPU HIP Benchmark Results (Block 100, Range: 250,000,000 values)
+
+| Configuration | Suffix-First Width | Throughput | Execution Time | Speedup vs Baseline | Avg. Steps Computed |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Baseline (Unoptimized)** | Width 8 | **479.50 M numbers/s** | 0.1181 s | 1.00x (Ref) | 189.14 |
+| **Transition + Pruning (Cold)** | Width 8 | **838.49 M numbers/s** | 0.0676 s | **1.75x** | 46.93 |
+| **Transition + Pruning (Warm)** | Width 8 | **877.20 M numbers/s** | 0.0646 s | **1.83x** | **12.30** |
+| | | | | | |
+| **Baseline (Unoptimized)** | Width 20 | **365.66 M numbers/s** | 0.0760 s | 1.00x (Ref) | 201.39 |
+| **Transition + Pruning (Cold)** | Width 20 | **719.01 M numbers/s** | 0.0387 s | **1.97x** | 65.31 |
+| **Transition + Pruning (Warm)** | Width 20 | **702.39 M numbers/s** | 0.0396 s | **1.92x** | **14.71** |
+
+### GPU Performance & Architectural Analysis
+
+1. **Throughput Boost and ALU Efficiency**:
+   Transitioning the remainder of the trajectory to native 64-bit registers on the GPU bypasses the complex, multiple-instruction emulation overhead of 128-bit multi-precision arithmetic. This delivers a **1.75x to 1.97x speedup** in overall throughput.
+2. **SIMT Warp Divergence Limits**:
+   Unlike a CPU where threads execute independently, a GPU executes threads in wavefronts/warps of 32 or 64 threads. A wavefront can only exit early when **all** threads in that wavefront satisfy the pruning check and break out. If even a single thread in the wavefront has a longer trajectory or hasn't pruned, the entire wavefront continues executing. This explains why the warm start (initializing `init_max_steps = 1321`) provides a relatively modest additional speedup over cold start (e.g. 1.83x vs 1.75x for width 8) compared to the 3.0x speedup observed on the CPU.
+3. **Kernel Launch and Synchronization Bottlenecks**:
+   At throughputs approaching 900 M numbers/s, a 250M range search completes in just ~64 ms. At this timescale, the fixed overhead of kernel launch execution, host-device communication, and shared memory reduction/prefix scan synchronizations represent a significant portion of total execution time, limiting the upper bound of warm-start performance gains.
+
+---
+
+## 4. Next Steps (Vulkan Backend)
+
+We plan to apply the same optimizations (64-bit transition + early steps-pruning) to the Vulkan shader backend.
+- We will modify `gpu_vulkan/shader.comp` to implement the transition and pruning inside the Phase 2 compute loops.
+- We will update host-side code in `gpu_vulkan/main.cpp` to correctly bind and pass the global steps peak value.
+
