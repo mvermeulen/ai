@@ -12,7 +12,9 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # CPU search target
+find_package(OpenMP REQUIRED)
 add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp)
+target_link_libraries(hailstone_cpu PRIVATE OpenMP::OpenMP_CXX)
 
 # Unit test target
 add_executable(hailstone_test_uint128 tests/test_uint128.cpp)

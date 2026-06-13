@@ -1,6 +1,12 @@
 #include "cpu_search.h"
 #include "steps_table.h"
 #include "peak_predictor.h"
+#ifdef _OPENMP
+#include <omp.h>
+#else
+inline int omp_get_max_threads() { return 1; }
+inline int omp_get_num_threads() { return 1; }
+#endif
 #include <chrono>
 #include <stdexcept>
 #include <cassert>
@@ -438,7 +444,182 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
     if (start_num < uint128(0x100000000ULL)) {
         throw std::invalid_argument("cpu_search_blocks_gt_0: range starts below block 1");
     }
-    cpu_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+
+    if (start_num > end_num) return;
+
+    // Initialize the master PeakPredictor from existing steps peaks
+    PeakPredictor predictor;
+    for (const auto& peak : steps_peaks) {
+        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    predictor.prune_predictions_less_than(start_num);
+
+    uint128 curr_start = start_num;
+    bool force_sequential = false;
+
+    while (curr_start <= end_num) {
+        int num_threads = omp_get_max_threads();
+        if (num_threads < 1) num_threads = 1;
+
+        // Determine range allocations for a potential parallel search to check if any predictions exist in range
+        uint128 parallel_end = curr_start;
+        uint128 temp_start = curr_start;
+        for (int i = 0; i < num_threads; ++i) {
+            if (temp_start > end_num) break;
+
+            uint64_t current_block = temp_start.low >> 32;
+            uint128 block_end = uint128(((current_block + 1) << 32) - 1);
+            if (block_end > end_num) {
+                block_end = end_num;
+            }
+            parallel_end = block_end;
+            temp_start = block_end + uint128(1);
+        }
+
+        bool has_prediction_in_range = false;
+        for (const auto& p : predictor.active_predictions) {
+            if (p.pred_n <= parallel_end) {
+                has_prediction_in_range = true;
+                break;
+            }
+        }
+
+        if (has_prediction_in_range || force_sequential) {
+            // Sequential fallback
+            uint64_t current_block = curr_start.low >> 32;
+            uint128 block_end = uint128(((current_block + 1) << 32) - 1);
+            if (block_end > end_num) {
+                block_end = end_num;
+            }
+
+            cpu_search_range(curr_start, block_end, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+
+            // Rebuild the master predictor from the updated steps peaks list
+            predictor = PeakPredictor();
+            for (const auto& peak : steps_peaks) {
+                predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+            }
+            predictor.prune_predictions_less_than(block_end + uint128(1));
+
+            curr_start = block_end + uint128(1);
+            force_sequential = false; // Reset flag after one sequential run
+        } else {
+            // Parallel search blocks
+            // Determine how many blocks we can search in parallel
+            std::vector<uint128> block_starts;
+            std::vector<uint128> block_ends;
+
+            temp_start = curr_start;
+            for (int i = 0; i < num_threads; ++i) {
+                if (temp_start > end_num) break;
+
+                uint64_t current_block = temp_start.low >> 32;
+                uint128 block_end = uint128(((current_block + 1) << 32) - 1);
+                if (block_end > end_num) {
+                    block_end = end_num;
+                }
+
+                block_starts.push_back(temp_start);
+                block_ends.push_back(block_end);
+
+                temp_start = block_end + uint128(1);
+            }
+
+            int num_allocated_blocks = (int)block_starts.size();
+            if (num_allocated_blocks == 0) break;
+
+            if (num_allocated_blocks == 1 || num_threads == 1) {
+                // Just run single block sequentially
+                cpu_search_range(block_starts[0], block_ends[0], max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+
+                predictor = PeakPredictor();
+                for (const auto& peak : steps_peaks) {
+                    predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+                }
+                predictor.prune_predictions_less_than(block_ends[0] + uint128(1));
+
+                curr_start = block_ends[0] + uint128(1);
+                continue;
+            }
+
+            // Allocate local outputs for each thread
+            std::vector<std::vector<PeakRecord>> local_max_value_peaks(num_allocated_blocks, max_value_peaks);
+            std::vector<std::vector<PeakRecord>> local_steps_peaks(num_allocated_blocks, steps_peaks);
+            std::vector<std::vector<PeakRecord>> local_sigma_peaks(num_allocated_blocks, sigma_peaks);
+            std::vector<PeakState> local_global_peaks(num_allocated_blocks, global_peaks);
+            std::vector<SearchMetrics> local_metrics(num_allocated_blocks);
+            for (int i = 0; i < num_allocated_blocks; ++i) {
+                local_metrics[i] = SearchMetrics{0};
+            }
+
+            auto parallel_start_time = std::chrono::high_resolution_clock::now();
+
+            // Execute in parallel using OpenMP
+            #pragma omp parallel for schedule(static, 1) num_threads(num_allocated_blocks)
+            for (int i = 0; i < num_allocated_blocks; ++i) {
+                cpu_search_range(block_starts[i], block_ends[i],
+                                 local_max_value_peaks[i],
+                                 local_steps_peaks[i],
+                                 local_sigma_peaks[i],
+                                 local_global_peaks[i],
+                                 local_metrics[i]);
+            }
+
+            auto parallel_end_time = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> parallel_diff = parallel_end_time - parallel_start_time;
+
+            // Check if any thread found a new peak
+            int first_peak_idx = -1;
+            for (int i = 0; i < num_allocated_blocks; ++i) {
+                bool new_peak = (local_steps_peaks[i].size() > steps_peaks.size()) ||
+                                (local_max_value_peaks[i].size() > max_value_peaks.size()) ||
+                                (local_sigma_peaks[i].size() > sigma_peaks.size());
+                if (new_peak) {
+                    first_peak_idx = i;
+                    break;
+                }
+            }
+
+            if (first_peak_idx == -1) {
+                // No peaks found in any parallel block range. All succeeded!
+                // Merge metrics
+                for (int i = 0; i < num_allocated_blocks; ++i) {
+                    metrics.total_numbers_checked += local_metrics[i].total_numbers_checked;
+                    metrics.total_steps_computed += local_metrics[i].total_steps_computed;
+                    metrics.numbers_skipped_even += local_metrics[i].numbers_skipped_even;
+                    metrics.numbers_skipped_mod6 += local_metrics[i].numbers_skipped_mod6;
+                    metrics.numbers_overflowed += local_metrics[i].numbers_overflowed;
+                }
+                metrics.elapsed_seconds += parallel_diff.count();
+                
+                // Advance curr_start
+                curr_start = block_ends[num_allocated_blocks - 1] + uint128(1);
+            } else {
+                // A peak was found starting in block index first_peak_idx!
+                // 1. Keep results from all blocks prior to first_peak_idx
+                for (int i = 0; i < first_peak_idx; ++i) {
+                    metrics.total_numbers_checked += local_metrics[i].total_numbers_checked;
+                    metrics.total_steps_computed += local_metrics[i].total_steps_computed;
+                    metrics.numbers_skipped_even += local_metrics[i].numbers_skipped_even;
+                    metrics.numbers_skipped_mod6 += local_metrics[i].numbers_skipped_mod6;
+                    metrics.numbers_overflowed += local_metrics[i].numbers_overflowed;
+                }
+                metrics.elapsed_seconds += parallel_diff.count();
+                
+                // 2. Discard results of blocks starting from first_peak_idx.
+                // Roll back to the beginning of block first_peak_idx and force sequential.
+                curr_start = block_starts[first_peak_idx];
+                force_sequential = true;
+            }
+
+            // Sync master predictor from the updated steps_peaks
+            predictor = PeakPredictor();
+            for (const auto& peak : steps_peaks) {
+                predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+            }
+            predictor.prune_predictions_less_than(curr_start);
+        }
+    }
 }
 
 std::vector<uint32_t> generate_allowed_suffixes(int width) {

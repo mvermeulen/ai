@@ -5,10 +5,10 @@ As the search proceeds, this document is updated to record the historical peaks 
 
 ## Search Status
 
-- **Current Range Searched**: `[3, 433,791,696,895]` (completed block 100)
-- **Global Max Value**: 21,948,483,635,670,417,963,748 (≈ 2.195e+22)
-- **Global Max Steps**: 1,321
-- **Global Max Stopping Time ($\sigma$)**: 547
+- **Current Range Searched**: `[3, 1,078,036,791,295]` (completed block 250)
+- **Global Max Value**: 400,558,740,821,250,122,033,728 (≈ 4.006e+23)
+- **Global Max Steps**: 1,348
+- **Global Max Stopping Time ($\sigma$)**: 550
 
 ---
 
@@ -73,6 +73,9 @@ Tracked when a starting value $n$ generates a trajectory whose maximum intermedi
 | 204,430,613,247 | 1,415,260,793,009,654,991,088 (≈ 1.415e+21) |
 | 231,913,730,799 | 2,190,343,823,882,874,513,556 (≈ 2.190e+21) |
 | 272,025,660,543 | 21,948,483,635,670,417,963,748 (≈ 2.195e+22) |
+| 446,559,217,279 | 39,533,276,910,778,060,381,072 (≈ 3.953e+22) |
+| 567,839,862,631 | 100,540,173,225,585,986,235,988 (≈ 1.005e+23) |
+| 871,673,828,443 | 400,558,740,821,250,122,033,728 (≈ 4.006e+23) |
 
 ---
 
@@ -164,7 +167,11 @@ Tracked when a starting value $n$ takes more total steps to reach $1$ than any p
 | 166,763,117,679 | 1255 |
 | 202,485,402,111 | 1307 |
 | 404,970,804,222 | 1308 |
-| 426,635,908,975 | 1321 |
+| 426,635,908,975 | 1,321 |
+| 568,847,878,633 | 1,324 |
+| 674,190,078,379 | 1,332 |
+| 881,715,740,415 | 1,335 |
+| 989,345,275,647 | 1,348 |
 
 ---
 
@@ -196,3 +203,4 @@ Tracked when a starting value $n$ takes more steps to drop below its starting va
 | 1,827,397,567 | 433 |
 | 2,788,008,987 | 447 |
 | 12,235,060,455 | 547 |
+| 898,696,369,947 | 550 |

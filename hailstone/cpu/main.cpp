@@ -5,6 +5,12 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#ifdef _OPENMP
+#include <omp.h>
+#else
+inline int omp_get_max_threads() { return 1; }
+inline int omp_get_num_threads() { return 1; }
+#endif
 
 uint128 parse_uint128(const std::string &str) {
   uint128 res(0, 0);
@@ -211,6 +217,12 @@ uint128 block_to_num(uint64_t block) {
 
 int main(int argc, char *argv[]) {
   std::cout << "=== Hailstone CPU Search Program ===" << std::endl;
+  std::cout << "[OpenMP Diagnostic] Max Threads: " << omp_get_max_threads() << std::endl;
+  #pragma omp parallel
+  {
+      #pragma omp single
+      std::cout << "[OpenMP Diagnostic] Active Threads in parallel region: " << omp_get_num_threads() << std::endl;
+  }
 
   uint128 start(3);
   uint128 end(100000);
