@@ -1,5 +1,6 @@
 #include "hip_search.hip.h"
 #include "steps_table.h"
+#include "peak_predictor.h"
 #ifndef POLY_WIDTH
 #define POLY_WIDTH 8
 #endif
@@ -503,6 +504,13 @@ void hip_search_range(
     }
     if (start > end) return;
 
+    // Initialize PeakPredictor
+    PeakPredictor predictor;
+    for (const auto& peak : steps_peaks) {
+        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    predictor.prune_predictions_less_than(start);
+
     static bool steps_copied = false;
     if (!steps_copied) {
         uint32_t steps_u32[256];
@@ -568,6 +576,10 @@ void hip_search_range(
             uint128 chunk_odds_128 = shift_right(chunk_end_val - chunk_start_val, 1) + uint128(1);
             uint64_t chunk_odds = chunk_odds_128.low;
             total_odds_checked += chunk_odds;
+
+            // Confirm predictions up to current_chunk_start
+            predictor.process_up_to(current_chunk_start, masterStepsPeaks);
+            masterPeaks.current_max_steps = predictor.current_max_steps;
 
             // Initialize/reset device buffers for this chunk
             int zero = 0;
@@ -639,7 +651,18 @@ void hip_search_range(
                 int to_copy = std::min(steps_count, (int)MAX_PEAK_RECORDS);
                 std::vector<PeakRecord> chunkSteps(to_copy);
                 HIP_CHECK(hipMemcpy(chunkSteps.data(), d_steps_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
-                masterStepsPeaks.insert(masterStepsPeaks.end(), chunkSteps.begin(), chunkSteps.end());
+                
+                std::sort(chunkSteps.begin(), chunkSteps.end(), [](const PeakRecord& a, const PeakRecord& b) {
+                    return a.start_val < b.start_val;
+                });
+
+                for (const auto& peak : chunkSteps) {
+                    predictor.process_up_to(peak.start_val, masterStepsPeaks);
+                    if (peak.metric_val.low > predictor.current_max_steps) {
+                        masterStepsPeaks.push_back(peak);
+                        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+                    }
+                }
             }
 
             if (sigma_count > 0) {
@@ -649,12 +672,12 @@ void hip_search_range(
                 masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
             }
 
+            predictor.process_up_to(current_chunk_end, masterStepsPeaks);
+            masterPeaks.current_max_steps = predictor.current_max_steps;
+
             // Update masterPeaks thresholds
             if (chunkPeaks.current_max_value > masterPeaks.current_max_value) {
                 masterPeaks.current_max_value = chunkPeaks.current_max_value;
-            }
-            if (chunkPeaks.current_max_steps > masterPeaks.current_max_steps) {
-                masterPeaks.current_max_steps = chunkPeaks.current_max_steps;
             }
             if (chunkPeaks.current_max_sigma > masterPeaks.current_max_sigma) {
                 masterPeaks.current_max_sigma = chunkPeaks.current_max_sigma;
@@ -663,6 +686,10 @@ void hip_search_range(
 
         current_chunk_start = current_chunk_start + uint128(CHUNK_SIZE);
     }
+
+    // Confirm any remaining predictions up to end
+    predictor.process_up_to(end, masterStepsPeaks);
+    masterPeaks.current_max_steps = predictor.current_max_steps;
 
     // Filter peaks on CPU side
     filter_peaks(masterMaxValPeaks, masterMaxValPeaks.size());
@@ -1236,6 +1263,13 @@ void hip_search_range_suffix_first(
 ) {
     if (start > end) return;
 
+    // Initialize PeakPredictor
+    PeakPredictor predictor;
+    for (const auto& peak : steps_peaks) {
+        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    predictor.prune_predictions_less_than(start);
+
     static bool steps_copied = false;
     if (!steps_copied) {
         uint32_t steps_u32[256];
@@ -1293,6 +1327,10 @@ void hip_search_range_suffix_first(
         uint64_t total_work_items = num_prefixes * allowed_suffixes.size();
 
         if (total_work_items > 0) {
+            // Confirm predictions up to current_chunk_start
+            predictor.process_up_to(current_chunk_start, masterStepsPeaks);
+            masterPeaks.current_max_steps = predictor.current_max_steps;
+
             int zero = 0;
             SearchMetrics initial_chunk_metrics = {0};
 
@@ -1361,7 +1399,18 @@ void hip_search_range_suffix_first(
                 int to_copy = std::min(steps_count, (int)MAX_PEAK_RECORDS);
                 std::vector<PeakRecord> chunkSteps(to_copy);
                 HIP_CHECK(hipMemcpy(chunkSteps.data(), d_steps_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
-                masterStepsPeaks.insert(masterStepsPeaks.end(), chunkSteps.begin(), chunkSteps.end());
+                
+                std::sort(chunkSteps.begin(), chunkSteps.end(), [](const PeakRecord& a, const PeakRecord& b) {
+                    return a.start_val < b.start_val;
+                });
+
+                for (const auto& peak : chunkSteps) {
+                    predictor.process_up_to(peak.start_val, masterStepsPeaks);
+                    if (peak.metric_val.low > predictor.current_max_steps) {
+                        masterStepsPeaks.push_back(peak);
+                        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+                    }
+                }
             }
 
             if (sigma_count > 0) {
@@ -1371,11 +1420,11 @@ void hip_search_range_suffix_first(
                 masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
             }
 
+            predictor.process_up_to(current_chunk_end, masterStepsPeaks);
+            masterPeaks.current_max_steps = predictor.current_max_steps;
+
             if (chunkPeaks.current_max_value > masterPeaks.current_max_value) {
                 masterPeaks.current_max_value = chunkPeaks.current_max_value;
-            }
-            if (chunkPeaks.current_max_steps > masterPeaks.current_max_steps) {
-                masterPeaks.current_max_steps = chunkPeaks.current_max_steps;
             }
             if (chunkPeaks.current_max_sigma > masterPeaks.current_max_sigma) {
                 masterPeaks.current_max_sigma = chunkPeaks.current_max_sigma;
@@ -1386,6 +1435,10 @@ void hip_search_range_suffix_first(
 
         current_chunk_start = current_chunk_start + uint128(CHUNK_SIZE);
     }
+
+    // Confirm any remaining predictions up to end
+    predictor.process_up_to(end, masterStepsPeaks);
+    masterPeaks.current_max_steps = predictor.current_max_steps;
 
     filter_peaks(masterMaxValPeaks, masterMaxValPeaks.size());
     filter_peaks(masterStepsPeaks, masterStepsPeaks.size());

@@ -1,5 +1,6 @@
 #include "cpu_search.h"
 #include "steps_table.h"
+#include "peak_predictor.h"
 #include <chrono>
 #include <stdexcept>
 #include <cassert>
@@ -197,6 +198,13 @@ void cpu_search_range(uint128 start, uint128 end,
                       SearchMetrics& metrics) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
+    // Initialize peak predictor from existing steps peaks
+    PeakPredictor predictor;
+    for (const auto& peak : steps_peaks) {
+        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    predictor.prune_predictions_less_than(start);
+
     // Ensure start is odd
     uint128 curr = start;
     if ((curr.low & 1) == 0) {
@@ -205,6 +213,10 @@ void cpu_search_range(uint128 start, uint128 end,
     }
 
     for (; curr <= end; curr = curr + uint128(2)) {
+        // Process predictions up to curr
+        predictor.process_up_to(curr, steps_peaks);
+        global_peaks.current_max_steps = predictor.current_max_steps;
+
         // Modulo 6 cutoff: if curr % 6 == 5, skip
         // Since curr is odd, curr % 6 can be 1, 3, or 5.
         // We can do a fast modulo 6 check
@@ -245,7 +257,8 @@ void cpu_search_range(uint128 start, uint128 end,
 
         // Check steps peak
         if (stats.steps > global_peaks.current_max_steps) {
-            global_peaks.current_max_steps = stats.steps;
+            predictor.add_confirmed_peak(curr, stats.steps);
+            global_peaks.current_max_steps = predictor.current_max_steps;
             steps_peaks.push_back({curr, uint128(stats.steps)});
         }
 
@@ -255,6 +268,10 @@ void cpu_search_range(uint128 start, uint128 end,
             sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
         }
     }
+
+    // Confirm any remaining predictions up to end
+    predictor.process_up_to(end, steps_peaks);
+    global_peaks.current_max_steps = predictor.current_max_steps;
 
     // Accumulate evens skipped in the range
     // In a range [start, end], half the numbers are even.
@@ -286,6 +303,13 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
+    // Initialize peak predictor from existing steps peaks
+    PeakPredictor predictor;
+    for (const auto& peak : steps_peaks) {
+        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    predictor.prune_predictions_less_than(start_num);
+
     uint64_t start_64 = start_num.low;
     uint64_t end_64 = end_num.low;
 
@@ -296,6 +320,10 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
     }
 
     for (; curr <= end_64; curr += 2) {
+        uint128 u128_curr(curr);
+        predictor.process_up_to(u128_curr, steps_peaks);
+        global_peaks.current_max_steps = predictor.current_max_steps;
+
         uint64_t sum_mod3 = curr % 3;
         if (sum_mod3 == 2) {
             metrics.numbers_skipped_mod6++;
@@ -375,7 +403,8 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
         }
 
         if (steps > global_peaks.current_max_steps) {
-            global_peaks.current_max_steps = steps;
+            predictor.add_confirmed_peak(uint128(curr), steps);
+            global_peaks.current_max_steps = predictor.current_max_steps;
             steps_peaks.push_back({uint128(curr), uint128(steps)});
         }
 
@@ -384,6 +413,10 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
             sigma_peaks.push_back({uint128(curr), uint128(stopping_time)});
         }
     }
+
+    // Confirm any remaining predictions up to end
+    predictor.process_up_to(end_num, steps_peaks);
+    global_peaks.current_max_steps = predictor.current_max_steps;
 
     if (end_64 >= start_64) {
         uint64_t diff = end_64 + 1 - start_64;
@@ -480,6 +513,13 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
+    // Initialize peak predictor from existing steps peaks
+    PeakPredictor predictor;
+    for (const auto& peak : steps_peaks) {
+        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    predictor.prune_predictions_less_than(start_num);
+
     uint64_t start_64 = start_num.low;
     uint64_t end_64 = end_num.low;
 
@@ -500,6 +540,10 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
             // Boundary checks
             if (curr < start_64) continue;
             if (curr > end_64) break; // Suffixes are ordered; subsequent ones will also exceed end_64
+
+            uint128 u128_curr(curr);
+            predictor.process_up_to(u128_curr, steps_peaks);
+            global_peaks.current_max_steps = predictor.current_max_steps;
 
             // Modulo 6 cutoff: if curr % 6 == 5 (equivalent to curr % 3 == 2 since curr is odd)
             if ((base_mod3 + suffix) % 3 == 2) {
@@ -580,7 +624,8 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
             }
 
             if (steps > global_peaks.current_max_steps) {
-                global_peaks.current_max_steps = steps;
+                predictor.add_confirmed_peak(uint128(curr), steps);
+                global_peaks.current_max_steps = predictor.current_max_steps;
                 steps_peaks.push_back({uint128(curr), uint128(steps)});
             }
 
@@ -590,6 +635,10 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
             }
         }
     }
+
+    // Confirm any remaining predictions up to end
+    predictor.process_up_to(end_num, steps_peaks);
+    global_peaks.current_max_steps = predictor.current_max_steps;
 
     // Accumulate evens skipped in the range
     if (end_64 >= start_64) {
@@ -613,6 +662,13 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
                                    SearchMetrics& metrics) {
     auto start_time = std::chrono::high_resolution_clock::now();
 
+    // Initialize peak predictor from existing steps peaks
+    PeakPredictor predictor;
+    for (const auto& peak : steps_peaks) {
+        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    predictor.prune_predictions_less_than(start);
+
     uint128 start_prefix = shift_right(start, width);
     uint128 end_prefix = shift_right(end, width);
 
@@ -629,6 +685,9 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
             // Boundary checks
             if (curr < start) continue;
             if (curr > end) break; // Suffixes are ordered; subsequent ones will exceed end
+
+            predictor.process_up_to(curr, steps_peaks);
+            global_peaks.current_max_steps = predictor.current_max_steps;
 
             // Modulo 6 cutoff: if curr % 6 == 5 (equivalent to (curr % 3 == 2) since curr is odd)
             if ((base_mod3 + suffix) % 3 == 2) {
@@ -660,7 +719,8 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
 
             // Check steps peak
             if (stats.steps > global_peaks.current_max_steps) {
-                global_peaks.current_max_steps = stats.steps;
+                predictor.add_confirmed_peak(curr, stats.steps);
+                global_peaks.current_max_steps = predictor.current_max_steps;
                 steps_peaks.push_back({curr, uint128(stats.steps)});
             }
 
@@ -671,6 +731,10 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
             }
         }
     }
+
+    // Confirm any remaining predictions up to end
+    predictor.process_up_to(end, steps_peaks);
+    global_peaks.current_max_steps = predictor.current_max_steps;
 
     // Accumulate evens skipped in the range
     if (end >= start) {

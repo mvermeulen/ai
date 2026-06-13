@@ -1,4 +1,5 @@
 #include "hip_search.hip.h"
+#include "peak_predictor.h"
 #include <iostream>
 #include <iomanip>
 #include <string>
@@ -444,6 +445,13 @@ int main(int argc, char* argv[]) {
             std::cout << "Saved checkpoint: " << checkpoint_file << std::endl;
         }
     }
+
+    // Print future predictions at the end of the search
+    PeakPredictor final_predictor;
+    for (const auto& peak : steps_peaks) {
+        final_predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+    }
+    final_predictor.print_future_predictions_by_block();
 
     return 0;
 }

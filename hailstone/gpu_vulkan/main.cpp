@@ -11,6 +11,7 @@
 #include <map>
 #include <vulkan/vulkan.h>
 #include "steps_table.h"
+#include "peak_predictor.h"
 #define POLY_WIDTH 8
 #include "fpoly_table.h"
 
@@ -360,6 +361,14 @@ void vulkan_search_range_internal(
 ) {
     if (start_val > end_val) return;
 
+    // Initialize PeakPredictor
+    PeakPredictor predictor;
+    for (const auto& peak : masterStepsPeaks) {
+        uint128 n(peak.start.low, peak.start.high);
+        predictor.add_confirmed_peak(n, peak.val.low);
+    }
+    predictor.prune_predictions_less_than(uint128(static_cast<uint64_t>(start_val), static_cast<uint64_t>(start_val >> 64)));
+
     const unsigned __int128 CHUNK_SIZE = 2000000;
     unsigned __int128 current_chunk_start = start_val;
 
@@ -397,6 +406,20 @@ void vulkan_search_range_internal(
                 unsigned __int128 chunk_odds_128 = (chunk_end_val - chunk_start_val) / 2 + 1;
                 total_work_items = static_cast<uint32_t>(chunk_odds_128);
                 groupCount = (total_work_items + 255) / 256;
+            }
+
+            // Confirm predictions up to current_chunk_start
+            {
+                uint128 u128_chunk_start(static_cast<uint64_t>(current_chunk_start), static_cast<uint64_t>(current_chunk_start >> 64));
+                predictor.process_up_to_generic(u128_chunk_start, masterStepsPeaks, [](uint128 n, uint32_t steps) {
+                    PeakRecordGpu r;
+                    r.start.low = n.low;
+                    r.start.high = n.high;
+                    r.val.low = steps;
+                    r.val.high = 0;
+                    return r;
+                });
+                masterPeaks.max_steps = predictor.current_max_steps;
             }
 
             // Copy masterPeaks to bufferMemories[0] and reset locks/counts/metrics
@@ -499,7 +522,28 @@ void vulkan_search_range_internal(
                     VK_CHECK(vkMapMemory(device, bufferMemories[4], 0, bufferSizes[4], 0, &data));
                     std::memcpy(chunkSteps.data(), data, to_copy * sizeof(PeakRecordGpu));
                     vkUnmapMemory(device, bufferMemories[4]);
-                    masterStepsPeaks.insert(masterStepsPeaks.end(), chunkSteps.begin(), chunkSteps.end());
+
+                    std::sort(chunkSteps.begin(), chunkSteps.end(), [](const PeakRecordGpu& a, const PeakRecordGpu& b) {
+                        uint128 start_a(a.start.low, a.start.high);
+                        uint128 start_b(b.start.low, b.start.high);
+                        return start_a < start_b;
+                    });
+
+                    for (const auto& peak : chunkSteps) {
+                        uint128 n(peak.start.low, peak.start.high);
+                        predictor.process_up_to_generic(n, masterStepsPeaks, [](uint128 n, uint32_t steps) {
+                            PeakRecordGpu r;
+                            r.start.low = n.low;
+                            r.start.high = n.high;
+                            r.val.low = steps;
+                            r.val.high = 0;
+                            return r;
+                        });
+                        if (peak.val.low > predictor.current_max_steps) {
+                            masterStepsPeaks.push_back(peak);
+                            predictor.add_confirmed_peak(n, peak.val.low);
+                        }
+                    }
                 }
 
                 if (chunkCounts.sigma_count > 0) {
@@ -537,8 +581,17 @@ void vulkan_search_range_internal(
             if (chunk_max_val > current_master_val) {
                 masterPeaks.max_val = chunkPeaks.max_val;
             }
-            if (chunkPeaks.max_steps > masterPeaks.max_steps) {
-                masterPeaks.max_steps = chunkPeaks.max_steps;
+            {
+                uint128 u128_chunk_end(static_cast<uint64_t>(current_chunk_end), static_cast<uint64_t>(current_chunk_end >> 64));
+                predictor.process_up_to_generic(u128_chunk_end, masterStepsPeaks, [](uint128 n, uint32_t steps) {
+                    PeakRecordGpu r;
+                    r.start.low = n.low;
+                    r.start.high = n.high;
+                    r.val.low = steps;
+                    r.val.high = 0;
+                    return r;
+                });
+                masterPeaks.max_steps = predictor.current_max_steps;
             }
             if (chunkPeaks.max_sigma > masterPeaks.max_sigma) {
                 masterPeaks.max_sigma = chunkPeaks.max_sigma;
@@ -546,6 +599,20 @@ void vulkan_search_range_internal(
         }
 
         current_chunk_start += CHUNK_SIZE;
+    }
+
+    // Confirm any remaining predictions up to end_val
+    {
+        uint128 u128_end(static_cast<uint64_t>(end_val), static_cast<uint64_t>(end_val >> 64));
+        predictor.process_up_to_generic(u128_end, masterStepsPeaks, [](uint128 n, uint32_t steps) {
+            PeakRecordGpu r;
+            r.start.low = n.low;
+            r.start.high = n.high;
+            r.val.low = steps;
+            r.val.high = 0;
+            return r;
+        });
+        masterPeaks.max_steps = predictor.current_max_steps;
     }
 }
 
@@ -1279,6 +1346,14 @@ int main(int argc, char* argv[]) {
     filter_and_print_peaks("Max Value Peaks", masterMaxValPeaks, masterMaxValPeaks.size());
     filter_and_print_peaks("Steps Peaks", masterStepsPeaks, masterStepsPeaks.size());
     filter_and_print_peaks("Stopping Time (sigma) Peaks", masterSigmaPeaks, masterSigmaPeaks.size());
+
+    // Print future predictions at the end of the search
+    PeakPredictor final_predictor;
+    for (const auto &peak : masterStepsPeaks) {
+        uint128 n(peak.start.low, peak.start.high);
+        final_predictor.add_confirmed_peak(n, peak.val.low);
+    }
+    final_predictor.print_future_predictions_by_block();
 
     // 13. Clean up Vulkan
     vkDestroyCommandPool(device, commandPool, nullptr);
