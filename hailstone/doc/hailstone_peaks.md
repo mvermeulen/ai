@@ -5,7 +5,7 @@ As the search proceeds, this document is updated to record the historical peaks 
 
 ## Search Status
 
-- **Current Range Searched**: `[3, 429,496,729,600]` (up to block 100.00)
+- **Current Range Searched**: `[3, 433,791,696,895]` (completed block 100)
 - **Global Max Value**: 21,948,483,635,670,417,963,748 (≈ 2.195e+22)
 - **Global Max Steps**: 1,321
 - **Global Max Stopping Time ($\sigma$)**: 547
