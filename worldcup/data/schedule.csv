@@ -1,9 +1,9 @@
 match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty_score,away_penalty_score,status,host_city
 1,group,A,2026-06-11,MEX,RSA,2,0,-1,-1,final,Guadalajara
 2,group,A,2026-06-11,KOR,CZE,2,1,-1,-1,final,Monterrey
-3,group,D,2026-06-12,USA,PAR,0,0,-1,-1,upcoming,Seattle
+3,group,D,2026-06-12,USA,PAR,4,1,-1,-1,final,Seattle
 4,group,B,2026-06-12,CAN,BIH,1,1,-1,-1,final,Vancouver
-5,group,C,2026-06-13,BRA,MAR,-1,-1,-1,-1,scheduled,New York/New Jersey
+5,group,C,2026-06-13,BRA,MAR,0,0,-1,-1,upcoming,New York/New Jersey
 6,group,C,2026-06-13,SCO,HAI,-1,-1,-1,-1,scheduled,Boston
 7,group,B,2026-06-13,SUI,QAT,-1,-1,-1,-1,scheduled,Toronto
 8,group,D,2026-06-14,AUS,TUR,-1,-1,-1,-1,scheduled,San Francisco
