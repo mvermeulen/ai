@@ -1,0 +1,72 @@
+# Cline Developer Rules & Verification Constraints
+
+You are an automated assistant helping to maintain, debug, and optimize the **Hailstone Collatz Search** repository. This repository implements a high-performance, multi-backend (CPU, Vulkan, HIP) Collatz peak search program.
+
+To work on this repository safely, you must strictly adhere to the following guidelines and instructions.
+
+---
+
+## 1. The Golden Rule: Correctness Above All
+
+> [!IMPORTANT]
+> **Correctness is the absolute most important goal of this project.**
+> - Quickly producing wrong results is completely pointless.
+> - When implementing optimizations, refactoring code, or debugging, any change that alters Collatz trajectory math, peak logic, or checkpoint formats must be verified before declaring success.
+> - **If you are using a local or less-powerful LLM**, err heavily on the side of caution. It is far better to state that a task is beyond your capabilities or requires user intervention than to write code that produces mathematically incorrect search results.
+
+---
+
+## 2. Compiling and Verifying Code
+
+For any C++ or GLSL shader code modification, you must build the project and run the complete test suite.
+
+### Build Instructions
+```bash
+# Must configure and build in a 'build' directory at the root
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make -j$(nproc)
+```
+
+### Required Test Executions
+1. **Unit Tests**: Run `./build/hailstone_test_uint128` to verify custom 128-bit integer math functions.
+2. **Differential/Integration Verification**: Run `./build/hailstone_verify`. This binary runs cross-backend checks comparing Vulkan and HIP execution against the CPU reference, checkpoint serialization, and block resumption logic.
+
+**Do not consider any change complete until both test binaries compile and report 100% success.**
+
+---
+
+## 3. Architecture & Math Guidelines
+
+- **Shared Headers**: Shared headers reside in [include/](file:///home/mev/source/ai/hailstone/include/). The custom `uint128` is in [include/uint128.h](file:///home/mev/source/ai/hailstone/include/uint128.h).
+- **Golden Reference**: The CPU Reference implementation in [cpu/](file:///home/mev/source/ai/hailstone/cpu/) is the golden standard of correctness. Vulkan and HIP backends must match the CPU outputs exactly.
+- **64-bit Transition**: Numbers under $2^{32}$ automatically run using native `uint64_t` loops for speed. Any modification to logic must not break this boundary or introduce discrepancies in peak tracking.
+- **Suffix-First Search**: The search filters starting values using residue classes (modulo $2^w$) and table lookups (`steps8`). Ensure tables and polynomial constants are never modified unless mathematically justified.
+
+---
+
+## 4. Maintenance of Documentation & Benchmarks
+
+To prevent documentation and benchmark decay as the project develops:
+
+1. **Benchmark Automation**:
+   - Run `python3 benchmarks/benchmark.py --mode quick` to benchmark changes.
+   - Running the benchmark driver automatically compiles the optimization history in [benchmarks/history.json](file:///home/mev/source/ai/hailstone/benchmarks/history.json) and [benchmarks/README.md](file:///home/mev/source/ai/hailstone/benchmarks/README.md).
+   - Ensure your optimizations do not degrade performance.
+
+2. **Peaks Records**:
+   - If search range limits or peak values change, update the checkpoint file (`hailstone.chk`) and run:
+     ```bash
+     python3 tools/generate_peaks_doc.py
+     ```
+   - This regenerates [doc/hailstone_peaks.md](file:///home/mev/source/ai/hailstone/doc/hailstone_peaks.md).
+
+3. **Instruction Keep-Up**:
+   - If repository paths, test suites, or execution models change, update `.clinerules`, `CLAUDE.md`, and `.github/copilot-instructions.md` immediately.
+
+---
+
+## 5. Guidelines for Local LLMs
+- **Keep Edits Small**: Make incremental, logical edits instead of replacing whole files.
+- **Expose Assumptions**: Comment any equations or mathematical optimizations you write, citing the relevant paper or math theory.
+- **Verification Priority**: If running local/slower LLMs, always double check compilation errors. Do not ignore compiler warnings.
