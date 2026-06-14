@@ -16,13 +16,16 @@ make -j$(nproc)
 ```
 
 ### Verification & Test Commands
-Run these commands after making *any* code or logic changes. Correctness is verified when both suites pass:
+Run these commands after making *any* code or logic changes. Correctness is verified when all suites pass:
 ```bash
 # 1. Run custom uint128 unit tests (from build directory)
 ./build/hailstone_test_uint128
 
 # 2. Run cross-backend differential integration tests (from build directory)
 ./build/hailstone_verify
+
+# 3. Compare a search checkpoint against the Leavens-Vermeulen Golden Master
+python3 tools/compare_checkpoint.py hailstone_debug.chk golden_master.chk
 ```
 
 ### Benchmarks

@@ -30,6 +30,7 @@ When suggesting code modifications:
 2. **Correctness Verification**:
    - Run `hailstone_test_uint128` to verify custom arithmetic correctness.
    - Run `hailstone_verify` to perform full cross-backend differential alignment and checkpoint verification.
+   - Run `python3 tools/compare_checkpoint.py <checkpoint_file> golden_master.chk` to verify the search checkpoint matches the Leavens-Vermeulen paper's golden master peak tables.
 3. **Benchmark Verification**:
    - Run `python3 benchmarks/benchmark.py --mode quick` to verify that modifications do not introduce performance regressions.
 

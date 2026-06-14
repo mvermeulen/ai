@@ -1,4 +1,21 @@
 #!/usr/bin/env python3
+"""
+Checkpoint Comparison Utility (Golden Master Verification)
+
+This script compares a search checkpoint file against the Leavens-Vermeulen paper's 
+peaks table formatted as 'golden_master.chk'. It filters peaks in both files up 
+to the minimum shared search limit and checks for:
+  1. Missing peaks (peaks in golden master but missing in the search output)
+  2. Extra peaks (peaks in search output but missing in the golden master)
+  3. Metric value mismatches (different peak values or step counts)
+  4. Global summary statistics correctness (max_value, max_steps, max_sigma)
+
+Usage:
+    python3 tools/compare_checkpoint.py <candidate.chk> <golden_master.chk>
+
+Example:
+    python3 tools/compare_checkpoint.py hailstone_debug.chk golden_master.chk
+"""
 import sys
 import os
 

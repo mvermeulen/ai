@@ -31,8 +31,9 @@ make -j$(nproc)
 ### Required Test Executions
 1. **Unit Tests**: Run `./build/hailstone_test_uint128` to verify custom 128-bit integer math functions.
 2. **Differential/Integration Verification**: Run `./build/hailstone_verify`. This binary runs cross-backend checks comparing Vulkan and HIP execution against the CPU reference, checkpoint serialization, and block resumption logic.
+3. **Golden Master Comparison**: Run `python3 tools/compare_checkpoint.py <checkpoint_file> golden_master.chk` to compare the search checkpoint with verified peak tables from the Leavens-Vermeulen paper.
 
-**Do not consider any change complete until both test binaries compile and report 100% success.**
+**Do not consider any change complete until all test suites compile and report 100% success.**
 
 ---
 
