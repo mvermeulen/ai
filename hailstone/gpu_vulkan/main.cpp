@@ -1054,6 +1054,7 @@ void print_help() {
               << "  --num-blocks, --num_blocks COUNT   Number of blocks to check (overrides end-num/end-block)\n"
               << "  --checkpoint, --checkpoint_file FILE Checkpoint file path (default: hailstone.chk)\n"
               << "  --no-checkpoint, --no_checkpoint     Disable saving and restoring checkpoints\n"
+              << "  --no-save-checkpoint, --no_save_checkpoint Disable saving checkpoints at the end of search\n"
               << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, or 20)\n\n"
               << "Note: Positional parameters can still be used as a fallback if no named options are provided.\n";
 }
@@ -1082,6 +1083,7 @@ int main(int argc, char* argv[]) {
     uint64_t opt_num_blocks = 0;
 
     bool checkpoint_enabled = true;
+    bool save_checkpoint_enabled = true;
     std::string checkpoint_file = "hailstone.chk";
     int cutoff_width = 20;
 
@@ -1142,6 +1144,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "--no-checkpoint" || arg == "--no_checkpoint") {
             checkpoint_enabled = false;
+        } else if (arg == "--no-save-checkpoint" || arg == "--no_save_checkpoint") {
+            save_checkpoint_enabled = false;
         } else if (arg == "--cutoff-width" || arg == "--cutoff_width") {
             if (i + 1 < argc) {
                 cutoff_width = std::stoi(argv[++i]);
@@ -1769,7 +1773,7 @@ int main(int argc, char* argv[]) {
     vkDestroyDevice(device, nullptr);
     vkDestroyInstance(instance, nullptr);
 
-    if (checkpoint_enabled) {
+    if (checkpoint_enabled && save_checkpoint_enabled) {
         if (save_checkpoint(checkpoint_file, end, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks, masterPeaks)) {
             std::cout << "Saved checkpoint: " << checkpoint_file << std::endl;
         }

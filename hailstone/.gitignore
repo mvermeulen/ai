@@ -44,3 +44,7 @@ Thumbs.db
 # Checkpoint files
 *.chk
 
+# Profiling data files
+*.data
+*.data.old
+
