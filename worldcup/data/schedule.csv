@@ -3,13 +3,13 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 2,group,A,2026-06-11,KOR,CZE,2,1,-1,-1,final,Monterrey
 3,group,D,2026-06-12,USA,PAR,4,1,-1,-1,final,Seattle
 4,group,B,2026-06-12,CAN,BIH,1,1,-1,-1,final,Vancouver
-5,group,C,2026-06-13,BRA,MAR,0,0,-1,-1,upcoming,New York/New Jersey
-6,group,C,2026-06-13,SCO,HAI,-1,-1,-1,-1,scheduled,Boston
-7,group,B,2026-06-13,SUI,QAT,-1,-1,-1,-1,scheduled,Toronto
-8,group,D,2026-06-14,AUS,TUR,-1,-1,-1,-1,scheduled,San Francisco
-9,group,F,2026-06-14,NED,JPN,-1,-1,-1,-1,scheduled,Houston
+5,group,C,2026-06-13,BRA,MAR,1,1,-1,-1,final,New York/New Jersey
+6,group,C,2026-06-13,SCO,HAI,1,0,-1,-1,final,Boston
+7,group,B,2026-06-13,SUI,QAT,1,1,-1,-1,final,Toronto
+8,group,D,2026-06-14,AUS,TUR,2,0,-1,-1,final,San Francisco
+9,group,F,2026-06-14,NED,JPN,0,0,-1,-1,upcoming,Houston
 10,group,F,2026-06-14,TUN,SWE,-1,-1,-1,-1,scheduled,Miami
-11,group,E,2026-06-14,GER,CUW,-1,-1,-1,-1,scheduled,Houston
+11,group,E,2026-06-14,GER,CUW,0,0,-1,-1,upcoming,Houston
 12,group,E,2026-06-14,ECU,CIV,-1,-1,-1,-1,scheduled,Dallas
 13,group,G,2026-06-15,BEL,EGY,-1,-1,-1,-1,scheduled,New York/New Jersey
 14,group,G,2026-06-15,IRN,NZL,-1,-1,-1,-1,scheduled,Philadelphia
