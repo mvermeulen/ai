@@ -32,6 +32,16 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
                             PeakState& global_peaks,
                             SearchMetrics& metrics);
 
+void cpu_search_blocks_gt_0_suffix_first(uint128 start_num, uint128 end_num,
+                                         int width,
+                                         const BaseDependentSuffixes& base_suffixes,
+                                         std::vector<PeakRecord>& max_value_peaks,
+                                         std::vector<PeakRecord>& steps_peaks,
+                                         std::vector<PeakRecord>& sigma_peaks,
+                                         PeakState& global_peaks,
+                                         SearchMetrics& metrics,
+                                         bool avx512_enabled);
+
 // Generates the list of allowed non-redundant odd suffixes for a given width
 std::vector<uint32_t> generate_allowed_suffixes(int width);
 

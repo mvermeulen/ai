@@ -438,34 +438,12 @@ int main(int argc, char *argv[]) {
         cpu_search_block_0_suffix_first(start, block_0_end, cutoff_width, base_suffixes,
                                         max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
         if (end >= block_boundary) {
-#ifdef HAS_AVX512_COMPILER_SUPPORT
-          if (avx512_enabled && is_avx512_supported() && end.high == 0) {
-            std::cout << "Using AVX-512 vectorized CPU search path." << std::endl;
-            cpu_search_range_suffix_first_avx512(block_boundary, end, cutoff_width, base_suffixes,
-                                                 max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
-          } else {
-            cpu_search_range_suffix_first(block_boundary, end, cutoff_width, base_suffixes,
-                                          max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
-          }
-#else
-          cpu_search_range_suffix_first(block_boundary, end, cutoff_width, base_suffixes,
-                                        max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
-#endif
+          cpu_search_blocks_gt_0_suffix_first(block_boundary, end, cutoff_width, base_suffixes,
+                                              max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics, avx512_enabled);
         }
       } else {
-#ifdef HAS_AVX512_COMPILER_SUPPORT
-        if (avx512_enabled && is_avx512_supported() && end.high == 0) {
-          std::cout << "Using AVX-512 vectorized CPU search path." << std::endl;
-          cpu_search_range_suffix_first_avx512(start, end, cutoff_width, base_suffixes,
-                                               max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
-        } else {
-          cpu_search_range_suffix_first(start, end, cutoff_width, base_suffixes,
-                                        max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
-        }
-#else
-        cpu_search_range_suffix_first(start, end, cutoff_width, base_suffixes,
-                                      max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
-#endif
+        cpu_search_blocks_gt_0_suffix_first(start, end, cutoff_width, base_suffixes,
+                                            max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics, avx512_enabled);
       }
     }
   } else {
