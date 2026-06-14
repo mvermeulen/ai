@@ -141,7 +141,99 @@ Let us verify this rule for the 6 counter-examples by finding the smaller compet
 
 ---
 
-## 5. Implications for A Priori Optimization
+## 5. Detailed Convergence Analysis for the 6 Counter-Examples
+
+When we pull back a pseudo-peak $Q$ to construct a steps peak candidate $P = \frac{4Q-1}{3}$, we find that $P$ is a steps peak but $Q$ is not. This is because $Q$ has a smaller even competitor $Q'$ with the same or higher steps count. To understand how these candidates behave, we track at which intermediate value $V$ their trajectories merge with a path of a previously computed steps peak $R < P$.
+
+Because they share the value $V$, their mathematical trajectories from that point down to 2 are identical. Any minor differences in their path string suffixes are due to notation formatting rules (e.g. peak or stopping time splitting a combined step in one trajectory but not the other).
+
+### Counter-Example $P = 25$
+- **Earliest Merging Steps Peak**: $R = 7$
+- **Convergence Value $V$**: `11`
+- **Steps to Reach $V$**:
+  - For $P = 25$: reaches $V$ after `6` steps
+  - For $R = 7$: reaches $V$ after `1` steps
+- **Unique Prefix Paths before Merge**:
+  - Path prefix for $P$: `*/**///`
+  - Path prefix for $R$: `*`
+- **Value Trajectory before Merge**:
+  - $P$ trajectory: `25 -> 38 -> 19 -> 29 -> 44 -> 22 -> 11`
+  - $R$ trajectory: `7 -> 11`
+- **Notation Match**: Trajectories match mathematically from $V$, but string representations differ due to peak/stopping notation markers.
+
+### Counter-Example $P = 73$
+- **Earliest Merging Steps Peak**: $R = 27$
+- **Convergence Value $V$**: `47`
+- **Steps to Reach $V$**:
+  - For $P = 73$: reaches $V$ after `7` steps
+  - For $R = 27$: reaches $V$ after `4` steps
+- **Unique Prefix Paths before Merge**:
+  - Path prefix for $P$: `*/***//`
+  - Path prefix for $R$: `**/*`
+- **Value Trajectory before Merge**:
+  - $P$ trajectory: `73 -> 110 -> 55 -> 83 -> 125 -> 188 -> 94 -> 47`
+  - $R$ trajectory: `27 -> 41 -> 62 -> 31 -> 47`
+- **Notation Match**: Suffixes match exactly.
+
+### Counter-Example $P = 313$
+- **Earliest Merging Steps Peak**: $R = 27$
+- **Convergence Value $V$**: `182`
+- **Steps to Reach $V$**:
+  - For $P = 313$: reaches $V$ after `23` steps
+  - For $R = 27$: reaches $V$ after `10` steps
+- **Unique Prefix Paths before Merge**:
+  - Path prefix for $P$: `*/**/*/***/*/*//*****//`
+  - Path prefix for $R$: `**/*****/*`
+- **Value Trajectory before Merge**:
+  - $P$ trajectory: `313 -> 470 -> 235 -> 353 -> ... (16 intermediate steps) ... -> 485 -> 728 -> 364 -> 182`
+  - $R$ trajectory: `27 -> 41 -> 62 -> 31 -> ... (3 intermediate steps) ... -> 161 -> 242 -> 121 -> 182`
+- **Notation Match**: Suffixes match exactly.
+
+### Counter-Example $P = 649$
+- **Earliest Merging Steps Peak**: $R = 231$
+- **Convergence Value $V$**: `587`
+- **Steps to Reach $V$**:
+  - For $P = 649$: reaches $V$ after `16` steps
+  - For $R = 231$: reaches $V$ after `5` steps
+- **Unique Prefix Paths before Merge**:
+  - Path prefix for $P$: `*/***/***//***//`
+  - Path prefix for $R$: `***/*`
+- **Value Trajectory before Merge**:
+  - $P$ trajectory: `649 -> 974 -> 487 -> 731 -> ... (9 intermediate steps) ... -> 1,565 -> 2,348 -> 1,174 -> 587`
+  - $R$ trajectory: `231 -> 347 -> 521 -> 782 -> 391 -> 587`
+- **Notation Match**: Suffixes match exactly.
+
+### Counter-Example $P = 1,501,353$
+- **Earliest Merging Steps Peak**: $R = 97$
+- **Convergence Value $V$**: `146`
+- **Steps to Reach $V$**:
+  - For $P = 1,501,353$: reaches $V$ after `259` steps
+  - For $R = 97$: reaches $V$ after `1` steps
+- **Unique Prefix Paths before Merge**:
+  - Path prefix for $P$: `*/*******/******///*****/*/*/******/*/**////***//*//**//***********//**/*//**********//***/**/*//*/*****//**///*/********//******//*//****/****///****/*/****/*/*/*****/***//****/*/*//*****//////***//*/*//*******////*////*/////////*/**///*//**//****/////**//*//`
+  - Path prefix for $R$: `*`
+- **Value Trajectory before Merge**:
+  - $P$ trajectory: `1,501,353 -> 2,252,030 -> 1,126,015 -> 1,689,023 -> ... (252 intermediate steps) ... -> 389 -> 584 -> 292 -> 146`
+  - $R$ trajectory: `97 -> 146`
+- **Notation Match**: Trajectories match mathematically from $V$, but string representations differ due to peak/stopping notation markers.
+
+### Counter-Example $P = 169,941,673$
+- **Earliest Merging Steps Peak**: $R = 63,728,127$
+- **Convergence Value $V$**: `1,837,442,495`
+- **Steps to Reach $V$**:
+  - For $P = 169,941,673$: reaches $V$ after `14` steps
+  - For $R = 63,728,127$: reaches $V$ after `11` steps
+- **Unique Prefix Paths before Merge**:
+  - Path prefix for $P$: `*/**********//`
+  - Path prefix for $R$: `*********/*`
+- **Value Trajectory before Merge**:
+  - $P$ trajectory: `169,941,673 -> 254,912,510 -> 127,456,255 -> 191,184,383 -> ... (7 intermediate steps) ... -> 4,899,846,653 -> 7,349,769,980 -> 3,674,884,990 -> 1,837,442,495`
+  - $R$ trajectory: `63,728,127 -> 95,592,191 -> 143,388,287 -> 215,082,431 -> ... (4 intermediate steps) ... -> 1,633,282,217 -> 2,449,923,326 -> 1,224,961,663 -> 1,837,442,495`
+- **Notation Match**: Suffixes match exactly.
+
+---
+
+## 6. Implications for A Priori Optimization
 
 The mathematical proof and analysis of the counter-examples show that:
 1. **Complete Predictability**: Every steps peak $P \equiv 1 \pmod 4$ starting with `*/` is uniquely determined by a number $Q \equiv 1 \pmod 3$ which is a "pseudo-peak" (the minimal representative in its class modulo 3 for its step count).
