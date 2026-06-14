@@ -205,6 +205,8 @@ void print_help() {
                "restoring checkpoints\n"
             << "  --no-save-checkpoint, --no_save_checkpoint Disable saving "
                "checkpoints at the end of search\n"
+            << "  --use-avx512, --use_avx512           Force enable AVX-512 vectorized search\n"
+            << "  --no-avx512, --no_avx512             Force disable AVX-512 vectorized search\n"
             << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with "
                "given bit-width (8, 12, 16, or 20)\n\n"
             << "Note: Positional parameters can still be used as a fallback if "
@@ -243,6 +245,7 @@ int main(int argc, char *argv[]) {
 
   bool checkpoint_enabled = true;
   bool save_checkpoint_enabled = true;
+  bool avx512_enabled = true;
   std::string checkpoint_file = "hailstone.chk";
   int cutoff_width = 20;
 
@@ -305,6 +308,10 @@ int main(int argc, char *argv[]) {
       checkpoint_enabled = false;
     } else if (arg == "--no-save-checkpoint" || arg == "--no_save_checkpoint") {
       save_checkpoint_enabled = false;
+    } else if (arg == "--use-avx512" || arg == "--use_avx512") {
+      avx512_enabled = true;
+    } else if (arg == "--no-avx512" || arg == "--no_avx512") {
+      avx512_enabled = false;
     } else if (arg == "--cutoff-width" || arg == "--cutoff_width") {
       if (i + 1 < argc) {
         cutoff_width = std::stoi(argv[++i]);
@@ -431,12 +438,34 @@ int main(int argc, char *argv[]) {
         cpu_search_block_0_suffix_first(start, block_0_end, cutoff_width, base_suffixes,
                                         max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
         if (end >= block_boundary) {
+#ifdef HAS_AVX512_COMPILER_SUPPORT
+          if (avx512_enabled && is_avx512_supported() && end.high == 0) {
+            std::cout << "Using AVX-512 vectorized CPU search path." << std::endl;
+            cpu_search_range_suffix_first_avx512(block_boundary, end, cutoff_width, base_suffixes,
+                                                 max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+          } else {
+            cpu_search_range_suffix_first(block_boundary, end, cutoff_width, base_suffixes,
+                                          max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+          }
+#else
           cpu_search_range_suffix_first(block_boundary, end, cutoff_width, base_suffixes,
                                         max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+#endif
         }
       } else {
+#ifdef HAS_AVX512_COMPILER_SUPPORT
+        if (avx512_enabled && is_avx512_supported() && end.high == 0) {
+          std::cout << "Using AVX-512 vectorized CPU search path." << std::endl;
+          cpu_search_range_suffix_first_avx512(start, end, cutoff_width, base_suffixes,
+                                               max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+        } else {
+          cpu_search_range_suffix_first(start, end, cutoff_width, base_suffixes,
+                                        max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+        }
+#else
         cpu_search_range_suffix_first(start, end, cutoff_width, base_suffixes,
                                       max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+#endif
       }
     }
   } else {

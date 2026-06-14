@@ -1,6 +1,6 @@
 CompileFlags:
   Add:
-    - -isystem/usr/lib/gcc/x86_64-linux-gnu/15/include
-    - -isystem/usr/lib/gcc/x86_64-linux-gnu/16/include
     - -Wno-unknown-warning-option
     - -Wno-user-defined-literals
+    - -Wno-ignored-attributes
+    - -I/home/mev/source/ai/hailstone/.clangd_includes

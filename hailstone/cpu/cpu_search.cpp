@@ -1199,3 +1199,13 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
     metrics.elapsed_seconds += diff.count();
 }
 
+bool is_avx512_supported() {
+#if (defined(__x86_64__) || defined(_M_X64)) && defined(__GNUC__)
+    return __builtin_cpu_supports("avx512f") && 
+           __builtin_cpu_supports("avx512cd") &&
+           __builtin_cpu_supports("avx512dq");
+#else
+    return false;
+#endif
+}
+

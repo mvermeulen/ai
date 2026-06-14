@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(hailstone CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -13,7 +15,20 @@ endif()
 
 # CPU search target
 find_package(OpenMP REQUIRED)
-add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp)
+
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-mavx512f -mavx512cd -mavx512dq" COMPILER_SUPPORTS_AVX512)
+
+if(COMPILER_SUPPORTS_AVX512)
+    message(STATUS "AVX-512 compiler support detected. Vectorized CPU search will be compiled.")
+    add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
+    set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512cd -mavx512dq")
+    target_compile_definitions(hailstone_cpu PRIVATE HAS_AVX512_COMPILER_SUPPORT)
+else()
+    message(WARNING "Compiler does not support AVX-512 flags. Vectorized search will be disabled.")
+    add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp)
+endif()
+
 target_link_libraries(hailstone_cpu PRIVATE OpenMP::OpenMP_CXX)
 
 # Unit test target

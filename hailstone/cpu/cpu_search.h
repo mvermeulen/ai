@@ -58,5 +58,19 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
                                      PeakState& global_peaks,
                                      SearchMetrics& metrics);
 
+// Runtime capability checks and AVX-512 search function
+bool is_avx512_supported();
+
+#ifdef HAS_AVX512_COMPILER_SUPPORT
+void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end, 
+                                          int width,
+                                          const BaseDependentSuffixes& base_suffixes,
+                                          std::vector<PeakRecord>& max_value_peaks,
+                                          std::vector<PeakRecord>& steps_peaks,
+                                          std::vector<PeakRecord>& sigma_peaks,
+                                          PeakState& global_peaks,
+                                          SearchMetrics& metrics);
+#endif
+
 #endif // HAILSTONE_CPU_SEARCH_H
 

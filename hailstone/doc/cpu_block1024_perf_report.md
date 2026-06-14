@@ -106,3 +106,24 @@ for (int i = 0; i < num_allocated_blocks; ++i) {
 * Since the search was launched with `--num-blocks 1`, the variable `num_allocated_blocks` was evaluated as `1`.
 * Consequently, OpenMP allocated exactly **1 thread** to process the block sequentially.
 * *To utilize all 32 threads, the search must be run over 32 or more blocks (e.g. `--num-blocks 32`).*
+
+---
+
+## 5. SIMD Vectorization: AVX-512 Vectorized Search
+
+To accelerate the CPU backend search, a vectorized search path was implemented using x86 AVX-512 SIMD intrinsics. This path is compiled into a separate translation unit with compiler flags `-mavx512f -mavx512cd -mavx512dq` and is dynamically executed at runtime if the host CPU is detected to support these capabilities.
+
+### Vector Search Telemetry (Block 1024 Warm Start)
+
+Executing the exact same warm start Block 1024 search yields a direct comparison between the scalar and AVX-512 vectorized search paths:
+
+| Search Mode | Elapsed Time | Throughput | Total Steps Computed | Speedup | Peak Parity |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Scalar Reference** | **16.36 seconds** | **29.19 M/s** | `6,124,693,398` | Baseline (1.0x) | Identical peaks |
+| **AVX-512 Vectorized** | **7.74 seconds** | **61.67 M/s** | `6,124,693,398` | **2.11x Speedup** | Identical peaks |
+
+### Microarchitectural Insights
+
+1. **Exact Step Equivalence**: Through careful alignment of the steps-pruning checks to the start of the AVX-512 loop iteration (prior to applying the $3x+1$ step), the AVX-512 path achieves bit-perfect equivalence in steps count and peak output down to the single unit.
+2. **Lane Compaction and Refilling**: Utilizing AVX-512 register masking, completed trajectories are compressed and inactive lanes are continuously refilled with new candidates from the suffix list. This preserves 100% active lane occupancy throughout the bulk of the prefix blocks.
+3. **Instruction Overhead Reduction**: By packing 8 lanes into a single 512-bit ZMM register, vector operations like $3x+1$ and variable right shifts are performed on all 8 lanes in parallel. Combined with the `lzcnt` instruction trick (`63 - lzcnt(x & -x)`), trailing zero counting is executed entirely in parallel, yielding a **+111.3% throughput gain**.

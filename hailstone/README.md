@@ -19,6 +19,7 @@ Vermeulen polynomials and precomputed lookup tables speed up the Collatz search 
 2. **Polynomial Step Lookup Optimization**: Instead of running trajectories all the way to 1, the search loops (CPU, HIP, and Vulkan) terminate early when the value drops below $2^8 = 256$. The remaining steps are retrieved in $O(1)$ time from a precomputed steps lookup table (`steps8`). This reduces loop iterations, thread divergence, and instruction counts, accelerating GPU execution by up to **4.0x** and CPU execution by **79%**.
 3. **Suffix-First Search (Apriori Cutoffs)**: By generating unique `fpoly` suffix equivalence classes and applying even-class exclusion and modulo 6 filtering, the search is restructured to execute only the non-redundant allowed suffixes. Suffix-First search is enabled by default with width 20 on CPU, HIP, and Vulkan backends, pruning the checked search space by **85.17%** and yielding up to **5.18x CPU speedup**, **8.19x GPU HIP speedup**, and **5.65x GPU Vulkan speedup** on large ranges (and up to **3.23x**, **2.38x**, and **2.45x** on small ranges respectively).
 4. **64-bit Loop Transition & Steps-Pruning**: Bypassing 128-bit multi-precision arithmetic on the CPU and GPU (HIP & Vulkan) backends once trajectories drop below $2^{32}$ (transitioning to fast, native 64-bit loops), combined with early steps-pruning. By checking if the accumulated steps at the $2^{32}$ transition point plus $1,050$ (the maximum steps possible for starting values $< 2^{32}$) is less than the current global steps peak, we immediately prune the remainder of the trajectory. This delivers a **3.0x speedup** on CPU (overall **4.62x speedup** over unoptimized baseline) and up to **1.97x speedup** on GPUs (yielding throughputs up to **1.11 Billion numbers/s** on Vulkan).
+5. **AVX-512 CPU SIMD Vectorization**: Added an AVX-512 vectorized acceleration path on the CPU backend using x86 SIMD intrinsics. This path processes 8 trajectories of 64-bit integers in parallel using 512-bit ZMM registers (`__m512i`), utilizing vector shift-add for $3x+1$ math, vector leading-zero-count arithmetic (`lzcnt`), dynamic lane compaction, and active lane refilling. It features dynamic runtime CPU capability detection (falling back to scalar if unsupported) and yields a **2.11x (111.3%) throughput speedup** on CPU search blocks $\ge 1$ while maintaining 100% identical step counts and peak parity.
 
 
 ---
@@ -102,6 +103,8 @@ The search executables (`hailstone_cpu`, `hailstone_vulkan`, and `hailstone_hip`
 * `--num-blocks, --num_blocks COUNT`: Number of blocks to check (each block is $2^{32}$ items, overrides `--end-num`/`--end-block`).
 * `--checkpoint, --checkpoint_file FILE`: Checkpoint file path (default: `hailstone.chk`).
 * `--no-checkpoint, --no_checkpoint`: Disable saving and restoring checkpoints.
+* `--use-avx512, --use_avx512`: Force enable AVX-512 vectorized CPU search (enabled by default if supported).
+* `--no-avx512, --no_avx512`: Force disable AVX-512 vectorized CPU search.
 * `--cutoff-width, --cutoff_width VALUE`: Configure the bit-width of Suffix-First search (accepts `8`, `12`, `16`, or `20`). Suffix-First search is enabled by default with width `20` (our fastest configuration). To disable Suffix-First and run the standard search, pass `--cutoff-width 0`.
 
 ### Checkpointing & Resumption
