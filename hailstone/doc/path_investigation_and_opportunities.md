@@ -200,7 +200,7 @@ When a trajectory converges with another, its path string is often a prepended v
 - **Peak Prediction Correspondence**:
   This path prepending directly mirrors the mathematical predecessor equations used to predict future steps peaks:
   - **Case A ($X \equiv 0 \pmod 3$)**: The prediction $P = 2X$ corresponds to prepending `/` to the path of $X$.
-  - **Case B ($X \equiv 1 \pmod 3$)**: The prediction $P = \frac{4X-1}{3}$ corresponds to prepending `*/` to the path of $X$ (since $P \to 3P+1 \to 2X \to X$).
+  - **Case B ($X \equiv 1 \pmod 3$)**: The prediction $P = \frac{4X-1}{3}$ corresponds to prepending `*/` to the path of $X$ (since $P \to 3P+1 \to 2X \to X$). For a deep dive into this pattern, its modular constraints, and steps peak predictions (including resolving counter-examples), see the [$(3x+1)/4$ Path Pattern Investigation](file:///home/mev/source/ai/hailstone/doc/3x_plus_1_over_4_path_investigation.md).
 - **Opportunity**: We can systematically study if other prepended sequences (like `*//` or `//`) can be legally prepended to existing peak paths to discover new classes of peak-generating numbers.
 
 ---

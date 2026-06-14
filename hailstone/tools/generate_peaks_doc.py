@@ -15,6 +15,70 @@ def format_number(val_str):
     except ValueError:
         return val_str
 
+def get_hailstone_path(start):
+    x = start
+    peak_val = start
+    steps = 0
+    t_steps = 0
+    has_stopping = False
+    stopping_time_val = 0
+    
+    while x > 1:
+        if x % 2 == 1:
+            next_x = 3 * x + 1
+            steps += 1
+            if next_x > peak_val:
+                peak_val = next_x
+            x = next_x // 2
+            steps += 1
+            t_steps += 1
+            if not has_stopping and x < start:
+                stopping_time_val = x
+                has_stopping = True
+        else:
+            x = x // 2
+            steps += 1
+            t_steps += 1
+            if not has_stopping and x < start:
+                stopping_time_val = x
+                has_stopping = True
+                
+    path = []
+    x = start
+    peak_marked = False
+    stopping_marked = False
+    
+    if x == peak_val:
+        path.append('^')
+        peak_marked = True
+        
+    while x > 2:
+        if x % 2 == 1:
+            temp = 3 * x + 1
+            if temp == peak_val:
+                path.append('*^')
+                peak_marked = True
+                x = temp
+            else:
+                x = temp // 2
+                path.append('*')
+                if has_stopping and not stopping_marked and x == stopping_time_val:
+                    path.append('|')
+                    stopping_marked = True
+                if not peak_marked and x == peak_val:
+                    path.append('^')
+                    peak_marked = True
+        else:
+            x = x // 2
+            path.append('/')
+            if has_stopping and not stopping_marked and x == stopping_time_val:
+                path.append('|')
+                stopping_marked = True
+            if not peak_marked and x == peak_val:
+                path.append('^')
+                peak_marked = True
+    return "".join(path)
+
 def generate_markdown(chk_path, md_path):
     if not os.path.exists(chk_path):
         print(f"Error: Checkpoint file {chk_path} not found.")
@@ -99,10 +163,50 @@ def generate_markdown(chk_path, md_path):
     md_content.append("## 2. Steps Peaks")
     md_content.append("Tracked when a starting value $n$ takes more total steps to reach $1$ than any previous starting value.")
     md_content.append("")
-    md_content.append("| Starting Number ($n$) | Total Steps |")
-    md_content.append("| :--- | :--- |")
+    md_content.append("| Starting Number ($n$) | Total Steps | First 8 Path Steps | Relationship / Flags |")
+    md_content.append("| :--- | :---: | :--- | :--- |")
+    
+    # Pre-compute paths and relationships
+    peak_paths = {}
+    pure_paths = {}
     for start, metric in steps_peaks:
-        md_content.append(f"| {format_number(start)} | {format_number(metric)} |")
+        n = int(start)
+        p = get_hailstone_path(n)
+        peak_paths[n] = p
+        pure_paths[n] = p.replace('|', '').replace('^', '')
+
+    relationships = {}
+    for start, metric in steps_peaks:
+        n = int(start)
+        pure_p = pure_paths[n]
+        rel_str = ""
+        
+        if pure_p.startswith('/'):
+            suffix = pure_p[1:]
+            matches = [q for q in pure_paths if pure_paths[q] == suffix]
+            if matches:
+                rel_str = f"Even peak (prepend `/` to {matches[0]:,})"
+            else:
+                rel_str = "Even peak"
+        elif pure_p.startswith('*/'):
+            suffix = pure_p[2:]
+            matches = [q for q in pure_paths if pure_paths[q] == suffix]
+            if matches:
+                rel_str = f"$(3x+1)/4$ peak (prepend `*/` to {matches[0]:,})"
+            else:
+                q_val = (3 * n + 1) // 4
+                rel_str = f"$(3x+1)/4$ peak (prepend `*/` to {q_val:,}*)"
+                
+        relationships[n] = rel_str
+
+    for start, metric in steps_peaks:
+        n = int(start)
+        path_str = peak_paths[n]
+        prefix = path_str[:8]
+        rel = relationships[n]
+        md_content.append(f"| {format_number(start)} | {format_number(metric)} | `{prefix}` | {rel} |")
+    md_content.append("")
+    md_content.append("\\* Note: The successor value $Q$ is not itself a historical steps peak (a counter-example to direct peak-to-peak prediction). See [3x_plus_1_over_4_path_investigation.md](file:///home/mev/source/ai/hailstone/doc/3x_plus_1_over_4_path_investigation.md) for the mathematical analysis.")
     md_content.append("")
     md_content.append("---")
     md_content.append("")
