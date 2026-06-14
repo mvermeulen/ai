@@ -99,9 +99,6 @@ def generate_markdown(chk_path, md_path):
     md_content.append("## 2. Steps Peaks")
     md_content.append("Tracked when a starting value $n$ takes more total steps to reach $1$ than any previous starting value.")
     md_content.append("")
-    md_content.append("> [!NOTE]")
-    md_content.append("> Even starting numbers that are peaks in steps are omitted from this table because the search is restricted to odd starting numbers. While these even peaks can be mathematically computed from previous results, they have not been added here.")
-    md_content.append("")
     md_content.append("| Starting Number ($n$) | Total Steps |")
     md_content.append("| :--- | :--- |")
     for start, metric in steps_peaks:

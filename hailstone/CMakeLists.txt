@@ -40,6 +40,9 @@ add_executable(hailstone_verify tests/test_verify.cpp)
 # Polynomial generator utility target
 add_executable(hailstone_genpoly tools/genpoly.cpp)
 
+# Hailstone path representation utility target
+add_executable(hailstone_path tools/hailstone_path.cpp)
+
 # Vulkan search target
 find_package(Vulkan REQUIRED)
 if(Vulkan_FOUND)

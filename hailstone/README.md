@@ -88,6 +88,7 @@ This will build:
 * `hailstone_verify`: Cross-backend verification executable
 * `hailstone_test_uint128`: `uint128` math unit tests
 * `hailstone_hip` (if ROCm is found): AMD HIP executable
+* `hailstone_path`: Trajectory path representation utility
 
 ---
 
@@ -139,6 +140,50 @@ State checkpointing is enabled by default. Before completing, search programs sa
 4. **Legacy Positional Fallback**:
    ```bash
    ./hailstone_hip 3 100000
+   ```
+
+---
+
+## Trajectory Path Utility (`hailstone_path`)
+
+The `hailstone_path` utility creates a string representation of the trajectory path a starting number takes:
+* `*` represents a $3x+1$ step followed by division by 2.
+* `/` represents any other division by 2.
+* `^` indicates the peak value reached.
+* `|` records the point where the stopping time occurs (first fall below the starting value).
+
+### Exception Rules
+The combined `*` step is split into separate multiplication (`*`) and division (`/`) steps if either the peak (`^`) or the stopping time (`|`) falls on the multiplication step.
+
+### Options
+* `-s, --statistics`: Prints summary statistics, including total stopping steps ($H$-trajectory), stopping time ($T$-trajectory steps to drop below start number), and peak value reached.
+* `-v, --verbose`: Prints each step incrementally on its own line showing the symbol and the value.
+
+### Examples
+1. **Standard Output**:
+   ```bash
+   ./hailstone_path 5
+   # Output: *^//|/
+   ```
+2. **Verbose Step-by-Step**:
+   ```bash
+   ./hailstone_path 5 -v
+   # Output:
+   # * 16
+   # ^ 16
+   # / 8
+   # / 4
+   # | 4
+   # / 2
+   ```
+3. **Summary Statistics**:
+   ```bash
+   ./hailstone_path 3 -s
+   # Output:
+   # **^///|
+   # Steps: 7
+   # Stopping Time: 4
+   # Max Value: 16
    ```
 
 ---
