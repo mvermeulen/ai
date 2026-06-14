@@ -43,6 +43,7 @@ Thumbs.db
 
 # Checkpoint files
 *.chk
+!golden_master.chk
 
 # Profiling data files
 *.data
