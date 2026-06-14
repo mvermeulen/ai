@@ -48,10 +48,10 @@ struct PeaksCountGpu {
 };
 
 struct GlobalMetricsGpu {
-    uint32_t total_checked;
-    uint32_t total_steps;
-    uint32_t skipped_mod6;
-    uint32_t overflowed;
+    uint64_t total_checked;
+    uint64_t total_steps;
+    uint64_t skipped_mod6;
+    uint64_t overflowed;
 };
 
 struct PushConstantsGpu {
@@ -1276,7 +1276,7 @@ int main(int argc, char* argv[]) {
     }
 
     unsigned __int128 total_range = end_val - start_val + 1;
-    uint32_t total_odds = static_cast<uint32_t>((total_range + 1) / 2);
+    uint64_t total_odds = static_cast<uint64_t>((total_range + 1) / 2);
 
     std::cout << "Total odd starting values to check: " << total_odds << std::endl;
 
@@ -1331,6 +1331,10 @@ int main(int argc, char* argv[]) {
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.shaderInt64 = VK_TRUE;
 
+    VkPhysicalDeviceShaderAtomicInt64Features atomicInt64Features{};
+    atomicInt64Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES;
+    atomicInt64Features.shaderBufferInt64Atomics = VK_TRUE;
+
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo{};
     queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -1341,6 +1345,7 @@ int main(int argc, char* argv[]) {
     VkDevice device;
     VkDeviceCreateInfo deviceCreateInfo{};
     deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.pNext = &atomicInt64Features;
     deviceCreateInfo.queueCreateInfoCount = 1;
     deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
     deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
@@ -1352,13 +1357,17 @@ int main(int argc, char* argv[]) {
     // 4. Load SPIR-V Shader Module
     std::vector<char> shaderCode;
     try {
-        shaderCode = read_file("gpu_vulkan/shader.spv");
+        shaderCode = read_file("build/shader.spv");
     } catch (...) {
         try {
             shaderCode = read_file("shader.spv");
         } catch (...) {
-            std::cerr << "Error: shader.spv not found!" << std::endl;
-            return 1;
+            try {
+                shaderCode = read_file("gpu_vulkan/shader.spv");
+            } catch (...) {
+                std::cerr << "Error: shader.spv not found!" << std::endl;
+                return 1;
+            }
         }
     }
 

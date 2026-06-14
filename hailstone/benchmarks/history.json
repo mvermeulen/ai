@@ -992,5 +992,47 @@
         "steps_peaks_found": 70,
         "sigma_peaks_found": 22,
         "memory_transfer_time_ms": 0.0
+    },
+    {
+        "timestamp": "2026-06-14 04:23:00",
+        "backend": "CPU",
+        "start": 4398046511104,
+        "end": 4535485464576,
+        "kernel_time_ms": 30157.8,
+        "numbers_checked": 15283781632,
+        "steps_computed": 195989843523,
+        "throughput_m_numbers_s": 506.79,
+        "max_val_peaks_found": 61,
+        "steps_peaks_found": 95,
+        "sigma_peaks_found": 25,
+        "memory_transfer_time_ms": 0.0
+    },
+    {
+        "timestamp": "2026-06-14 09:24:52",
+        "backend": "HIP",
+        "start": 4398046511104,
+        "end": 4535485464576,
+        "kernel_time_ms": 25972.7,
+        "numbers_checked": 15283781632,
+        "steps_computed": 220590790597,
+        "throughput_m_numbers_s": 588.45,
+        "max_val_peaks_found": 61,
+        "steps_peaks_found": 95,
+        "sigma_peaks_found": 25,
+        "memory_transfer_time_ms": 0.0
+    },
+    {
+        "timestamp": "2026-06-14 09:37:00",
+        "backend": "Vulkan",
+        "start": 4398046511104,
+        "end": 4535485464576,
+        "kernel_time_ms": 20006.89,
+        "numbers_checked": 15283781632,
+        "steps_computed": 220590790597,
+        "throughput_m_numbers_s": 763.93,
+        "max_val_peaks_found": 61,
+        "steps_peaks_found": 95,
+        "sigma_peaks_found": 25,
+        "memory_transfer_time_ms": 870.99
     }
 ]

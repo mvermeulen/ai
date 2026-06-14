@@ -1,5 +1,6 @@
 #version 450
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_atomic_int64 : require
 
 layout(constant_id = 0) const bool USE_64BIT = false;
 layout(constant_id = 1) const bool USE_SUFFIX_FIRST = false;
@@ -77,10 +78,10 @@ layout(std430, binding = 5) coherent buffer SigmaPeaks {
 
 // Binding 6: Metrics
 layout(std430, binding = 6) coherent buffer GlobalMetrics {
-    uint total_checked;
-    uint total_steps;
-    uint skipped_mod6;
-    uint overflowed;
+    uint64_t total_checked;
+    uint64_t total_steps;
+    uint64_t skipped_mod6;
+    uint64_t overflowed;
 } global_metrics;
 
 // Binding 7: Steps Table
@@ -356,8 +357,8 @@ void main() {
             n_64 = pcs.start_val_low + uint64_t(g_id) * 2UL;
             if (active_thread) {
                 if (n_64 % 3UL == 2UL) {
-                    atomicAdd(global_metrics.skipped_mod6, 1);
-                    atomicAdd(global_metrics.total_checked, 1);
+                    atomicAdd(global_metrics.skipped_mod6, 1UL);
+                    atomicAdd(global_metrics.total_checked, 1UL);
                     active_thread = false;
                 }
             }
@@ -372,8 +373,8 @@ void main() {
             if (active_thread) {
                 uint64_t sum_mod3 = (n.high % 3UL + n.low % 3UL) % 3UL;
                 if (sum_mod3 == 2UL) {
-                    atomicAdd(global_metrics.skipped_mod6, 1);
-                    atomicAdd(global_metrics.total_checked, 1);
+                    atomicAdd(global_metrics.skipped_mod6, 1UL);
+                    atomicAdd(global_metrics.total_checked, 1UL);
                     active_thread = false;
                 }
             }
@@ -646,13 +647,13 @@ void main() {
 
     if (active_thread) {
         if (!USE_SUFFIX_FIRST) {
-            atomicAdd(global_metrics.total_checked, 1);
+            atomicAdd(global_metrics.total_checked, 1UL);
         }
         if (overflowed) {
-            atomicAdd(global_metrics.overflowed, 1);
+            atomicAdd(global_metrics.overflowed, 1UL);
             active_thread = false;
         } else {
-            atomicAdd(global_metrics.total_steps, steps);
+            atomicAdd(global_metrics.total_steps, uint64_t(steps));
         }
     }
 

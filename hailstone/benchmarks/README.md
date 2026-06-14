@@ -6,6 +6,9 @@ This directory contains execution times and performance measurements for differe
 
 | Date & Time | Backend | Range | Checked | Throughput | Kernel Time | Mem Transfer | Peaks (Val/Steps/Sig) |
 |---|---|---|---|---|---|---|---|
+| 2026-06-14 09:37:00 | Vulkan | Block 1024 (32 blk) | 15,283,781,632 | 763.93 M/s | 20006.89 ms | 870.99 ms | 61/95/25 |
+| 2026-06-14 09:24:52 | HIP | Block 1024 (32 blk) | 15,283,781,632 | 588.45 M/s | 25972.70 ms | N/A | 61/95/25 |
+| 2026-06-14 04:23:00 | CPU | Block 1024 (32 blk) | 15,283,781,632 | 506.79 M/s | 30157.80 ms | N/A | 61/95/25 |
 | 2026-06-14 04:18:16 | CPU | [3, 8589934592] | 955,644,033 | 17.87 M/s | 53491.20 ms | N/A | 44/70/22 |
 | 2026-06-14 04:18:16 | Vulkan | [3, 8589934592] | 955,644,033 | 783.17 M/s | 1220.22 ms | 55.66 ms | 44/70/22 |
 | 2026-06-14 04:18:16 | HIP | [3, 8589934592] | 955,644,033 | 494.89 M/s | 1931.00 ms | N/A | 44/70/22 |
