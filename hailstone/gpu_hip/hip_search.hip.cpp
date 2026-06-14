@@ -304,7 +304,7 @@ __global__ void collatz_search_kernel(
 
                         // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
                         while (curr >= uint128(256) && !overflowed) {
-                            if (curr.high == 0) {
+                            if (curr.high == 0 && curr.low < 0x100000000ULL) {
                                 if (steps + 1050 < init_max_steps) {
                                     curr = one;
                                     break;
@@ -1115,7 +1115,7 @@ __global__ void collatz_search_kernel_suffix_first(
 
                         // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
                         while (curr >= uint128(256) && !overflowed) {
-                            if (curr.high == 0) {
+                            if (curr.high == 0 && curr.low < 0x100000000ULL) {
                                 if (steps + 1050 < init_max_steps) {
                                     curr = one;
                                     break;

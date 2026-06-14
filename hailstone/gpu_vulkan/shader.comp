@@ -598,7 +598,7 @@ void main() {
 
                         // Phase 2 Loop: fast polynomial jumps after dropped_below_start is true
                         while (greater_than(curr, limit) && !overflowed) {
-                            if (curr.high == 0UL) {
+                            if (curr.high == 0UL && curr.low < 0x100000000UL) {
                                 if (steps + 1050 < init_max_steps) {
                                     curr = one;
                                     break;

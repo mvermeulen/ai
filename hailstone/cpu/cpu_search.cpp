@@ -132,7 +132,7 @@ CollatzStats compute_collatz_poly(uint128 n, uint32_t current_max_steps) {
     }
 
     while (curr >= uint128(1 << POLY_WIDTH)) {
-        if (curr.high == 0 && dropped_below_start && has_stopped_sigma) {
+        if (curr.high == 0 && curr.low < 0x100000000ULL && dropped_below_start && has_stopped_sigma) {
             if (stats.steps + 1050 < current_max_steps) {
                 return stats;
             }

@@ -154,8 +154,9 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
                 __mmask8 escape_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, v_poly_width_mask, _MM_CMPINT_LT);
 
                 __mmask8 dropped_bits = _mm512_mask_cmp_epi64_mask(active_mask, v_dropped, _mm512_setzero_si512(), _MM_CMPINT_NE);
+                __mmask8 in_block_0_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, _mm512_set1_epi64(0x100000000ULL), _MM_CMPINT_LT);
                 __m512i v_steps_offset = _mm512_add_epi64(v_steps, _mm512_set1_epi64(1050));
-                __mmask8 pruned_bits = _mm512_mask_cmp_epu64_mask(active_mask & dropped_bits, v_steps_offset, _mm512_set1_epi64(init_max_steps), _MM_CMPINT_LT);
+                __mmask8 pruned_bits = _mm512_mask_cmp_epu64_mask(active_mask & dropped_bits & in_block_0_mask, v_steps_offset, _mm512_set1_epi64(init_max_steps), _MM_CMPINT_LT);
 
                 __mmask8 completed_mask = escape_mask | pruned_bits;
 
