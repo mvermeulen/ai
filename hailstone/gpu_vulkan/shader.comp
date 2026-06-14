@@ -22,6 +22,14 @@ layout(push_constant) uniform PushConstants {
     uint allowed_suffixes_size;
     uint cutoff_width;
     uint total_work_items;
+    uint allowed_offset;
+    uint prefix_stride;
+    uint check_start;
+    uint check_end;
+    uint64_t init_max_val_low;
+    uint64_t init_max_val_high;
+    uint init_max_steps;
+    uint init_max_sigma;
 } pcs;
 
 // Binding 0: Current global maximum metrics (used for peak checks)
@@ -289,12 +297,12 @@ shared uint shared_steps[256];
 shared uint shared_sigma[256];
 
 void main() {
-    // Read initial global peaks at start of invocation to avoid dynamic thread blocking
+    // Read initial global peaks at start of invocation from push constants to avoid dynamic thread blocking and race conditions
     uint128 init_max_val;
-    init_max_val.low = global_peaks.max_val_low;
-    init_max_val.high = global_peaks.max_val_high;
-    uint init_max_steps = global_peaks.max_steps;
-    uint init_max_sigma = global_peaks.max_sigma;
+    init_max_val.low = pcs.init_max_val_low;
+    init_max_val.high = pcs.init_max_val_high;
+    uint init_max_steps = pcs.init_max_steps;
+    uint init_max_sigma = pcs.init_max_sigma;
 
     uint g_id = gl_GlobalInvocationID.x;
     uint l_id = gl_LocalInvocationID.x;
@@ -308,29 +316,23 @@ void main() {
         if (active_thread) {
             uint prefix_index = g_id / pcs.allowed_suffixes_size;
             uint suffix_index = g_id % pcs.allowed_suffixes_size;
-            uint suffix = allowed_suffixes.allowed[suffix_index];
+            uint suffix = allowed_suffixes.allowed[pcs.allowed_offset + suffix_index];
 
             if (USE_64BIT) {
-                uint64_t prefix = pcs.start_prefix_low + uint64_t(prefix_index);
+                uint64_t prefix = pcs.start_prefix_low + uint64_t(prefix_index) * uint64_t(pcs.prefix_stride);
                 uint64_t curr = (prefix << pcs.cutoff_width) | uint64_t(suffix);
                 n_64 = curr;
 
-                if (curr < pcs.start_val_low || curr > pcs.end_val_low) {
+                if (pcs.check_start != 0 && curr < pcs.start_val_low) {
                     active_thread = false;
-                } else {
-                    uint64_t mult = (1UL << pcs.cutoff_width) % 3UL;
-                    uint64_t base_mod3 = ((prefix % 3UL) * mult) % 3UL;
-                    if ((base_mod3 + suffix) % 3UL == 2UL) {
-                        atomicAdd(global_metrics.skipped_mod6, 1);
-                        atomicAdd(global_metrics.total_checked, 1);
-                        active_thread = false;
-                    }
+                } else if (pcs.check_end != 0 && curr > pcs.end_val_low) {
+                    active_thread = false;
                 }
             } else {
                 uint128 start_prefix;
                 start_prefix.low = pcs.start_prefix_low;
                 start_prefix.high = pcs.start_prefix_high;
-                uint128 prefix = add(start_prefix, uint128(uint64_t(prefix_index), 0UL));
+                uint128 prefix = add(start_prefix, uint128(uint64_t(prefix_index) * uint64_t(pcs.prefix_stride), 0UL));
                 uint128 curr = add(shift_left(prefix, pcs.cutoff_width), uint128(uint64_t(suffix), 0UL));
                 n = curr;
 
@@ -341,17 +343,10 @@ void main() {
                 end_val.low = pcs.end_val_low;
                 end_val.high = pcs.end_val_high;
 
-                if (less_than(curr, start_val) || greater_than(curr, end_val)) {
+                if (pcs.check_start != 0 && less_than(curr, start_val)) {
                     active_thread = false;
-                } else {
-                    uint64_t prefix_mod3 = (prefix.high % 3UL + prefix.low % 3UL) % 3UL;
-                    uint64_t mult = (1UL << pcs.cutoff_width) % 3UL;
-                    uint64_t base_mod3 = (prefix_mod3 * mult) % 3UL;
-                    if ((base_mod3 + suffix) % 3UL == 2UL) {
-                        atomicAdd(global_metrics.skipped_mod6, 1);
-                        atomicAdd(global_metrics.total_checked, 1);
-                        active_thread = false;
-                    }
+                } else if (pcs.check_end != 0 && greater_than(curr, end_val)) {
+                    active_thread = false;
                 }
             }
         }
@@ -650,7 +645,9 @@ void main() {
     }
 
     if (active_thread) {
-        atomicAdd(global_metrics.total_checked, 1);
+        if (!USE_SUFFIX_FIRST) {
+            atomicAdd(global_metrics.total_checked, 1);
+        }
         if (overflowed) {
             atomicAdd(global_metrics.overflowed, 1);
             active_thread = false;

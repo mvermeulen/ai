@@ -366,9 +366,9 @@ int main(int argc, char* argv[]) {
 
     if (cutoff_width > 0) {
         std::cout << "Using Suffix-First Search with width: " << cutoff_width << std::endl;
-        std::cout << "Generating allowed suffixes... " << std::flush;
-        auto allowed_suffixes = generate_allowed_suffixes(cutoff_width);
-        std::cout << allowed_suffixes.size() << " allowed suffixes generated." << std::endl;
+        std::cout << "Generating base-dependent suffixes... " << std::flush;
+        auto base_suffixes = generate_base_dependent_suffixes(cutoff_width);
+        std::cout << base_suffixes.std_allowed.size() << " allowed suffixes generated." << std::endl;
 
         uint128 threshold(1 << cutoff_width);
         if (start < threshold) {
@@ -385,14 +385,14 @@ int main(int argc, char* argv[]) {
                 if (end >= block_boundary) {
                     block_0_end = block_boundary - uint128(1);
                 }
-                hip_search_block_0_suffix_first(start, block_0_end, cutoff_width, allowed_suffixes,
+                hip_search_block_0_suffix_first(start, block_0_end, cutoff_width, base_suffixes,
                                                 max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
                 if (end >= block_boundary) {
-                    hip_search_range_suffix_first(block_boundary, end, cutoff_width, allowed_suffixes,
+                    hip_search_range_suffix_first(block_boundary, end, cutoff_width, base_suffixes,
                                                   max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
                 }
             } else {
-                hip_search_range_suffix_first(start, end, cutoff_width, allowed_suffixes,
+                hip_search_range_suffix_first(start, end, cutoff_width, base_suffixes,
                                               max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
             }
         }

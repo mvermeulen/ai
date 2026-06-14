@@ -40,4 +40,15 @@ struct SearchMetrics {
     double elapsed_seconds;
 };
 
+struct BaseDependentSuffixes {
+    std::vector<uint32_t> std_allowed;
+    std::vector<uint32_t> allowed_0; // Suffixes allowed when base % 6 == 0
+    std::vector<uint32_t> allowed_2; // Suffixes allowed when base % 6 == 2
+    std::vector<uint32_t> allowed_4; // Suffixes allowed when base % 6 == 4
+
+    uint32_t std_skipped_0 = 0;
+    uint32_t std_skipped_1 = 0;
+    uint32_t std_skipped_2 = 0;
+};
+
 #endif // HAILSTONE_COMMON_H

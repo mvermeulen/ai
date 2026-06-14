@@ -51,6 +51,9 @@ template <bool USE_64BIT>
 __global__ void collatz_search_kernel(
     uint128 start,
     uint64_t total_odds,
+    uint128 init_max_val,
+    uint32_t init_max_steps,
+    uint32_t init_max_sigma,
     PeakRecord* max_value_peaks,
     int* max_value_count,
     PeakRecord* steps_peaks,
@@ -64,11 +67,6 @@ __global__ void collatz_search_kernel(
     __shared__ uint64_t shared_max_val_high[256];
     __shared__ uint32_t shared_steps[256];
     __shared__ uint32_t shared_sigma[256];
-
-    // Read initial global peaks at start of kernel to filter local candidates
-    uint128 init_max_val = global_peaks->current_max_value;
-    uint32_t init_max_steps = global_peaks->current_max_steps;
-    uint32_t init_max_sigma = global_peaks->current_max_sigma;
 
     int l_id = threadIdx.x;
     int g_id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -600,6 +598,7 @@ void hip_search_range(
             if (use_64bit) {
                 hipLaunchKernelGGL(collatz_search_kernel<true>, dim3(blocks), dim3(threads_per_block), 0, 0,
                     chunk_start_val, chunk_odds,
+                    masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
                     d_max_val_peaks, d_max_val_count,
                     d_steps_peaks, d_steps_count,
                     d_sigma_peaks, d_sigma_count,
@@ -608,6 +607,7 @@ void hip_search_range(
             } else {
                 hipLaunchKernelGGL(collatz_search_kernel<false>, dim3(blocks), dim3(threads_per_block), 0, 0,
                     chunk_start_val, chunk_odds,
+                    masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
                     d_max_val_peaks, d_max_val_count,
                     d_steps_peaks, d_steps_count,
                     d_sigma_peaks, d_sigma_count,
@@ -749,7 +749,7 @@ void hip_search_blocks_gt_0(
     hip_search_range(start_num, end_num, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
 }
 
-std::vector<uint32_t> generate_allowed_suffixes(int width) {
+BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     int total_suffixes = 1 << width;
     struct PolyKey {
         uint32_t pow2;
@@ -765,6 +765,7 @@ std::vector<uint32_t> generate_allowed_suffixes(int width) {
     struct ClassInfo {
         int first_suffix = -1;
         bool has_even = false;
+        std::vector<uint32_t> members;
     };
     std::map<PolyKey, ClassInfo> classes;
     std::vector<PolyKey> suffix_polys(total_suffixes);
@@ -791,31 +792,71 @@ std::vector<uint32_t> generate_allowed_suffixes(int width) {
         if (info.first_suffix == -1) {
             info.first_suffix = i;
         }
+        info.members.push_back(i);
         if (i % 2 == 0) {
             info.has_even = true;
         }
     }
 
-    std::vector<uint32_t> allowed;
+    BaseDependentSuffixes res;
+    
+    // Build std_allowed
     for (int i = 0; i < total_suffixes; ++i) {
         const auto& key = suffix_polys[i];
         const auto& info = classes[key];
         if (info.first_suffix == i && !info.has_even) {
-            allowed.push_back(i);
+            res.std_allowed.push_back(i);
         }
     }
-    return allowed;
+    
+    // Precompute skipped counts for std_allowed
+    for (uint32_t s : res.std_allowed) {
+        if (s % 3 == 2) res.std_skipped_0++;
+        if ((1 + s) % 3 == 2) res.std_skipped_1++;
+        if ((2 + s) % 3 == 2) res.std_skipped_2++;
+    }
+
+    // Build base-dependent allowed lists
+    for (const auto& pair : classes) {
+        const auto& info = pair.second;
+        if (info.has_even) continue;
+        
+        uint32_t r1 = info.first_suffix;
+        bool has_1 = false;
+        bool has_3 = false;
+        bool has_5 = false;
+        for (uint32_t m : info.members) {
+            uint32_t rem = m % 6;
+            if (rem == 1) has_1 = true;
+            else if (rem == 3) has_3 = true;
+            else if (rem == 5) has_5 = true;
+        }
+        
+        if (!has_5) res.allowed_0.push_back(r1);
+        if (!has_3) res.allowed_2.push_back(r1);
+        if (!has_1) res.allowed_4.push_back(r1);
+    }
+    
+    std::sort(res.allowed_0.begin(), res.allowed_0.end());
+    std::sort(res.allowed_2.begin(), res.allowed_2.end());
+    std::sort(res.allowed_4.begin(), res.allowed_4.end());
+    
+    return res;
 }
 
-template <bool USE_64BIT>
+template <bool USE_64BIT, bool CHECK_START, bool CHECK_END>
 __global__ void collatz_search_kernel_suffix_first(
     uint128 start_prefix,
     uint128 start_val,
     uint128 end_val,
+    uint128 init_max_val,
+    uint32_t init_max_steps,
+    uint32_t init_max_sigma,
     uint32_t allowed_suffixes_size,
     const uint32_t* d_allowed_suffixes,
     int width,
     uint64_t total_work_items,
+    uint64_t prefix_stride,
     PeakRecord* max_value_peaks,
     int* max_value_count,
     PeakRecord* steps_peaks,
@@ -829,10 +870,6 @@ __global__ void collatz_search_kernel_suffix_first(
     __shared__ uint64_t shared_max_val_high[256];
     __shared__ uint32_t shared_steps[256];
     __shared__ uint32_t shared_sigma[256];
-
-    uint128 init_max_val = global_peaks->current_max_value;
-    uint32_t init_max_steps = global_peaks->current_max_steps;
-    uint32_t init_max_sigma = global_peaks->current_max_sigma;
 
     int l_id = threadIdx.x;
     int g_id = blockIdx.x * blockDim.x + threadIdx.x;
@@ -850,37 +887,24 @@ __global__ void collatz_search_kernel_suffix_first(
     if (active_thread) {
         uint32_t suffix = d_allowed_suffixes[suffix_index];
         if (USE_64BIT) {
-            uint64_t prefix = start_prefix.low + prefix_index;
+            uint64_t prefix = start_prefix.low + prefix_index * prefix_stride;
             uint64_t curr = (prefix << width) | suffix;
             n_64 = curr;
             
-            if (curr < start_64 || curr > end_64) {
+            if (CHECK_START && curr < start_64) {
                 active_thread = false;
-            } else {
-                uint64_t mult = (1ULL << width) % 3;
-                uint64_t base_mod3 = ((prefix % 3) * mult) % 3;
-                if ((base_mod3 + suffix) % 3 == 2) {
-                    atomicAdd(&(metrics->numbers_skipped_mod6), 1);
-                    atomicAdd(&(metrics->total_numbers_checked), 1);
-                    active_thread = false;
-                }
+            } else if (CHECK_END && curr > end_64) {
+                active_thread = false;
             }
         } else {
-            uint128 prefix = start_prefix + uint128(prefix_index);
+            uint128 prefix = start_prefix + uint128(prefix_index * prefix_stride);
             uint128 curr = shift_left(prefix, width) + uint128(suffix);
             n = curr;
             
-            if (curr < start_val || curr > end_val) {
+            if (CHECK_START && curr < start_val) {
                 active_thread = false;
-            } else {
-                uint64_t prefix_mod3 = (prefix.high % 3 + prefix.low % 3) % 3;
-                uint64_t mult = (1ULL << width) % 3;
-                uint64_t base_mod3 = (prefix_mod3 * mult) % 3;
-                if ((base_mod3 + suffix) % 3 == 2) {
-                    atomicAdd(&(metrics->numbers_skipped_mod6), 1);
-                    atomicAdd(&(metrics->total_numbers_checked), 1);
-                    active_thread = false;
-                }
+            } else if (CHECK_END && curr > end_val) {
+                active_thread = false;
             }
         }
     }
@@ -1138,7 +1162,6 @@ __global__ void collatz_search_kernel_suffix_first(
     }
 
     if (active_thread) {
-        atomicAdd((unsigned long long*)&(metrics->total_numbers_checked), 1ULL);
         if (overflowed) {
             atomicAdd((unsigned long long*)&(metrics->numbers_overflowed), 1ULL);
             active_thread = false;
@@ -1250,11 +1273,48 @@ __global__ void collatz_search_kernel_suffix_first(
     }
 }
 
+void accumulate_boundary_metrics(uint64_t prefix, uint64_t start_64, uint64_t end_64, int width, 
+                                 const BaseDependentSuffixes& base_suffixes, SearchMetrics& metrics) {
+    uint64_t base = prefix << width;
+    uint64_t mult = (1ULL << width) % 3;
+    uint64_t base_mod3 = ((prefix % 3) * mult) % 3;
+    
+    for (uint32_t suffix : base_suffixes.std_allowed) {
+        uint64_t curr = base | suffix;
+        if (curr < start_64) continue;
+        if (curr > end_64) break;
+        
+        metrics.total_numbers_checked++;
+        if ((base_mod3 + suffix) % 3 == 2) {
+            metrics.numbers_skipped_mod6++;
+        }
+    }
+}
+
+void accumulate_boundary_metrics_128(uint128 prefix, uint128 start, uint128 end, int width, 
+                                     const BaseDependentSuffixes& base_suffixes, SearchMetrics& metrics) {
+    uint128 base = shift_left(prefix, width);
+    uint64_t mult = (1ULL << width) % 3;
+    uint64_t prefix_mod3 = (prefix.high % 3 + prefix.low % 3) % 3;
+    uint64_t base_mod3 = (prefix_mod3 * mult) % 3;
+    
+    for (uint32_t suffix : base_suffixes.std_allowed) {
+        uint128 curr = base + uint128(suffix);
+        if (curr < start) continue;
+        if (curr > end) break;
+        
+        metrics.total_numbers_checked++;
+        if ((base_mod3 + suffix) % 3 == 2) {
+            metrics.numbers_skipped_mod6++;
+        }
+    }
+}
+
 void hip_search_range_suffix_first(
     uint128 start,
     uint128 end,
     int width,
-    const std::vector<uint32_t>& allowed_suffixes,
+    const BaseDependentSuffixes& base_suffixes,
     std::vector<PeakRecord>& max_value_peaks,
     std::vector<PeakRecord>& steps_peaks,
     std::vector<PeakRecord>& sigma_peaks,
@@ -1281,9 +1341,22 @@ void hip_search_range_suffix_first(
         steps_copied = true;
     }
 
-    uint32_t* d_allowed_suffixes;
-    HIP_CHECK(hipMalloc(&d_allowed_suffixes, allowed_suffixes.size() * sizeof(uint32_t)));
-    HIP_CHECK(hipMemcpy(d_allowed_suffixes, allowed_suffixes.data(), allowed_suffixes.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
+    uint32_t* d_allowed_0 = nullptr;
+    uint32_t* d_allowed_2 = nullptr;
+    uint32_t* d_allowed_4 = nullptr;
+
+    if (!base_suffixes.allowed_0.empty()) {
+        HIP_CHECK(hipMalloc(&d_allowed_0, base_suffixes.allowed_0.size() * sizeof(uint32_t)));
+        HIP_CHECK(hipMemcpy(d_allowed_0, base_suffixes.allowed_0.data(), base_suffixes.allowed_0.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
+    }
+    if (!base_suffixes.allowed_2.empty()) {
+        HIP_CHECK(hipMalloc(&d_allowed_2, base_suffixes.allowed_2.size() * sizeof(uint32_t)));
+        HIP_CHECK(hipMemcpy(d_allowed_2, base_suffixes.allowed_2.data(), base_suffixes.allowed_2.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
+    }
+    if (!base_suffixes.allowed_4.empty()) {
+        HIP_CHECK(hipMalloc(&d_allowed_4, base_suffixes.allowed_4.size() * sizeof(uint32_t)));
+        HIP_CHECK(hipMemcpy(d_allowed_4, base_suffixes.allowed_4.data(), base_suffixes.allowed_4.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
+    }
 
     PeakRecord* d_max_val_peaks;
     PeakRecord* d_steps_peaks;
@@ -1314,6 +1387,7 @@ void hip_search_range_suffix_first(
 
     double total_kernel_time = 0.0;
     uint64_t total_numbers_processed = 0;
+    uint32_t std_allowed_size = (uint32_t)base_suffixes.std_allowed.size();
 
     while (current_chunk_start <= end) {
         uint128 current_chunk_end = current_chunk_start + uint128(CHUNK_SIZE - 1);
@@ -1323,116 +1397,254 @@ void hip_search_range_suffix_first(
 
         uint128 start_prefix = shift_right(current_chunk_start, width);
         uint128 end_prefix = shift_right(current_chunk_end, width);
-        uint64_t num_prefixes = (end_prefix - start_prefix + uint128(1)).low;
-        uint64_t total_work_items = num_prefixes * allowed_suffixes.size();
+        
+        bool use_64bit = (end < uint128(0x100000000ULL));
 
-        if (total_work_items > 0) {
-            // Confirm predictions up to current_chunk_start
-            predictor.process_up_to(current_chunk_start, masterStepsPeaks);
-            masterPeaks.current_max_steps = predictor.current_max_steps;
+        // Confirm predictions up to current_chunk_start
+        predictor.process_up_to(current_chunk_start, masterStepsPeaks);
+        masterPeaks.current_max_steps = predictor.current_max_steps;
 
-            int zero = 0;
-            SearchMetrics initial_chunk_metrics = {0};
+        int zero = 0;
+        SearchMetrics initial_chunk_metrics = {0};
 
-            HIP_CHECK(hipMemcpy(d_max_val_count, &zero, sizeof(int), hipMemcpyHostToDevice));
-            HIP_CHECK(hipMemcpy(d_steps_count, &zero, sizeof(int), hipMemcpyHostToDevice));
-            HIP_CHECK(hipMemcpy(d_sigma_count, &zero, sizeof(int), hipMemcpyHostToDevice));
-            HIP_CHECK(hipMemcpy(d_global_peaks, &masterPeaks, sizeof(PeakState), hipMemcpyHostToDevice));
-            HIP_CHECK(hipMemcpy(d_metrics, &initial_chunk_metrics, sizeof(SearchMetrics), hipMemcpyHostToDevice));
+        HIP_CHECK(hipMemcpy(d_max_val_count, &zero, sizeof(int), hipMemcpyHostToDevice));
+        HIP_CHECK(hipMemcpy(d_steps_count, &zero, sizeof(int), hipMemcpyHostToDevice));
+        HIP_CHECK(hipMemcpy(d_sigma_count, &zero, sizeof(int), hipMemcpyHostToDevice));
+        HIP_CHECK(hipMemcpy(d_global_peaks, &masterPeaks, sizeof(PeakState), hipMemcpyHostToDevice));
+        HIP_CHECK(hipMemcpy(d_metrics, &initial_chunk_metrics, sizeof(SearchMetrics), hipMemcpyHostToDevice));
 
-            int threads_per_block = 256;
-            int blocks = (total_work_items + threads_per_block - 1) / threads_per_block;
+        auto t_start = std::chrono::high_resolution_clock::now();
 
-            auto t_start = std::chrono::high_resolution_clock::now();
+        if (start_prefix == end_prefix) {
+            // Case 1: Start and end in the same prefix (single boundary)
+            uint64_t m3 = (start_prefix.high % 3 + start_prefix.low % 3) % 3;
+            uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
+            uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
+            uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
+                                    ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+            if (allowed_size > 0) {
+                uint64_t total_work_items = allowed_size;
+                int threads_per_block = 256;
+                int blocks = (total_work_items + threads_per_block - 1) / threads_per_block;
 
-            bool use_64bit = (end < uint128(0x100000000ULL));
+                if (use_64bit) {
+                    hipLaunchKernelGGL((collatz_search_kernel_suffix_first<true, true, true>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                        start_prefix, current_chunk_start, current_chunk_end,
+                        masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                        allowed_size, d_allowed, width, total_work_items, 1,
+                        d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                    );
+                } else {
+                    hipLaunchKernelGGL((collatz_search_kernel_suffix_first<false, true, true>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                        start_prefix, current_chunk_start, current_chunk_end,
+                        masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                        allowed_size, d_allowed, width, total_work_items, 1,
+                        d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                    );
+                }
+            }
             if (use_64bit) {
-                hipLaunchKernelGGL(collatz_search_kernel_suffix_first<true>, dim3(blocks), dim3(threads_per_block), 0, 0,
-                    start_prefix, current_chunk_start, current_chunk_end,
-                    (uint32_t)allowed_suffixes.size(), d_allowed_suffixes, width, total_work_items,
-                    d_max_val_peaks, d_max_val_count,
-                    d_steps_peaks, d_steps_count,
-                    d_sigma_peaks, d_sigma_count,
-                    d_global_peaks, d_metrics
-                );
+                accumulate_boundary_metrics(start_prefix.low, current_chunk_start.low, current_chunk_end.low, width, base_suffixes, masterMetrics);
             } else {
-                hipLaunchKernelGGL(collatz_search_kernel_suffix_first<false>, dim3(blocks), dim3(threads_per_block), 0, 0,
-                    start_prefix, current_chunk_start, current_chunk_end,
-                    (uint32_t)allowed_suffixes.size(), d_allowed_suffixes, width, total_work_items,
-                    d_max_val_peaks, d_max_val_count,
-                    d_steps_peaks, d_steps_count,
-                    d_sigma_peaks, d_sigma_count,
-                    d_global_peaks, d_metrics
-                );
+                accumulate_boundary_metrics_128(start_prefix, current_chunk_start, current_chunk_end, width, base_suffixes, masterMetrics);
             }
+        } else {
+            // Case 2: Start and end prefixes are different
+            bool start_is_boundary = (current_chunk_start > shift_left(start_prefix, width));
+            if (start_is_boundary) {
+                uint64_t m3 = (start_prefix.high % 3 + start_prefix.low % 3) % 3;
+                uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
+                uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
+                uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
+                                        ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+                if (allowed_size > 0) {
+                    uint64_t total_work_items = allowed_size;
+                    int threads_per_block = 256;
+                    int blocks = (total_work_items + threads_per_block - 1) / threads_per_block;
 
-            HIP_CHECK(hipDeviceSynchronize());
-
-            auto t_end = std::chrono::high_resolution_clock::now();
-            total_kernel_time += std::chrono::duration<double>(t_end - t_start).count();
-
-            int max_val_count = 0;
-            int steps_count = 0;
-            int sigma_count = 0;
-            SearchMetrics chunkMetrics = {0};
-            PeakState chunkPeaks;
-
-            HIP_CHECK(hipMemcpy(&max_val_count, d_max_val_count, sizeof(int), hipMemcpyDeviceToHost));
-            HIP_CHECK(hipMemcpy(&steps_count, d_steps_count, sizeof(int), hipMemcpyDeviceToHost));
-            HIP_CHECK(hipMemcpy(&sigma_count, d_sigma_count, sizeof(int), hipMemcpyDeviceToHost));
-            HIP_CHECK(hipMemcpy(&chunkPeaks, d_global_peaks, sizeof(PeakState), hipMemcpyDeviceToHost));
-            HIP_CHECK(hipMemcpy(&chunkMetrics, d_metrics, sizeof(SearchMetrics), hipMemcpyDeviceToHost));
-
-            masterMetrics.total_numbers_checked += chunkMetrics.total_numbers_checked;
-            masterMetrics.total_steps_computed += chunkMetrics.total_steps_computed;
-            masterMetrics.numbers_skipped_mod6 += chunkMetrics.numbers_skipped_mod6;
-            masterMetrics.numbers_overflowed += chunkMetrics.numbers_overflowed;
-
-            if (max_val_count > 0) {
-                int to_copy = std::min(max_val_count, (int)MAX_PEAK_RECORDS);
-                std::vector<PeakRecord> chunkMaxVal(to_copy);
-                HIP_CHECK(hipMemcpy(chunkMaxVal.data(), d_max_val_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
-                masterMaxValPeaks.insert(masterMaxValPeaks.end(), chunkMaxVal.begin(), chunkMaxVal.end());
-            }
-
-            if (steps_count > 0) {
-                int to_copy = std::min(steps_count, (int)MAX_PEAK_RECORDS);
-                std::vector<PeakRecord> chunkSteps(to_copy);
-                HIP_CHECK(hipMemcpy(chunkSteps.data(), d_steps_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
-                
-                std::sort(chunkSteps.begin(), chunkSteps.end(), [](const PeakRecord& a, const PeakRecord& b) {
-                    return a.start_val < b.start_val;
-                });
-
-                for (const auto& peak : chunkSteps) {
-                    predictor.process_up_to(peak.start_val, masterStepsPeaks);
-                    if (peak.metric_val.low > predictor.current_max_steps) {
-                        masterStepsPeaks.push_back(peak);
-                        predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+                    if (use_64bit) {
+                        hipLaunchKernelGGL((collatz_search_kernel_suffix_first<true, true, false>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                            start_prefix, current_chunk_start, current_chunk_end,
+                            masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                            allowed_size, d_allowed, width, total_work_items, 1,
+                            d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                        );
+                    } else {
+                        hipLaunchKernelGGL((collatz_search_kernel_suffix_first<false, true, false>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                            start_prefix, current_chunk_start, current_chunk_end,
+                            masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                            allowed_size, d_allowed, width, total_work_items, 1,
+                            d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                        );
                     }
+                }
+                if (use_64bit) {
+                    accumulate_boundary_metrics(start_prefix.low, current_chunk_start.low, ((start_prefix.low + 1) << width) - 1, width, base_suffixes, masterMetrics);
+                } else {
+                    accumulate_boundary_metrics_128(start_prefix, current_chunk_start, shift_left(start_prefix + uint128(1), width) - uint128(1), width, base_suffixes, masterMetrics);
                 }
             }
 
-            if (sigma_count > 0) {
-                int to_copy = std::min(sigma_count, (int)MAX_PEAK_RECORDS);
-                std::vector<PeakRecord> chunkSigma(to_copy);
-                HIP_CHECK(hipMemcpy(chunkSigma.data(), d_sigma_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
-                masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
+            bool end_is_boundary = (current_chunk_end < (shift_left(end_prefix + uint128(1), width) - uint128(1)));
+            if (end_is_boundary) {
+                uint64_t m3 = (end_prefix.high % 3 + end_prefix.low % 3) % 3;
+                uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
+                uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
+                uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
+                                        ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+                if (allowed_size > 0) {
+                    uint64_t total_work_items = allowed_size;
+                    int threads_per_block = 256;
+                    int blocks = (total_work_items + threads_per_block - 1) / threads_per_block;
+
+                    if (use_64bit) {
+                        hipLaunchKernelGGL((collatz_search_kernel_suffix_first<true, false, true>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                            end_prefix, current_chunk_start, current_chunk_end,
+                            masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                            allowed_size, d_allowed, width, total_work_items, 1,
+                            d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                        );
+                    } else {
+                        hipLaunchKernelGGL((collatz_search_kernel_suffix_first<false, false, true>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                            end_prefix, current_chunk_start, current_chunk_end,
+                            masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                            allowed_size, d_allowed, width, total_work_items, 1,
+                            d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                        );
+                    }
+                }
+                if (use_64bit) {
+                    accumulate_boundary_metrics(end_prefix.low, end_prefix.low << width, current_chunk_end.low, width, base_suffixes, masterMetrics);
+                } else {
+                    accumulate_boundary_metrics_128(end_prefix, shift_left(end_prefix, width), current_chunk_end, width, base_suffixes, masterMetrics);
+                }
             }
 
-            predictor.process_up_to(current_chunk_end, masterStepsPeaks);
-            masterPeaks.current_max_steps = predictor.current_max_steps;
+            // Intermediate prefixes mod 3 groups
+            uint128 mid_start_prefix = start_prefix + (start_is_boundary ? uint128(1) : uint128(0));
+            uint128 mid_end_prefix = end_prefix - (end_is_boundary ? uint128(1) : uint128(0));
 
-            if (chunkPeaks.current_max_value > masterPeaks.current_max_value) {
-                masterPeaks.current_max_value = chunkPeaks.current_max_value;
-            }
-            if (chunkPeaks.current_max_sigma > masterPeaks.current_max_sigma) {
-                masterPeaks.current_max_sigma = chunkPeaks.current_max_sigma;
-            }
+            if (mid_start_prefix <= mid_end_prefix) {
+                uint64_t mult = (1ULL << width) % 3;
+                for (int rem_mod3 = 0; rem_mod3 < 3; ++rem_mod3) {
+                    uint128 first_prefix = mid_start_prefix;
+                    while (first_prefix <= mid_end_prefix) {
+                        uint64_t m3 = (first_prefix.high % 3 + first_prefix.low % 3) % 3;
+                        if (m3 == rem_mod3) break;
+                        first_prefix = first_prefix + uint128(1);
+                    }
 
-            total_numbers_processed += (current_chunk_end - current_chunk_start + uint128(1)).low;
+                    uint128 last_prefix = mid_end_prefix;
+                    while (last_prefix >= first_prefix) {
+                        uint64_t m3 = (last_prefix.high % 3 + last_prefix.low % 3) % 3;
+                        if (m3 == rem_mod3) break;
+                        last_prefix = last_prefix - uint128(1);
+                    }
+
+                    if (first_prefix <= last_prefix) {
+                        uint64_t diff = (last_prefix - first_prefix).low;
+                        uint64_t num_prefixes_group = diff / 3 + 1;
+
+                        uint64_t base_mod6 = (rem_mod3 == 0) ? 0 : ((rem_mod3 == 1) ? 4 : 2);
+                        uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
+                        uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
+                                                ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+                        if (allowed_size > 0 && num_prefixes_group > 0) {
+                            uint64_t total_work_items = num_prefixes_group * allowed_size;
+                            int threads_per_block = 256;
+                            int blocks = (total_work_items + threads_per_block - 1) / threads_per_block;
+
+                            if (use_64bit) {
+                                hipLaunchKernelGGL((collatz_search_kernel_suffix_first<true, false, false>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                                    first_prefix, current_chunk_start, current_chunk_end,
+                                    masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                                    allowed_size, d_allowed, width, total_work_items, 3,
+                                    d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                                );
+                            } else {
+                                hipLaunchKernelGGL((collatz_search_kernel_suffix_first<false, false, false>), dim3(blocks), dim3(threads_per_block), 0, 0,
+                                    first_prefix, current_chunk_start, current_chunk_end,
+                                    masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
+                                    allowed_size, d_allowed, width, total_work_items, 3,
+                                    d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
+                                );
+                            }
+                        }
+                        
+                        // Accumulate host metrics
+                        uint64_t base_mod3 = (rem_mod3 * mult) % 3;
+                        uint32_t std_skipped = (base_mod3 == 0) ? base_suffixes.std_skipped_0 :
+                                               ((base_mod3 == 2) ? base_suffixes.std_skipped_2 : base_suffixes.std_skipped_1);
+                        masterMetrics.total_numbers_checked += num_prefixes_group * std_allowed_size;
+                        masterMetrics.numbers_skipped_mod6 += num_prefixes_group * std_skipped;
+                    }
+                }
+            }
         }
 
+        HIP_CHECK(hipDeviceSynchronize());
+
+        auto t_end = std::chrono::high_resolution_clock::now();
+        total_kernel_time += std::chrono::duration<double>(t_end - t_start).count();
+
+        int max_val_count = 0;
+        int steps_count = 0;
+        int sigma_count = 0;
+        SearchMetrics chunkMetrics = {0};
+        PeakState chunkPeaks;
+
+        HIP_CHECK(hipMemcpy(&max_val_count, d_max_val_count, sizeof(int), hipMemcpyDeviceToHost));
+        HIP_CHECK(hipMemcpy(&steps_count, d_steps_count, sizeof(int), hipMemcpyDeviceToHost));
+        HIP_CHECK(hipMemcpy(&sigma_count, d_sigma_count, sizeof(int), hipMemcpyDeviceToHost));
+        HIP_CHECK(hipMemcpy(&chunkPeaks, d_global_peaks, sizeof(PeakState), hipMemcpyDeviceToHost));
+        HIP_CHECK(hipMemcpy(&chunkMetrics, d_metrics, sizeof(SearchMetrics), hipMemcpyDeviceToHost));
+
+        masterMetrics.total_steps_computed += chunkMetrics.total_steps_computed;
+        masterMetrics.numbers_overflowed += chunkMetrics.numbers_overflowed;
+
+        if (max_val_count > 0) {
+            int to_copy = std::min(max_val_count, (int)MAX_PEAK_RECORDS);
+            std::vector<PeakRecord> chunkMaxVal(to_copy);
+            HIP_CHECK(hipMemcpy(chunkMaxVal.data(), d_max_val_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
+            masterMaxValPeaks.insert(masterMaxValPeaks.end(), chunkMaxVal.begin(), chunkMaxVal.end());
+        }
+
+        if (steps_count > 0) {
+            int to_copy = std::min(steps_count, (int)MAX_PEAK_RECORDS);
+            std::vector<PeakRecord> chunkSteps(to_copy);
+            HIP_CHECK(hipMemcpy(chunkSteps.data(), d_steps_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
+            
+            std::sort(chunkSteps.begin(), chunkSteps.end(), [](const PeakRecord& a, const PeakRecord& b) {
+                return a.start_val < b.start_val;
+            });
+
+            for (const auto& peak : chunkSteps) {
+                predictor.process_up_to(peak.start_val, masterStepsPeaks);
+                if (peak.metric_val.low > predictor.current_max_steps) {
+                    masterStepsPeaks.push_back(peak);
+                    predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+                }
+            }
+        }
+
+        if (sigma_count > 0) {
+            int to_copy = std::min(sigma_count, (int)MAX_PEAK_RECORDS);
+            std::vector<PeakRecord> chunkSigma(to_copy);
+            HIP_CHECK(hipMemcpy(chunkSigma.data(), d_sigma_peaks, to_copy * sizeof(PeakRecord), hipMemcpyDeviceToHost));
+            masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
+        }
+
+        predictor.process_up_to(current_chunk_end, masterStepsPeaks);
+        masterPeaks.current_max_steps = predictor.current_max_steps;
+
+        if (chunkPeaks.current_max_value > masterPeaks.current_max_value) {
+            masterPeaks.current_max_value = chunkPeaks.current_max_value;
+        }
+        if (chunkPeaks.current_max_sigma > masterPeaks.current_max_sigma) {
+            masterPeaks.current_max_sigma = chunkPeaks.current_max_sigma;
+        }
+
+        total_numbers_processed += (current_chunk_end - current_chunk_start + uint128(1)).low;
         current_chunk_start = current_chunk_start + uint128(CHUNK_SIZE);
     }
 
@@ -1456,7 +1668,9 @@ void hip_search_range_suffix_first(
     metrics.numbers_overflowed += masterMetrics.numbers_overflowed;
     metrics.elapsed_seconds += total_kernel_time;
 
-    HIP_CHECK(hipFree(d_allowed_suffixes));
+    if (d_allowed_0) HIP_CHECK(hipFree(d_allowed_0));
+    if (d_allowed_2) HIP_CHECK(hipFree(d_allowed_2));
+    if (d_allowed_4) HIP_CHECK(hipFree(d_allowed_4));
     HIP_CHECK(hipFree(d_max_val_peaks));
     HIP_CHECK(hipFree(d_steps_peaks));
     HIP_CHECK(hipFree(d_sigma_peaks));
@@ -1471,7 +1685,7 @@ void hip_search_block_0_suffix_first(
     uint128 start_num,
     uint128 end_num,
     int width,
-    const std::vector<uint32_t>& allowed_suffixes,
+    const BaseDependentSuffixes& base_suffixes,
     std::vector<PeakRecord>& max_value_peaks,
     std::vector<PeakRecord>& steps_peaks,
     std::vector<PeakRecord>& sigma_peaks,
@@ -1481,6 +1695,6 @@ void hip_search_block_0_suffix_first(
     if (end_num >= uint128(0x100000000ULL)) {
         throw std::invalid_argument("hip_search_block_0_suffix_first: range extends beyond block 0");
     }
-    hip_search_range_suffix_first(start_num, end_num, width, allowed_suffixes, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
+    hip_search_range_suffix_first(start_num, end_num, width, base_suffixes, max_value_peaks, steps_peaks, sigma_peaks, global_peaks, metrics);
 }
 

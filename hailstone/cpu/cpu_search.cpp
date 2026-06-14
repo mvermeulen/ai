@@ -1,3 +1,4 @@
+// Suffix-first CPU search implementation
 #include "cpu_search.h"
 #include "steps_table.h"
 #include "peak_predictor.h"
@@ -218,6 +219,8 @@ void cpu_search_range(uint128 start, uint128 end,
         curr = curr + uint128(1);
     }
 
+    uint32_t init_max_steps = global_peaks.current_max_steps;
+
     for (; curr <= end; curr = curr + uint128(2)) {
         // Process predictions up to curr
         predictor.process_up_to(curr, steps_peaks);
@@ -242,7 +245,7 @@ void cpu_search_range(uint128 start, uint128 end,
 
         CollatzStats stats;
         if (curr >= uint128(1 << POLY_WIDTH)) {
-            stats = compute_collatz_poly(curr, global_peaks.current_max_steps);
+            stats = compute_collatz_poly(curr, init_max_steps);
         } else {
             stats = compute_collatz(curr);
         }
@@ -680,9 +683,104 @@ std::vector<uint32_t> generate_allowed_suffixes(int width) {
     return allowed;
 }
 
+BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
+    int total_suffixes = 1 << width;
+    struct PolyKey {
+        uint32_t pow2;
+        uint32_t pow3;
+        uint64_t add;
+        bool operator<(const PolyKey& o) const {
+            if (pow2 != o.pow2) return pow2 < o.pow2;
+            if (pow3 != o.pow3) return pow3 < o.pow3;
+            return add < o.add;
+        }
+    };
+
+    struct ClassInfo {
+        int first_suffix = -1;
+        bool has_even = false;
+        std::vector<uint32_t> members;
+    };
+    std::map<PolyKey, ClassInfo> classes;
+    std::vector<PolyKey> suffix_polys(total_suffixes);
+
+    for (int i = 0; i < total_suffixes; ++i) {
+        uint64_t bits = i;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+        }
+        PolyKey key{pow2, pow3, bits};
+        suffix_polys[i] = key;
+        
+        auto& info = classes[key];
+        if (info.first_suffix == -1) {
+            info.first_suffix = i;
+        }
+        info.members.push_back(i);
+        if (i % 2 == 0) {
+            info.has_even = true;
+        }
+    }
+
+    BaseDependentSuffixes res;
+    
+    // Build std_allowed
+    for (int i = 0; i < total_suffixes; ++i) {
+        const auto& key = suffix_polys[i];
+        const auto& info = classes[key];
+        if (info.first_suffix == i && !info.has_even) {
+            res.std_allowed.push_back(i);
+        }
+    }
+    
+    // Precompute skipped counts for std_allowed
+    for (uint32_t s : res.std_allowed) {
+        if (s % 3 == 2) res.std_skipped_0++;
+        if ((1 + s) % 3 == 2) res.std_skipped_1++;
+        if ((2 + s) % 3 == 2) res.std_skipped_2++;
+    }
+
+    // Build base-dependent allowed lists
+    for (const auto& pair : classes) {
+        const auto& info = pair.second;
+        if (info.has_even) continue;
+        
+        uint32_t r1 = info.first_suffix;
+        bool has_1 = false;
+        bool has_3 = false;
+        bool has_5 = false;
+        for (uint32_t m : info.members) {
+            uint32_t rem = m % 6;
+            if (rem == 1) has_1 = true;
+            else if (rem == 3) has_3 = true;
+            else if (rem == 5) has_5 = true;
+        }
+        
+        if (!has_5) res.allowed_0.push_back(r1);
+        if (!has_3) res.allowed_2.push_back(r1);
+        if (!has_1) res.allowed_4.push_back(r1);
+    }
+    
+    std::sort(res.allowed_0.begin(), res.allowed_0.end());
+    std::sort(res.allowed_2.begin(), res.allowed_2.end());
+    std::sort(res.allowed_4.begin(), res.allowed_4.end());
+    
+    return res;
+}
+
 void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
                                      int width,
-                                     const std::vector<uint32_t>& allowed_suffixes,
+                                     const BaseDependentSuffixes& base_suffixes,
                                      std::vector<PeakRecord>& max_value_peaks,
                                      std::vector<PeakRecord>& steps_peaks,
                                      std::vector<PeakRecord>& sigma_peaks,
@@ -707,112 +805,222 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
     uint64_t start_prefix = start_64 >> width;
     uint64_t end_prefix = end_64 >> width;
 
+    uint32_t std_allowed_size = (uint32_t)base_suffixes.std_allowed.size();
+
     // Loop through prefixes
     for (uint64_t x = start_prefix; x <= end_prefix; ++x) {
         uint64_t base = x << width;
         uint64_t x_mod3 = x % 3;
         
-        uint64_t mult = (1ULL << width) % 3;
-        uint64_t base_mod3 = (x_mod3 * mult) % 3;
+        uint64_t base_mod6 = (x_mod3 == 0) ? 0 : ((x_mod3 == 1) ? 4 : 2);
+        
+        const std::vector<uint32_t>& allowed = (base_mod6 == 0) ? base_suffixes.allowed_0 :
+                                               ((base_mod6 == 2) ? base_suffixes.allowed_2 :
+                                                                   base_suffixes.allowed_4);
 
-        for (uint32_t suffix : allowed_suffixes) {
-            uint64_t curr = base | suffix;
-            
-            // Boundary checks
-            if (curr < start_64) continue;
-            if (curr > end_64) break; // Suffixes are ordered; subsequent ones will also exceed end_64
+        bool is_fully_in_bounds = (x > start_prefix && x < end_prefix);
 
-            uint128 u128_curr(curr);
-            predictor.process_up_to(u128_curr, steps_peaks);
-            global_peaks.current_max_steps = predictor.current_max_steps;
+        if (is_fully_in_bounds) {
+            uint32_t std_skipped = (base_mod6 == 0) ? base_suffixes.std_skipped_0 :
+                                   ((base_mod6 == 2) ? base_suffixes.std_skipped_2 :
+                                                       base_suffixes.std_skipped_1);
+            metrics.total_numbers_checked += std_allowed_size;
+            metrics.numbers_skipped_mod6 += std_skipped;
 
-            // Modulo 6 cutoff: if curr % 6 == 5 (equivalent to curr % 3 == 2 since curr is odd)
-            if ((base_mod3 + suffix) % 3 == 2) {
-                metrics.numbers_skipped_mod6++;
-                metrics.total_numbers_checked++;
-                continue;
-            }
+            for (uint32_t suffix : allowed) {
+                uint64_t curr = base | suffix;
+                uint128 u128_curr(curr);
+                predictor.process_up_to(u128_curr, steps_peaks);
+                global_peaks.current_max_steps = predictor.current_max_steps;
 
-            uint64_t val = curr;
-            uint32_t steps = 0;
-            uint32_t stopping_time = 0;
-            uint64_t max_val = curr;
-            bool overflowed = false;
+                uint64_t val = curr;
+                uint32_t steps = 0;
+                uint32_t stopping_time = 0;
+                uint64_t max_val = curr;
+                bool overflowed = false;
 
-            if (val == 1) {
-                steps = 0;
-                stopping_time = 0;
-                max_val = 1;
-            } else if (val == 2) {
-                steps = 1;
-                stopping_time = 1;
-                max_val = 2;
-            } else {
-                uint64_t temp_curr = val;
-                uint32_t t_steps = 0;
-                bool has_stopped_sigma = false;
-                bool dropped_below_start = false;
+                if (val == 1) {
+                    steps = 0;
+                    stopping_time = 0;
+                    max_val = 1;
+                } else if (val == 2) {
+                    steps = 1;
+                    stopping_time = 1;
+                    max_val = 2;
+                } else {
+                    uint64_t temp_curr = val;
+                    uint32_t t_steps = 0;
+                    bool has_stopped_sigma = false;
+                    bool dropped_below_start = false;
 
-                while (temp_curr > 1) {
-                    if (temp_curr > 0x5555555555555555ULL) {
-                        overflowed = true;
-                        break;
-                    }
-                    uint64_t next_val = 3 * temp_curr + 1;
-                    steps++;
-
-                    if (!dropped_below_start) {
-                        if (next_val > max_val) {
-                            max_val = next_val;
+                    while (temp_curr > 1) {
+                        if (temp_curr > 0x5555555555555555ULL) {
+                            overflowed = true;
+                            break;
                         }
-                    }
+                        uint64_t next_val = 3 * temp_curr + 1;
+                        steps++;
 
-                    int p = ctz64(next_val);
-                    if (!has_stopped_sigma) {
-                        for (int k = 1; k <= p; ++k) {
-                            uint64_t val_k = next_val >> k;
-                            if (val_k < val) {
-                                stopping_time = t_steps + k;
-                                has_stopped_sigma = true;
-                                break;
+                        if (!dropped_below_start) {
+                            if (next_val > max_val) {
+                                max_val = next_val;
                             }
                         }
-                    }
 
-                    next_val >>= p;
-                    steps += p;
-                    t_steps += p;
-                    temp_curr = next_val;
+                        int p = ctz64(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < val) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
 
-                    if (temp_curr < val) {
-                        dropped_below_start = true;
+                        next_val >>= p;
+                        steps += p;
+                        t_steps += p;
+                        temp_curr = next_val;
+
+                        if (temp_curr < val) {
+                            dropped_below_start = true;
+                        }
                     }
                 }
+
+                if (overflowed) {
+                    metrics.numbers_overflowed++;
+                    continue;
+                }
+
+                metrics.total_steps_computed += steps;
+
+                uint128 u128_max_val(max_val);
+                if (u128_max_val > global_peaks.current_max_value) {
+                    global_peaks.current_max_value = u128_max_val;
+                    max_value_peaks.push_back({uint128(curr), u128_max_val});
+                }
+
+                if (steps > global_peaks.current_max_steps) {
+                    predictor.add_confirmed_peak(uint128(curr), steps);
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+                    steps_peaks.push_back({uint128(curr), uint128(steps)});
+                }
+
+                if (stopping_time > global_peaks.current_max_sigma) {
+                    global_peaks.current_max_sigma = stopping_time;
+                    sigma_peaks.push_back({uint128(curr), uint128(stopping_time)});
+                }
             }
+        } else {
+            // Boundary block: perform individual prefix bounds checking and exact metrics tracking
+            uint64_t mult = (1ULL << width) % 3;
+            uint64_t base_mod3 = (x_mod3 * mult) % 3;
 
-            metrics.total_numbers_checked++;
-            if (overflowed) {
-                metrics.numbers_overflowed++;
-                continue;
-            }
+            for (uint32_t suffix : base_suffixes.std_allowed) {
+                uint64_t curr = base | suffix;
+                
+                if (curr < start_64) continue;
+                if (curr > end_64) break;
 
-            metrics.total_steps_computed += steps;
+                if ((base_mod3 + suffix) % 3 == 2) {
+                    metrics.numbers_skipped_mod6++;
+                    metrics.total_numbers_checked++;
+                    continue;
+                }
 
-            uint128 u128_max_val(max_val);
-            if (u128_max_val > global_peaks.current_max_value) {
-                global_peaks.current_max_value = u128_max_val;
-                max_value_peaks.push_back({uint128(curr), u128_max_val});
-            }
+                metrics.total_numbers_checked++;
 
-            if (steps > global_peaks.current_max_steps) {
-                predictor.add_confirmed_peak(uint128(curr), steps);
+                // Check if this suffix is pruned under base-dependent rules
+                bool is_pruned = !std::binary_search(allowed.begin(), allowed.end(), suffix);
+                if (is_pruned) continue;
+
+                uint128 u128_curr(curr);
+                predictor.process_up_to(u128_curr, steps_peaks);
                 global_peaks.current_max_steps = predictor.current_max_steps;
-                steps_peaks.push_back({uint128(curr), uint128(steps)});
-            }
 
-            if (stopping_time > global_peaks.current_max_sigma) {
-                global_peaks.current_max_sigma = stopping_time;
-                sigma_peaks.push_back({uint128(curr), uint128(stopping_time)});
+                uint64_t val = curr;
+                uint32_t steps = 0;
+                uint32_t stopping_time = 0;
+                uint64_t max_val = curr;
+                bool overflowed = false;
+
+                if (val == 1) {
+                    steps = 0;
+                    stopping_time = 0;
+                    max_val = 1;
+                } else if (val == 2) {
+                    steps = 1;
+                    stopping_time = 1;
+                    max_val = 2;
+                } else {
+                    uint64_t temp_curr = val;
+                    uint32_t t_steps = 0;
+                    bool has_stopped_sigma = false;
+                    bool dropped_below_start = false;
+
+                    while (temp_curr > 1) {
+                        if (temp_curr > 0x5555555555555555ULL) {
+                            overflowed = true;
+                            break;
+                        }
+                        uint64_t next_val = 3 * temp_curr + 1;
+                        steps++;
+
+                        if (!dropped_below_start) {
+                            if (next_val > max_val) {
+                                max_val = next_val;
+                            }
+                        }
+
+                        int p = ctz64(next_val);
+                        if (!has_stopped_sigma) {
+                            for (int k = 1; k <= p; ++k) {
+                                uint64_t val_k = next_val >> k;
+                                if (val_k < val) {
+                                    stopping_time = t_steps + k;
+                                    has_stopped_sigma = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        next_val >>= p;
+                        steps += p;
+                        t_steps += p;
+                        temp_curr = next_val;
+
+                        if (temp_curr < val) {
+                            dropped_below_start = true;
+                        }
+                    }
+                }
+
+                if (overflowed) {
+                    metrics.numbers_overflowed++;
+                    continue;
+                }
+
+                metrics.total_steps_computed += steps;
+
+                uint128 u128_max_val(max_val);
+                if (u128_max_val > global_peaks.current_max_value) {
+                    global_peaks.current_max_value = u128_max_val;
+                    max_value_peaks.push_back({uint128(curr), u128_max_val});
+                }
+
+                if (steps > global_peaks.current_max_steps) {
+                    predictor.add_confirmed_peak(uint128(curr), steps);
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+                    steps_peaks.push_back({uint128(curr), uint128(steps)});
+                }
+
+                if (stopping_time > global_peaks.current_max_sigma) {
+                    global_peaks.current_max_sigma = stopping_time;
+                    sigma_peaks.push_back({uint128(curr), uint128(stopping_time)});
+                }
             }
         }
     }
@@ -835,13 +1043,14 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
 
 void cpu_search_range_suffix_first(uint128 start, uint128 end, 
                                    int width,
-                                   const std::vector<uint32_t>& allowed_suffixes,
+                                   const BaseDependentSuffixes& base_suffixes,
                                    std::vector<PeakRecord>& max_value_peaks,
                                    std::vector<PeakRecord>& steps_peaks,
                                    std::vector<PeakRecord>& sigma_peaks,
                                    PeakState& global_peaks,
                                    SearchMetrics& metrics) {
     auto start_time = std::chrono::high_resolution_clock::now();
+    uint32_t init_max_steps = global_peaks.current_max_steps;
 
     // Initialize peak predictor from existing steps peaks
     PeakPredictor predictor;
@@ -854,61 +1063,122 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
     uint128 end_prefix = shift_right(end, width);
 
     uint64_t mult = (1ULL << width) % 3;
+    uint32_t std_allowed_size = (uint32_t)base_suffixes.std_allowed.size();
 
     for (uint128 x = start_prefix; x <= end_prefix; x = x + uint128(1)) {
         uint128 base = shift_left(x, width);
         uint64_t x_mod3 = (x.high % 3 + x.low % 3) % 3;
         uint64_t base_mod3 = (x_mod3 * mult) % 3;
+        
+        uint64_t base_mod6 = (x_mod3 == 0) ? 0 : ((x_mod3 == 1) ? 4 : 2);
+        
+        const std::vector<uint32_t>& allowed = (base_mod6 == 0) ? base_suffixes.allowed_0 :
+                                               ((base_mod6 == 2) ? base_suffixes.allowed_2 :
+                                                                   base_suffixes.allowed_4);
 
-        for (uint32_t suffix : allowed_suffixes) {
-            uint128 curr = base + uint128(suffix);
+        bool is_fully_in_bounds = (x > start_prefix && x < end_prefix);
 
-            // Boundary checks
-            if (curr < start) continue;
-            if (curr > end) break; // Suffixes are ordered; subsequent ones will exceed end
+        if (is_fully_in_bounds) {
+            uint32_t std_skipped = (base_mod3 == 0) ? base_suffixes.std_skipped_0 :
+                                   ((base_mod3 == 2) ? base_suffixes.std_skipped_2 :
+                                                       base_suffixes.std_skipped_1);
+            metrics.total_numbers_checked += std_allowed_size;
+            metrics.numbers_skipped_mod6 += std_skipped;
 
-            predictor.process_up_to(curr, steps_peaks);
-            global_peaks.current_max_steps = predictor.current_max_steps;
+            for (uint32_t suffix : allowed) {
+                uint128 curr = base + uint128(suffix);
 
-            // Modulo 6 cutoff: if curr % 6 == 5 (equivalent to (curr % 3 == 2) since curr is odd)
-            if ((base_mod3 + suffix) % 3 == 2) {
-                metrics.numbers_skipped_mod6++;
-                metrics.total_numbers_checked++;
-                continue;
-            }
-
-            CollatzStats stats;
-            if (curr >= uint128(1 << POLY_WIDTH)) {
-                stats = compute_collatz_poly(curr, global_peaks.current_max_steps);
-            } else {
-                stats = compute_collatz(curr);
-            }
-            metrics.total_numbers_checked++;
-
-            if (stats.overflow) {
-                metrics.numbers_overflowed++;
-                continue;
-            }
-
-            metrics.total_steps_computed += stats.steps;
-
-            // Check max_value peak
-            if (stats.max_value > global_peaks.current_max_value) {
-                global_peaks.current_max_value = stats.max_value;
-                max_value_peaks.push_back({curr, stats.max_value});
-            }
-
-            // Check steps peak
-            if (stats.steps > global_peaks.current_max_steps) {
-                predictor.add_confirmed_peak(curr, stats.steps);
+                predictor.process_up_to(curr, steps_peaks);
                 global_peaks.current_max_steps = predictor.current_max_steps;
-                steps_peaks.push_back({curr, uint128(stats.steps)});
-            }
 
-            // Check stopping time (sigma) peak
-            if (stats.stopping_time > global_peaks.current_max_sigma) {
-                global_peaks.current_max_sigma = stats.stopping_time;
-                sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+                CollatzStats stats;
+                if (curr >= uint128(1 << POLY_WIDTH)) {
+                    stats = compute_collatz_poly(curr, init_max_steps);
+                } else {
+                    stats = compute_collatz(curr);
+                }
+
+                if (stats.overflow) {
+                    metrics.numbers_overflowed++;
+                    continue;
+                }
+
+                metrics.total_steps_computed += stats.steps;
+
+                // Check max_value peak
+                if (stats.max_value > global_peaks.current_max_value) {
+                    global_peaks.current_max_value = stats.max_value;
+                    max_value_peaks.push_back({curr, stats.max_value});
+                }
+
+                // Check steps peak
+                if (stats.steps > global_peaks.current_max_steps) {
+                    predictor.add_confirmed_peak(curr, stats.steps);
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+                    steps_peaks.push_back({curr, uint128(stats.steps)});
+                }
+
+                // Check stopping time (sigma) peak
+                if (stats.stopping_time > global_peaks.current_max_sigma) {
+                    global_peaks.current_max_sigma = stats.stopping_time;
+                    sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+                }
+            }
+        } else {
+            // Boundary block: perform individual prefix bounds checking and exact metrics tracking
+            for (uint32_t suffix : base_suffixes.std_allowed) {
+                uint128 curr = base + uint128(suffix);
+
+                if (curr < start) continue;
+                if (curr > end) break;
+
+                if ((base_mod3 + suffix) % 3 == 2) {
+                    metrics.numbers_skipped_mod6++;
+                    metrics.total_numbers_checked++;
+                    continue;
+                }
+
+                metrics.total_numbers_checked++;
+
+                // Check if this suffix is pruned under base-dependent rules
+                bool is_pruned = !std::binary_search(allowed.begin(), allowed.end(), suffix);
+                if (is_pruned) continue;
+
+                predictor.process_up_to(curr, steps_peaks);
+                global_peaks.current_max_steps = predictor.current_max_steps;
+
+                CollatzStats stats;
+                if (curr >= uint128(1 << POLY_WIDTH)) {
+                    stats = compute_collatz_poly(curr, init_max_steps);
+                } else {
+                    stats = compute_collatz(curr);
+                }
+
+                if (stats.overflow) {
+                    metrics.numbers_overflowed++;
+                    continue;
+                }
+
+                metrics.total_steps_computed += stats.steps;
+
+                // Check max_value peak
+                if (stats.max_value > global_peaks.current_max_value) {
+                    global_peaks.current_max_value = stats.max_value;
+                    max_value_peaks.push_back({curr, stats.max_value});
+                }
+
+                // Check steps peak
+                if (stats.steps > global_peaks.current_max_steps) {
+                    predictor.add_confirmed_peak(curr, stats.steps);
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+                    steps_peaks.push_back({curr, uint128(stats.steps)});
+                }
+
+                // Check stopping time (sigma) peak
+                if (stats.stopping_time > global_peaks.current_max_sigma) {
+                    global_peaks.current_max_sigma = stats.stopping_time;
+                    sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+                }
             }
         }
     }

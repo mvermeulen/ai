@@ -35,10 +35,13 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
 // Generates the list of allowed non-redundant odd suffixes for a given width
 std::vector<uint32_t> generate_allowed_suffixes(int width);
 
+// Generates base-dependent allowed suffixes lists
+BaseDependentSuffixes generate_base_dependent_suffixes(int width);
+
 // Suffix-first search for blocks > 0 (128-bit)
 void cpu_search_range_suffix_first(uint128 start, uint128 end, 
                                    int width,
-                                   const std::vector<uint32_t>& allowed_suffixes,
+                                   const BaseDependentSuffixes& base_suffixes,
                                    std::vector<PeakRecord>& max_value_peaks,
                                    std::vector<PeakRecord>& steps_peaks,
                                    std::vector<PeakRecord>& sigma_peaks,
@@ -48,7 +51,7 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
 // Suffix-first search for block 0 (64-bit)
 void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
                                      int width,
-                                     const std::vector<uint32_t>& allowed_suffixes,
+                                     const BaseDependentSuffixes& base_suffixes,
                                      std::vector<PeakRecord>& max_value_peaks,
                                      std::vector<PeakRecord>& steps_peaks,
                                      std::vector<PeakRecord>& sigma_peaks,

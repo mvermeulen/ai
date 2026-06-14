@@ -64,7 +64,110 @@ struct PushConstantsGpu {
     uint32_t allowed_suffixes_size;
     uint32_t cutoff_width;
     uint32_t total_work_items;
+    uint32_t allowed_offset;
+    uint32_t prefix_stride;
+    uint32_t check_start;
+    uint32_t check_end;
+    uint64_t init_max_val_low;
+    uint64_t init_max_val_high;
+    uint32_t init_max_steps;
+    uint32_t init_max_sigma;
 };
+
+BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
+    int total_suffixes = 1 << width;
+    struct PolyKey {
+        uint32_t pow2;
+        uint32_t pow3;
+        uint64_t add;
+        bool operator<(const PolyKey& o) const {
+            if (pow2 != o.pow2) return pow2 < o.pow2;
+            if (pow3 != o.pow3) return pow3 < o.pow3;
+            return add < o.add;
+        }
+    };
+
+    struct ClassInfo {
+        int first_suffix = -1;
+        bool has_even = false;
+        std::vector<uint32_t> members;
+    };
+    std::map<PolyKey, ClassInfo> classes;
+    std::vector<PolyKey> suffix_polys(total_suffixes);
+
+    for (int i = 0; i < total_suffixes; ++i) {
+        uint64_t bits = i;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+        }
+        PolyKey key{pow2, pow3, bits};
+        suffix_polys[i] = key;
+        
+        auto& info = classes[key];
+        if (info.first_suffix == -1) {
+            info.first_suffix = i;
+        }
+        info.members.push_back(i);
+        if (i % 2 == 0) {
+            info.has_even = true;
+        }
+    }
+
+    BaseDependentSuffixes res;
+    
+    // Build std_allowed
+    for (int i = 0; i < total_suffixes; ++i) {
+        const auto& key = suffix_polys[i];
+        const auto& info = classes[key];
+        if (info.first_suffix == i && !info.has_even) {
+            res.std_allowed.push_back(i);
+        }
+    }
+    
+    // Precompute skipped counts for std_allowed
+    for (uint32_t s : res.std_allowed) {
+        if (s % 3 == 2) res.std_skipped_0++;
+        if ((1 + s) % 3 == 2) res.std_skipped_1++;
+        if ((2 + s) % 3 == 2) res.std_skipped_2++;
+    }
+
+    // Build base-dependent allowed lists
+    for (const auto& pair : classes) {
+        const auto& info = pair.second;
+        if (info.has_even) continue;
+        
+        uint32_t r1 = info.first_suffix;
+        bool has_1 = false;
+        bool has_3 = false;
+        bool has_5 = false;
+        for (uint32_t m : info.members) {
+            uint32_t rem = m % 6;
+            if (rem == 1) has_1 = true;
+            else if (rem == 3) has_3 = true;
+            else if (rem == 5) has_5 = true;
+        }
+        
+        if (!has_5) res.allowed_0.push_back(r1);
+        if (!has_3) res.allowed_2.push_back(r1);
+        if (!has_1) res.allowed_4.push_back(r1);
+    }
+    
+    std::sort(res.allowed_0.begin(), res.allowed_0.end());
+    std::sort(res.allowed_2.begin(), res.allowed_2.end());
+    std::sort(res.allowed_4.begin(), res.allowed_4.end());
+    
+    return res;
+}
 
 // Error check helper
 #define VK_CHECK(x) \
@@ -337,11 +440,51 @@ bool load_checkpoint(const std::string& filename,
     return true;
 }
 
+void accumulate_boundary_metrics_vulkan(uint64_t prefix, uint64_t start_64, uint64_t end_64, int width, 
+                                        const BaseDependentSuffixes& base_suffixes, GlobalMetricsGpu& metrics) {
+    uint64_t base = prefix << width;
+    uint64_t mult = (1ULL << width) % 3;
+    uint64_t base_mod3 = ((prefix % 3) * mult) % 3;
+    
+    for (uint32_t suffix : base_suffixes.std_allowed) {
+        uint64_t curr = base | suffix;
+        if (curr < start_64) continue;
+        if (curr > end_64) break;
+        
+        metrics.total_checked++;
+        if ((base_mod3 + suffix) % 3 == 2) {
+            metrics.skipped_mod6++;
+        }
+    }
+}
+
+void accumulate_boundary_metrics_vulkan_128(unsigned __int128 prefix, unsigned __int128 start, unsigned __int128 end, int width, 
+                                            const BaseDependentSuffixes& base_suffixes, GlobalMetricsGpu& metrics) {
+    unsigned __int128 base = prefix << width;
+    uint64_t mult = (1ULL << width) % 3;
+    uint64_t prefix_mod3 = static_cast<uint64_t>(prefix % 3);
+    uint64_t base_mod3 = (prefix_mod3 * mult) % 3;
+    
+    for (uint32_t suffix : base_suffixes.std_allowed) {
+        unsigned __int128 curr = base + suffix;
+        if (curr < start) continue;
+        if (curr > end) break;
+        
+        metrics.total_checked++;
+        if ((base_mod3 + suffix) % 3 == 2) {
+            metrics.skipped_mod6++;
+        }
+    }
+}
+
 void vulkan_search_range_internal(
     unsigned __int128 start_val,
     unsigned __int128 end_val,
     int cutoff_width,
-    uint32_t allowed_suffixes_size,
+    const BaseDependentSuffixes& base_suffixes,
+    uint32_t offset_0, uint32_t size_0,
+    uint32_t offset_2, uint32_t size_2,
+    uint32_t offset_4, uint32_t size_4,
     VkDevice device,
     VkQueue computeQueue,
     VkCommandBuffer commandBuffer,
@@ -391,23 +534,6 @@ void vulkan_search_range_internal(
         }
 
         if (chunk_start_val <= chunk_end_val) {
-            uint32_t total_work_items = 0;
-            unsigned __int128 start_prefix = 0;
-            unsigned __int128 end_prefix = 0;
-            uint32_t groupCount = 0;
-
-            if (cutoff_width > 0) {
-                start_prefix = chunk_start_val >> cutoff_width;
-                end_prefix = chunk_end_val >> cutoff_width;
-                uint64_t num_prefixes = static_cast<uint64_t>(end_prefix - start_prefix + 1);
-                total_work_items = static_cast<uint32_t>(num_prefixes * allowed_suffixes_size);
-                groupCount = (total_work_items + 255) / 256;
-            } else {
-                unsigned __int128 chunk_odds_128 = (chunk_end_val - chunk_start_val) / 2 + 1;
-                total_work_items = static_cast<uint32_t>(chunk_odds_128);
-                groupCount = (total_work_items + 255) / 256;
-            }
-
             // Confirm predictions up to current_chunk_start
             {
                 uint128 u128_chunk_start(static_cast<uint64_t>(current_chunk_start), static_cast<uint64_t>(current_chunk_start >> 64));
@@ -455,231 +581,466 @@ void vulkan_search_range_internal(
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
+            bool use_64bit = (end_val < (unsigned __int128)0x100000000ULL);
+
+            if (cutoff_width > 0) {
+                unsigned __int128 start_prefix = chunk_start_val >> cutoff_width;
+                unsigned __int128 end_prefix = chunk_end_val >> cutoff_width;
+                uint32_t std_allowed_size = static_cast<uint32_t>(base_suffixes.std_allowed.size());
+
+                if (start_prefix == end_prefix) {
+                    // Case 1: Start and end in the same prefix (single boundary)
+                    uint64_t m3 = static_cast<uint64_t>(start_prefix % 3);
+                    uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
+                    uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
+                    uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+
+                    if (allowed_size > 0) {
+                        uint32_t total_work_items = allowed_size;
+                        uint32_t gc = (total_work_items + 255) / 256;
+
+                        PushConstantsGpu pcs{};
+                        pcs.start_prefix_low = static_cast<uint64_t>(start_prefix);
+                        pcs.start_prefix_high = static_cast<uint64_t>(start_prefix >> 64);
+                        pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
+                        pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
+                        pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
+                        pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
+                        pcs.allowed_suffixes_size = allowed_size;
+                        pcs.cutoff_width = cutoff_width;
+                        pcs.total_work_items = total_work_items;
+                        pcs.allowed_offset = allowed_offset;
+                        pcs.prefix_stride = 1;
+                        pcs.check_start = 1;
+                        pcs.check_end = 1;
+                        pcs.init_max_val_low = masterPeaks.max_val.low;
+                        pcs.init_max_val_high = masterPeaks.max_val.high;
+                        pcs.init_max_steps = masterPeaks.max_steps;
+                        pcs.init_max_sigma = masterPeaks.max_sigma;
+
+                        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
+                        vkCmdDispatch(commandBuffer, gc, 1, 1);
+                    }
+
+                    if (use_64bit) {
+                        accumulate_boundary_metrics_vulkan(static_cast<uint64_t>(start_prefix), static_cast<uint64_t>(chunk_start_val), static_cast<uint64_t>(chunk_end_val), cutoff_width, base_suffixes, masterMetrics);
+                    } else {
+                        accumulate_boundary_metrics_vulkan_128(start_prefix, chunk_start_val, chunk_end_val, cutoff_width, base_suffixes, masterMetrics);
+                    }
+                } else {
+                    // Case 2: Start and end prefixes are different
+                    bool start_is_boundary = (chunk_start_val > (start_prefix << cutoff_width));
+                    if (start_is_boundary) {
+                        uint64_t m3 = static_cast<uint64_t>(start_prefix % 3);
+                        uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
+                        uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
+                        uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+
+                    if (allowed_size > 0) {
+                        uint32_t total_work_items = allowed_size;
+                        uint32_t gc = (total_work_items + 255) / 256;
+
+                        PushConstantsGpu pcs{};
+                        pcs.start_prefix_low = static_cast<uint64_t>(start_prefix);
+                        pcs.start_prefix_high = static_cast<uint64_t>(start_prefix >> 64);
+                        pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
+                        pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
+                        pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
+                        pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
+                        pcs.allowed_suffixes_size = allowed_size;
+                        pcs.cutoff_width = cutoff_width;
+                        pcs.total_work_items = total_work_items;
+                        pcs.allowed_offset = allowed_offset;
+                        pcs.prefix_stride = 1;
+                        pcs.check_start = 1;
+                        pcs.check_end = 0;
+                        pcs.init_max_val_low = masterPeaks.max_val.low;
+                        pcs.init_max_val_high = masterPeaks.max_val.high;
+                        pcs.init_max_steps = masterPeaks.max_steps;
+                        pcs.init_max_sigma = masterPeaks.max_sigma;
+
+                        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
+                        vkCmdDispatch(commandBuffer, gc, 1, 1);
+                    }
+
+                        if (use_64bit) {
+                            accumulate_boundary_metrics_vulkan(static_cast<uint64_t>(start_prefix), static_cast<uint64_t>(chunk_start_val), ((static_cast<uint64_t>(start_prefix) + 1) << cutoff_width) - 1, cutoff_width, base_suffixes, masterMetrics);
+                        } else {
+                            accumulate_boundary_metrics_vulkan_128(start_prefix, chunk_start_val, ((start_prefix + 1) << cutoff_width) - 1, cutoff_width, base_suffixes, masterMetrics);
+                        }
+                    }
+
+                    bool end_is_boundary = (chunk_end_val < (((end_prefix + 1) << cutoff_width) - 1));
+                    if (end_is_boundary) {
+                        uint64_t m3 = static_cast<uint64_t>(end_prefix % 3);
+                        uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
+                        uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
+                        uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+
+                    if (allowed_size > 0) {
+                        uint32_t total_work_items = allowed_size;
+                        uint32_t gc = (total_work_items + 255) / 256;
+
+                        PushConstantsGpu pcs{};
+                        pcs.start_prefix_low = static_cast<uint64_t>(end_prefix);
+                        pcs.start_prefix_high = static_cast<uint64_t>(end_prefix >> 64);
+                        pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
+                        pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
+                        pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
+                        pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
+                        pcs.allowed_suffixes_size = allowed_size;
+                        pcs.cutoff_width = cutoff_width;
+                        pcs.total_work_items = total_work_items;
+                        pcs.allowed_offset = allowed_offset;
+                        pcs.prefix_stride = 1;
+                        pcs.check_start = 0;
+                        pcs.check_end = 1;
+                        pcs.init_max_val_low = masterPeaks.max_val.low;
+                        pcs.init_max_val_high = masterPeaks.max_val.high;
+                        pcs.init_max_steps = masterPeaks.max_steps;
+                        pcs.init_max_sigma = masterPeaks.max_sigma;
+
+                        VkMemoryBarrier barrier{};
+                        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+                        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
+                        vkCmdDispatch(commandBuffer, gc, 1, 1);
+                    }
+
+                        if (use_64bit) {
+                            accumulate_boundary_metrics_vulkan(static_cast<uint64_t>(end_prefix), static_cast<uint64_t>(end_prefix << cutoff_width), static_cast<uint64_t>(chunk_end_val), cutoff_width, base_suffixes, masterMetrics);
+                        } else {
+                            accumulate_boundary_metrics_vulkan_128(end_prefix, end_prefix << cutoff_width, chunk_end_val, cutoff_width, base_suffixes, masterMetrics);
+                        }
+                    }
+
+                    // Intermediate prefixes mod 3 groups
+                    unsigned __int128 mid_start_prefix = start_prefix + (start_is_boundary ? 1 : 0);
+                    unsigned __int128 mid_end_prefix = end_prefix - (end_is_boundary ? 1 : 0);
+
+                    if (mid_start_prefix <= mid_end_prefix) {
+                        uint64_t mult = (1ULL << cutoff_width) % 3;
+                        for (int rem_mod3 = 0; rem_mod3 < 3; ++rem_mod3) {
+                            unsigned __int128 first_prefix = mid_start_prefix;
+                            while (first_prefix <= mid_end_prefix) {
+                                uint64_t m3 = static_cast<uint64_t>(first_prefix % 3);
+                                if (m3 == rem_mod3) break;
+                                first_prefix += 1;
+                            }
+
+                            unsigned __int128 last_prefix = mid_end_prefix;
+                            while (last_prefix >= first_prefix) {
+                                uint64_t m3 = static_cast<uint64_t>(last_prefix % 3);
+                                if (m3 == rem_mod3) break;
+                                last_prefix -= 1;
+                            }
+
+                            if (first_prefix <= last_prefix) {
+                                uint64_t diff = static_cast<uint64_t>(last_prefix - first_prefix);
+                                uint64_t num_prefixes_group = diff / 3 + 1;
+
+                                uint64_t base_mod6 = (rem_mod3 == 0) ? 0 : ((rem_mod3 == 1) ? 4 : 2);
+                                uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
+                                uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+
+                                if (allowed_size > 0 && num_prefixes_group > 0) {
+                                    uint32_t total_work_items = static_cast<uint32_t>(num_prefixes_group * allowed_size);
+                                    uint32_t gc = (total_work_items + 255) / 256;
+
+                                    PushConstantsGpu pcs{};
+                                    pcs.start_prefix_low = static_cast<uint64_t>(first_prefix);
+                                    pcs.start_prefix_high = static_cast<uint64_t>(first_prefix >> 64);
+                                    pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
+                                    pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
+                                    pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
+                                    pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
+                                    pcs.allowed_suffixes_size = allowed_size;
+                                    pcs.cutoff_width = cutoff_width;
+                                    pcs.total_work_items = total_work_items;
+                                    pcs.allowed_offset = allowed_offset;
+                                    pcs.prefix_stride = 3;
+                                    pcs.check_start = 0;
+                                    pcs.check_end = 0;
+                                    pcs.init_max_val_low = masterPeaks.max_val.low;
+                                    pcs.init_max_val_high = masterPeaks.max_val.high;
+                                    pcs.init_max_steps = masterPeaks.max_steps;
+                                    pcs.init_max_sigma = masterPeaks.max_sigma;
+
+                                    VkMemoryBarrier barrier{};
+                                    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                                    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                                    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                                    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+                                    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
+                                    vkCmdDispatch(commandBuffer, gc, 1, 1);
+                                }
+
+                                // Accumulate host metrics
+                                uint64_t base_mod3 = (rem_mod3 * mult) % 3;
+                                uint32_t std_skipped = (base_mod3 == 0) ? base_suffixes.std_skipped_0 :
+                                                       ((base_mod3 == 2) ? base_suffixes.std_skipped_2 : base_suffixes.std_skipped_1);
+                                masterMetrics.total_checked += num_prefixes_group * std_allowed_size;
+                                masterMetrics.skipped_mod6 += num_prefixes_group * std_skipped;
+                            }
+                        }
+                    }
+                }
+            } else {
+            // cutoff_width == 0 (standard non-suffix-first dispatch)
+            unsigned __int128 chunk_odds_128 = (chunk_end_val - chunk_start_val) / 2 + 1;
+            uint32_t total_work_items = static_cast<uint32_t>(chunk_odds_128);
+            uint32_t gc = (total_work_items + 255) / 256;
+
             PushConstantsGpu pcs{};
-            pcs.start_prefix_low = static_cast<uint64_t>(start_prefix);
-            pcs.start_prefix_high = static_cast<uint64_t>(start_prefix >> 64);
+            pcs.start_prefix_low = 0;
+            pcs.start_prefix_high = 0;
             pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
             pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
             pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
             pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
-            pcs.allowed_suffixes_size = allowed_suffixes_size;
-            pcs.cutoff_width = cutoff_width;
+            pcs.allowed_suffixes_size = 1;
+            pcs.cutoff_width = 0;
             pcs.total_work_items = total_work_items;
+            pcs.allowed_offset = 0;
+            pcs.prefix_stride = 1;
+            pcs.check_start = 0;
+            pcs.check_end = 0;
+            pcs.init_max_val_low = masterPeaks.max_val.low;
+            pcs.init_max_val_high = masterPeaks.max_val.high;
+            pcs.init_max_steps = masterPeaks.max_steps;
+            pcs.init_max_sigma = masterPeaks.max_sigma;
 
             vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
-            vkCmdDispatch(commandBuffer, groupCount, 1, 1);
-
-            VK_CHECK(vkEndCommandBuffer(commandBuffer));
-
-            // Submit work
-            auto t_start_chunk = std::chrono::high_resolution_clock::now();
-
-            VkSubmitInfo submitInfo{};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers = &commandBuffer;
-
-            VkFence fence;
-            VkFenceCreateInfo fenceInfo{};
-            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &fence));
-
-            VK_CHECK(vkQueueSubmit(computeQueue, 1, &submitInfo, fence));
-            VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
-
-            auto t_end_chunk = std::chrono::high_resolution_clock::now();
-            total_kernel_time_ms += std::chrono::duration<double, std::milli>(t_end_chunk - t_start_chunk).count();
-
-            vkDestroyFence(device, fence, nullptr);
-
-            // Read results back
-            GlobalMetricsGpu chunkMetrics{};
-            PeaksCountGpu chunkCounts{};
-
-            auto start_read = std::chrono::high_resolution_clock::now();
-            {
-                void* data;
-                VK_CHECK(vkMapMemory(device, bufferMemories[6], 0, bufferSizes[6], 0, &data));
-                std::memcpy(&chunkMetrics, data, sizeof(GlobalMetricsGpu));
-                vkUnmapMemory(device, bufferMemories[6]);
-
-                VK_CHECK(vkMapMemory(device, bufferMemories[2], 0, bufferSizes[2], 0, &data));
-                std::memcpy(&chunkCounts, data, sizeof(PeaksCountGpu));
-                vkUnmapMemory(device, bufferMemories[2]);
-
-                if (chunkCounts.max_val_count > 0) {
-                    uint32_t to_copy = std::min(chunkCounts.max_val_count, (uint32_t)MAX_PEAK_RECORDS);
-                    std::vector<PeakRecordGpu> chunkMaxVal(to_copy);
-                    VK_CHECK(vkMapMemory(device, bufferMemories[3], 0, bufferSizes[3], 0, &data));
-                    std::memcpy(chunkMaxVal.data(), data, to_copy * sizeof(PeakRecordGpu));
-                    vkUnmapMemory(device, bufferMemories[3]);
-                    masterMaxValPeaks.insert(masterMaxValPeaks.end(), chunkMaxVal.begin(), chunkMaxVal.end());
-                }
-
-                if (chunkCounts.steps_count > 0) {
-                    uint32_t to_copy = std::min(chunkCounts.steps_count, (uint32_t)MAX_PEAK_RECORDS);
-                    std::vector<PeakRecordGpu> chunkSteps(to_copy);
-                    VK_CHECK(vkMapMemory(device, bufferMemories[4], 0, bufferSizes[4], 0, &data));
-                    std::memcpy(chunkSteps.data(), data, to_copy * sizeof(PeakRecordGpu));
-                    vkUnmapMemory(device, bufferMemories[4]);
-
-                    std::sort(chunkSteps.begin(), chunkSteps.end(), [](const PeakRecordGpu& a, const PeakRecordGpu& b) {
-                        uint128 start_a(a.start.low, a.start.high);
-                        uint128 start_b(b.start.low, b.start.high);
-                        return start_a < start_b;
-                    });
-
-                    for (const auto& peak : chunkSteps) {
-                        uint128 n(peak.start.low, peak.start.high);
-                        predictor.process_up_to_generic(n, masterStepsPeaks, [](uint128 n, uint32_t steps) {
-                            PeakRecordGpu r;
-                            r.start.low = n.low;
-                            r.start.high = n.high;
-                            r.val.low = steps;
-                            r.val.high = 0;
-                            return r;
-                        });
-                        if (peak.val.low > predictor.current_max_steps) {
-                            masterStepsPeaks.push_back(peak);
-                            predictor.add_confirmed_peak(n, peak.val.low);
-                        }
-                    }
-                }
-
-                if (chunkCounts.sigma_count > 0) {
-                    uint32_t to_copy = std::min(chunkCounts.sigma_count, (uint32_t)MAX_PEAK_RECORDS);
-                    std::vector<PeakRecordGpu> chunkSigma(to_copy);
-                    VK_CHECK(vkMapMemory(device, bufferMemories[5], 0, bufferSizes[5], 0, &data));
-                    std::memcpy(chunkSigma.data(), data, to_copy * sizeof(PeakRecordGpu));
-                    vkUnmapMemory(device, bufferMemories[5]);
-                    masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
-                }
-            }
-            auto end_read = std::chrono::high_resolution_clock::now();
-            mem_transfer_time_ms += std::chrono::duration<double, std::milli>(end_read - start_read).count();
-
-            // Accumulate metrics
-            masterMetrics.total_checked += chunkMetrics.total_checked;
-            masterMetrics.total_steps += chunkMetrics.total_steps;
-            masterMetrics.skipped_mod6 += chunkMetrics.skipped_mod6;
-            masterMetrics.overflowed += chunkMetrics.overflowed;
-
-            // Update master peaks based on this chunk's results
-            GlobalPeaksGpu chunkPeaks{};
-            {
-                void* data;
-                VK_CHECK(vkMapMemory(device, bufferMemories[0], 0, bufferSizes[0], 0, &data));
-                std::memcpy(&chunkPeaks, data, sizeof(GlobalPeaksGpu));
-                vkUnmapMemory(device, bufferMemories[0]);
-            }
-
-            unsigned __int128 current_master_val = masterPeaks.max_val.high;
-            current_master_val = (current_master_val << 64) | masterPeaks.max_val.low;
-            unsigned __int128 chunk_max_val = chunkPeaks.max_val.high;
-            chunk_max_val = (chunk_max_val << 64) | chunkPeaks.max_val.low;
-
-            if (chunk_max_val > current_master_val) {
-                masterPeaks.max_val = chunkPeaks.max_val;
-            }
-            {
-                uint128 u128_chunk_end(static_cast<uint64_t>(current_chunk_end), static_cast<uint64_t>(current_chunk_end >> 64));
-                predictor.process_up_to_generic(u128_chunk_end, masterStepsPeaks, [](uint128 n, uint32_t steps) {
-                    PeakRecordGpu r;
-                    r.start.low = n.low;
-                    r.start.high = n.high;
-                    r.val.low = steps;
-                    r.val.high = 0;
-                    return r;
-                });
-                masterPeaks.max_steps = predictor.current_max_steps;
-            }
-            if (chunkPeaks.max_sigma > masterPeaks.max_sigma) {
-                masterPeaks.max_sigma = chunkPeaks.max_sigma;
-            }
+            vkCmdDispatch(commandBuffer, gc, 1, 1);
         }
 
-        current_chunk_start += CHUNK_SIZE;
+        VK_CHECK(vkEndCommandBuffer(commandBuffer));
+
+        // Submit work
+        auto t_start_chunk = std::chrono::high_resolution_clock::now();
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        VkFence fence;
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &fence));
+
+        VK_CHECK(vkQueueSubmit(computeQueue, 1, &submitInfo, fence));
+        VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
+
+        auto t_end_chunk = std::chrono::high_resolution_clock::now();
+        total_kernel_time_ms += std::chrono::duration<double, std::milli>(t_end_chunk - t_start_chunk).count();
+
+        vkDestroyFence(device, fence, nullptr);
+
+        // Read results back
+        GlobalMetricsGpu chunkMetrics{};
+        PeaksCountGpu chunkCounts{};
+
+        auto start_read = std::chrono::high_resolution_clock::now();
+        {
+            void* data;
+            VK_CHECK(vkMapMemory(device, bufferMemories[6], 0, bufferSizes[6], 0, &data));
+            std::memcpy(&chunkMetrics, data, sizeof(GlobalMetricsGpu));
+            vkUnmapMemory(device, bufferMemories[6]);
+
+            VK_CHECK(vkMapMemory(device, bufferMemories[2], 0, bufferSizes[2], 0, &data));
+            std::memcpy(&chunkCounts, data, sizeof(PeaksCountGpu));
+            vkUnmapMemory(device, bufferMemories[2]);
+
+            if (chunkCounts.max_val_count > 0) {
+                uint32_t to_copy = std::min(chunkCounts.max_val_count, (uint32_t)MAX_PEAK_RECORDS);
+                std::vector<PeakRecordGpu> chunkMaxVal(to_copy);
+                VK_CHECK(vkMapMemory(device, bufferMemories[3], 0, bufferSizes[3], 0, &data));
+                std::memcpy(chunkMaxVal.data(), data, to_copy * sizeof(PeakRecordGpu));
+                vkUnmapMemory(device, bufferMemories[3]);
+                masterMaxValPeaks.insert(masterMaxValPeaks.end(), chunkMaxVal.begin(), chunkMaxVal.end());
+            }
+
+            if (chunkCounts.steps_count > 0) {
+                uint32_t to_copy = std::min(chunkCounts.steps_count, (uint32_t)MAX_PEAK_RECORDS);
+                std::vector<PeakRecordGpu> chunkSteps(to_copy);
+                VK_CHECK(vkMapMemory(device, bufferMemories[4], 0, bufferSizes[4], 0, &data));
+                std::memcpy(chunkSteps.data(), data, to_copy * sizeof(PeakRecordGpu));
+                vkUnmapMemory(device, bufferMemories[4]);
+
+                std::sort(chunkSteps.begin(), chunkSteps.end(), [](const PeakRecordGpu& a, const PeakRecordGpu& b) {
+                    uint128 start_a(a.start.low, a.start.high);
+                    uint128 start_b(b.start.low, b.start.high);
+                    return start_a < start_b;
+                });
+
+                for (const auto& peak : chunkSteps) {
+                    uint128 n(peak.start.low, peak.start.high);
+                    predictor.process_up_to_generic(n, masterStepsPeaks, [](uint128 n, uint32_t steps) {
+                        PeakRecordGpu r;
+                        r.start.low = n.low;
+                        r.start.high = n.high;
+                        r.val.low = steps;
+                        r.val.high = 0;
+                        return r;
+                    });
+                    if (peak.val.low > predictor.current_max_steps) {
+                        masterStepsPeaks.push_back(peak);
+                        predictor.add_confirmed_peak(n, peak.val.low);
+                    }
+                }
+            }
+
+            if (chunkCounts.sigma_count > 0) {
+                uint32_t to_copy = std::min(chunkCounts.sigma_count, (uint32_t)MAX_PEAK_RECORDS);
+                std::vector<PeakRecordGpu> chunkSigma(to_copy);
+                VK_CHECK(vkMapMemory(device, bufferMemories[5], 0, bufferSizes[5], 0, &data));
+                std::memcpy(chunkSigma.data(), data, to_copy * sizeof(PeakRecordGpu));
+                vkUnmapMemory(device, bufferMemories[5]);
+                masterSigmaPeaks.insert(masterSigmaPeaks.end(), chunkSigma.begin(), chunkSigma.end());
+            }
+        }
+        auto end_read = std::chrono::high_resolution_clock::now();
+        mem_transfer_time_ms += std::chrono::duration<double, std::milli>(end_read - start_read).count();
+
+        // Accumulate metrics
+        masterMetrics.total_steps += chunkMetrics.total_steps;
+        masterMetrics.overflowed += chunkMetrics.overflowed;
+        if (cutoff_width == 0) {
+            masterMetrics.total_checked += chunkMetrics.total_checked;
+            masterMetrics.skipped_mod6 += chunkMetrics.skipped_mod6;
+        }
+
+        // Update master peaks based on this chunk's results
+        GlobalPeaksGpu chunkPeaks{};
+        {
+            void* data;
+            VK_CHECK(vkMapMemory(device, bufferMemories[0], 0, bufferSizes[0], 0, &data));
+            std::memcpy(&chunkPeaks, data, sizeof(GlobalPeaksGpu));
+            vkUnmapMemory(device, bufferMemories[0]);
+        }
+
+        unsigned __int128 current_master_val = masterPeaks.max_val.high;
+        current_master_val = (current_master_val << 64) | masterPeaks.max_val.low;
+        unsigned __int128 chunk_max_val = chunkPeaks.max_val.high;
+        chunk_max_val = (chunk_max_val << 64) | chunkPeaks.max_val.low;
+
+        if (chunk_max_val > current_master_val) {
+            masterPeaks.max_val = chunkPeaks.max_val;
+        }
+        {
+            uint128 u128_chunk_end(static_cast<uint64_t>(current_chunk_end), static_cast<uint64_t>(current_chunk_end >> 64));
+            predictor.process_up_to_generic(u128_chunk_end, masterStepsPeaks, [](uint128 n, uint32_t steps) {
+                PeakRecordGpu r;
+                r.start.low = n.low;
+                r.start.high = n.high;
+                r.val.low = steps;
+                r.val.high = 0;
+                return r;
+            });
+            masterPeaks.max_steps = predictor.current_max_steps;
+        }
+        if (chunkPeaks.max_sigma > masterPeaks.max_sigma) {
+            masterPeaks.max_sigma = chunkPeaks.max_sigma;
+        }
     }
 
-    // Confirm any remaining predictions up to end_val
-    {
-        uint128 u128_end(static_cast<uint64_t>(end_val), static_cast<uint64_t>(end_val >> 64));
-        predictor.process_up_to_generic(u128_end, masterStepsPeaks, [](uint128 n, uint32_t steps) {
-            PeakRecordGpu r;
-            r.start.low = n.low;
-            r.start.high = n.high;
-            r.val.low = steps;
-            r.val.high = 0;
-            return r;
-        });
-        masterPeaks.max_steps = predictor.current_max_steps;
-    }
+    current_chunk_start += CHUNK_SIZE;
+}
+
+// Confirm any remaining predictions up to end_val
+{
+    uint128 u128_end(static_cast<uint64_t>(end_val), static_cast<uint64_t>(end_val >> 64));
+    predictor.process_up_to_generic(u128_end, masterStepsPeaks, [](uint128 n, uint32_t steps) {
+        PeakRecordGpu r;
+        r.start.low = n.low;
+        r.start.high = n.high;
+        r.val.low = steps;
+        r.val.high = 0;
+        return r;
+    });
+    masterPeaks.max_steps = predictor.current_max_steps;
+}
 }
 
 void vulkan_search_block_0(
-    unsigned __int128 start_val,
-    unsigned __int128 end_val,
-    int cutoff_width,
-    uint32_t allowed_suffixes_size,
-    VkDevice device,
-    VkQueue computeQueue,
-    VkCommandBuffer commandBuffer,
-    VkPipelineLayout pipelineLayout,
-    VkPipeline pipeline,
-    VkDescriptorSet descriptorSet,
-    const std::vector<VkBuffer>& buffers,
-    const std::vector<VkDeviceMemory>& bufferMemories,
-    const std::vector<VkDeviceSize>& bufferSizes,
-    GlobalPeaksGpu& masterPeaks,
-    std::vector<PeakRecordGpu>& masterMaxValPeaks,
-    std::vector<PeakRecordGpu>& masterStepsPeaks,
-    std::vector<PeakRecordGpu>& masterSigmaPeaks,
-    GlobalMetricsGpu& masterMetrics,
-    double& mem_transfer_time_ms,
-    double& total_kernel_time_ms
+unsigned __int128 start_val,
+unsigned __int128 end_val,
+int cutoff_width,
+const BaseDependentSuffixes& base_suffixes,
+uint32_t offset_0, uint32_t size_0,
+uint32_t offset_2, uint32_t size_2,
+uint32_t offset_4, uint32_t size_4,
+VkDevice device,
+VkQueue computeQueue,
+VkCommandBuffer commandBuffer,
+VkPipelineLayout pipelineLayout,
+VkPipeline pipeline,
+VkDescriptorSet descriptorSet,
+const std::vector<VkBuffer>& buffers,
+const std::vector<VkDeviceMemory>& bufferMemories,
+const std::vector<VkDeviceSize>& bufferSizes,
+GlobalPeaksGpu& masterPeaks,
+std::vector<PeakRecordGpu>& masterMaxValPeaks,
+std::vector<PeakRecordGpu>& masterStepsPeaks,
+std::vector<PeakRecordGpu>& masterSigmaPeaks,
+GlobalMetricsGpu& masterMetrics,
+double& mem_transfer_time_ms,
+double& total_kernel_time_ms
 ) {
-    if (end_val >= (unsigned __int128)0x100000000ULL) {
-        throw std::invalid_argument("vulkan_search_block_0: range extends beyond block 0");
-    }
-    vulkan_search_range_internal(
-        start_val, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
-        pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
-        masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
-        masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
-    );
+if (end_val >= (unsigned __int128)0x100000000ULL) {
+    throw std::invalid_argument("vulkan_search_block_0: range extends beyond block 0");
+}
+vulkan_search_range_internal(
+    start_val, end_val, cutoff_width, base_suffixes,
+    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+    device, computeQueue, commandBuffer,
+    pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+    masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+    masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+);
 }
 
 void vulkan_search_blocks_gt_0(
-    unsigned __int128 start_val,
-    unsigned __int128 end_val,
-    int cutoff_width,
-    uint32_t allowed_suffixes_size,
-    VkDevice device,
-    VkQueue computeQueue,
-    VkCommandBuffer commandBuffer,
-    VkPipelineLayout pipelineLayout,
-    VkPipeline pipeline,
-    VkDescriptorSet descriptorSet,
-    const std::vector<VkBuffer>& buffers,
-    const std::vector<VkDeviceMemory>& bufferMemories,
-    const std::vector<VkDeviceSize>& bufferSizes,
-    GlobalPeaksGpu& masterPeaks,
-    std::vector<PeakRecordGpu>& masterMaxValPeaks,
-    std::vector<PeakRecordGpu>& masterStepsPeaks,
-    std::vector<PeakRecordGpu>& masterSigmaPeaks,
-    GlobalMetricsGpu& masterMetrics,
-    double& mem_transfer_time_ms,
-    double& total_kernel_time_ms
+unsigned __int128 start_val,
+unsigned __int128 end_val,
+int cutoff_width,
+const BaseDependentSuffixes& base_suffixes,
+uint32_t offset_0, uint32_t size_0,
+uint32_t offset_2, uint32_t size_2,
+uint32_t offset_4, uint32_t size_4,
+VkDevice device,
+VkQueue computeQueue,
+VkCommandBuffer commandBuffer,
+VkPipelineLayout pipelineLayout,
+VkPipeline pipeline,
+VkDescriptorSet descriptorSet,
+const std::vector<VkBuffer>& buffers,
+const std::vector<VkDeviceMemory>& bufferMemories,
+const std::vector<VkDeviceSize>& bufferSizes,
+GlobalPeaksGpu& masterPeaks,
+std::vector<PeakRecordGpu>& masterMaxValPeaks,
+std::vector<PeakRecordGpu>& masterStepsPeaks,
+std::vector<PeakRecordGpu>& masterSigmaPeaks,
+GlobalMetricsGpu& masterMetrics,
+double& mem_transfer_time_ms,
+double& total_kernel_time_ms
 ) {
-    if (start_val < (unsigned __int128)0x100000000ULL) {
-        throw std::invalid_argument("vulkan_search_blocks_gt_0: range starts below block 1");
-    }
-    vulkan_search_range_internal(
-        start_val, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
-        pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
-        masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
-        masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
-    );
+if (start_val < (unsigned __int128)0x100000000ULL) {
+    throw std::invalid_argument("vulkan_search_blocks_gt_0: range starts below block 1");
+}
+vulkan_search_range_internal(
+    start_val, end_val, cutoff_width, base_suffixes,
+    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+    device, computeQueue, commandBuffer,
+    pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
+    masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
+    masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
+);
 }
 
 void print_help() {
@@ -1014,16 +1375,37 @@ int main(int argc, char* argv[]) {
     // Binding 5: SigmaPeaks (MAX_PEAK_RECORDS * sizeof(PeakRecordGpu))
     // Binding 6: GlobalMetrics (16 bytes)
     // Binding 7: StepsTable (1024 bytes)
-    std::vector<uint32_t> allowed_suffixes;
+    BaseDependentSuffixes base_suffixes;
+    std::vector<uint32_t> allowed_suffixes_packed;
+    uint32_t offset_0 = 0, size_0 = 0;
+    uint32_t offset_2 = 0, size_2 = 0;
+    uint32_t offset_4 = 0, size_4 = 0;
+
     if (cutoff_width > 0) {
         std::cout << "Using Suffix-First Search with width: " << cutoff_width << std::endl;
         std::cout << "Generating allowed suffixes... " << std::flush;
-        allowed_suffixes = generate_allowed_suffixes(cutoff_width);
-        std::cout << allowed_suffixes.size() << " allowed suffixes generated." << std::endl;
+        base_suffixes = generate_base_dependent_suffixes(cutoff_width);
+        
+        offset_0 = 0;
+        size_0 = static_cast<uint32_t>(base_suffixes.allowed_0.size());
+        allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_0.begin(), base_suffixes.allowed_0.end());
+
+        offset_2 = static_cast<uint32_t>(allowed_suffixes_packed.size());
+        size_2 = static_cast<uint32_t>(base_suffixes.allowed_2.size());
+        allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_2.begin(), base_suffixes.allowed_2.end());
+
+        offset_4 = static_cast<uint32_t>(allowed_suffixes_packed.size());
+        size_4 = static_cast<uint32_t>(base_suffixes.allowed_4.size());
+        allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_4.begin(), base_suffixes.allowed_4.end());
+
+        std::cout << base_suffixes.std_allowed.size() << " std, " 
+                  << size_0 << " mod0, " 
+                  << size_2 << " mod2, " 
+                  << size_4 << " mod4 allowed suffixes generated." << std::endl;
     } else {
-        allowed_suffixes = { 0 };
+        allowed_suffixes_packed = { 0 };
     }
-    size_t allowed_suffixes_buf_size = allowed_suffixes.size() * sizeof(uint32_t);
+    size_t allowed_suffixes_buf_size = allowed_suffixes_packed.size() * sizeof(uint32_t);
 
     std::vector<VkDeviceSize> bufferSizes = {
         sizeof(GlobalPeaksGpu),
@@ -1079,7 +1461,7 @@ int main(int argc, char* argv[]) {
     {
         void* data;
         VK_CHECK(vkMapMemory(device, bufferMemories[8], 0, bufferSizes[8], 0, &data));
-        std::memcpy(data, allowed_suffixes.data(), bufferSizes[8]);
+        std::memcpy(data, allowed_suffixes_packed.data(), bufferSizes[8]);
         vkUnmapMemory(device, bufferMemories[8]);
     }
 
@@ -1246,7 +1628,6 @@ int main(int argc, char* argv[]) {
     VK_CHECK(vkAllocateCommandBuffers(device, &cmdBufferAllocInfo, &commandBuffer));
 
     unsigned __int128 block_boundary = 0x100000000ULL;
-    uint32_t allowed_suffixes_size = static_cast<uint32_t>(allowed_suffixes.size());
 
     if (cutoff_width > 0) {
         unsigned __int128 threshold_val = (unsigned __int128)1 << cutoff_width;
@@ -1258,7 +1639,9 @@ int main(int argc, char* argv[]) {
                       << u128_to_string({static_cast<uint64_t>(standard_end), static_cast<uint64_t>(standard_end >> 64)})
                       << "]" << std::endl;
             vulkan_search_block_0(
-                start_val, standard_end, 0, 1, device, computeQueue, commandBuffer,
+                start_val, standard_end, 0, base_suffixes,
+                0, 0, 0, 0, 0, 0,
+                device, computeQueue, commandBuffer,
                 pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
@@ -1273,14 +1656,18 @@ int main(int argc, char* argv[]) {
                     block_0_end = block_boundary - 1;
                 }
                 vulkan_search_block_0(
-                    start_val, block_0_end, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
+                    start_val, block_0_end, cutoff_width, base_suffixes,
+                    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+                    device, computeQueue, commandBuffer,
                     pipelineLayout, pipeline_block0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                     masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
                 );
                 if (end_val >= block_boundary) {
                     vulkan_search_blocks_gt_0(
-                        block_boundary, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
+                        block_boundary, end_val, cutoff_width, base_suffixes,
+                        offset_0, size_0, offset_2, size_2, offset_4, size_4,
+                        device, computeQueue, commandBuffer,
                         pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                         masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                         masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
@@ -1288,7 +1675,9 @@ int main(int argc, char* argv[]) {
                 }
             } else {
                 vulkan_search_blocks_gt_0(
-                    start_val, end_val, cutoff_width, allowed_suffixes_size, device, computeQueue, commandBuffer,
+                    start_val, end_val, cutoff_width, base_suffixes,
+                    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+                    device, computeQueue, commandBuffer,
                     pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                     masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
@@ -1303,14 +1692,18 @@ int main(int argc, char* argv[]) {
                 block_0_end = block_boundary - 1;
             }
             vulkan_search_block_0(
-                start_val, block_0_end, 0, 1, device, computeQueue, commandBuffer,
+                start_val, block_0_end, 0, base_suffixes,
+                0, 0, 0, 0, 0, 0,
+                device, computeQueue, commandBuffer,
                 pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
             );
             if (end_val >= block_boundary) {
                 vulkan_search_blocks_gt_0(
-                    block_boundary, end_val, 0, 1, device, computeQueue, commandBuffer,
+                    block_boundary, end_val, 0, base_suffixes,
+                    0, 0, 0, 0, 0, 0,
+                    device, computeQueue, commandBuffer,
                     pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                     masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
@@ -1318,7 +1711,9 @@ int main(int argc, char* argv[]) {
             }
         } else {
             vulkan_search_blocks_gt_0(
-                start_val, end_val, 0, 1, device, computeQueue, commandBuffer,
+                start_val, end_val, 0, base_suffixes,
+                0, 0, 0, 0, 0, 0,
+                device, computeQueue, commandBuffer,
                 pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
