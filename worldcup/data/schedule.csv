@@ -8,12 +8,12 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 7,group,B,2026-06-13,SUI,QAT,1,1,-1,-1,final,Toronto
 8,group,D,2026-06-14,AUS,TUR,2,0,-1,-1,final,San Francisco
 9,group,F,2026-06-14,NED,JPN,2,2,-1,-1,final,Houston
-10,group,F,2026-06-14,TUN,SWE,-1,-1,-1,-1,scheduled,Miami
+10,group,F,2026-06-14,TUN,SWE,1,5,-1,-1,final,Miami
 11,group,E,2026-06-14,GER,CUW,7,1,-1,-1,final,Houston
-12,group,E,2026-06-14,ECU,CIV,-1,-1,-1,-1,scheduled,Dallas
-13,group,G,2026-06-15,BEL,EGY,-1,-1,-1,-1,scheduled,New York/New Jersey
-14,group,G,2026-06-15,IRN,NZL,-1,-1,-1,-1,scheduled,Philadelphia
-15,group,H,2026-06-15,ESP,CPV,-1,-1,-1,-1,scheduled,Miami
+12,group,E,2026-06-14,ECU,CIV,0,1,-1,-1,final,Dallas
+13,group,G,2026-06-15,BEL,EGY,0,0,-1,-1,upcoming,New York/New Jersey
+14,group,G,2026-06-15,IRN,NZL,0,0,-1,-1,upcoming,Philadelphia
+15,group,H,2026-06-15,ESP,CPV,0,0,-1,-1,upcoming,Miami
 16,group,H,2026-06-15,URU,KSA,-1,-1,-1,-1,scheduled,Boston
 17,group,I,2026-06-16,FRA,SEN,-1,-1,-1,-1,scheduled,Toronto
 18,group,I,2026-06-16,NOR,IRQ,-1,-1,-1,-1,scheduled,Seattle
