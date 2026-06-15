@@ -24,12 +24,23 @@ if(COMPILER_SUPPORTS_AVX512)
     add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
     set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512cd -mavx512dq")
     target_compile_definitions(hailstone_cpu PRIVATE HAS_AVX512_COMPILER_SUPPORT)
+    
+    # Profile CPU target
+    add_executable(hailstone_cpu_profile cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
+    set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512cd -mavx512dq")
+    target_compile_definitions(hailstone_cpu_profile PRIVATE HAS_AVX512_COMPILER_SUPPORT)
 else()
     message(WARNING "Compiler does not support AVX-512 flags. Vectorized search will be disabled.")
     add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp)
+    
+    # Profile CPU target
+    add_executable(hailstone_cpu_profile cpu/main.cpp cpu/cpu_search.cpp)
 endif()
 
 target_link_libraries(hailstone_cpu PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(hailstone_cpu_profile PRIVATE OpenMP::OpenMP_CXX)
+target_compile_options(hailstone_cpu_profile PRIVATE -g -fno-omit-frame-pointer)
+target_link_options(hailstone_cpu_profile PRIVATE -g -fno-omit-frame-pointer)
 
 # Unit test target
 add_executable(hailstone_test_uint128 tests/test_uint128.cpp)
@@ -37,17 +48,33 @@ add_executable(hailstone_test_uint128 tests/test_uint128.cpp)
 # Cross-backend verification suite target
 add_executable(hailstone_verify tests/test_verify.cpp)
 
+# Profile verification target
+add_executable(hailstone_verify_profile tests/test_verify.cpp)
+target_compile_options(hailstone_verify_profile PRIVATE -g -fno-omit-frame-pointer)
+target_link_options(hailstone_verify_profile PRIVATE -g -fno-omit-frame-pointer)
+
 # Polynomial generator utility target
 add_executable(hailstone_genpoly tools/genpoly.cpp)
 
 # Hailstone path representation utility target
 add_executable(hailstone_path tools/hailstone_path.cpp)
 
+# Profile path utility target
+add_executable(hailstone_path_profile tools/hailstone_path.cpp)
+target_compile_options(hailstone_path_profile PRIVATE -g -fno-omit-frame-pointer)
+target_link_options(hailstone_path_profile PRIVATE -g -fno-omit-frame-pointer)
+
 # Vulkan search target
 find_package(Vulkan REQUIRED)
 if(Vulkan_FOUND)
     add_executable(hailstone_vulkan gpu_vulkan/main.cpp)
     target_link_libraries(hailstone_vulkan PRIVATE Vulkan::Vulkan)
+    
+    # Profile Vulkan target
+    add_executable(hailstone_vulkan_profile gpu_vulkan/main.cpp)
+    target_link_libraries(hailstone_vulkan_profile PRIVATE Vulkan::Vulkan)
+    target_compile_options(hailstone_vulkan_profile PRIVATE -g -fno-omit-frame-pointer)
+    target_link_options(hailstone_vulkan_profile PRIVATE -g -fno-omit-frame-pointer)
     
     # Compile SPIR-V shader automatically
     find_program(GLSLC_EXECUTABLE glslc)
@@ -61,10 +88,16 @@ if(Vulkan_FOUND)
         )
         # Add dependency on the compiled spv file
         target_sources(hailstone_vulkan PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shader.spv)
+        target_sources(hailstone_vulkan_profile PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shader.spv)
     else()
         if(EXISTS ${PRECOMPILED_SHADER})
             message(STATUS "glslc not found; using precompiled shader at ${PRECOMPILED_SHADER}")
             add_custom_command(TARGET hailstone_vulkan POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PRECOMPILED_SHADER}
+                ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
+            )
+            add_custom_command(TARGET hailstone_vulkan_profile POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${PRECOMPILED_SHADER}
                 ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
@@ -92,6 +125,13 @@ if(CMAKE_HIP_COMPILER)
     add_executable(hailstone_hip gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp)
     set_source_files_properties(gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp PROPERTIES LANGUAGE HIP)
     target_include_directories(hailstone_hip PRIVATE include)
+    
+    # Profile HIP target
+    add_executable(hailstone_hip_profile gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp)
+    set_source_files_properties(gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp PROPERTIES LANGUAGE HIP)
+    target_include_directories(hailstone_hip_profile PRIVATE include)
+    target_compile_options(hailstone_hip_profile PRIVATE -g -fno-omit-frame-pointer)
+    target_link_options(hailstone_hip_profile PRIVATE -g -fno-omit-frame-pointer)
 else()
     message(STATUS "HIP compiler not found. Skipping hailstone_hip target.")
 endif()

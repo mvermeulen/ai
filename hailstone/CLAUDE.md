@@ -15,6 +15,20 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j$(nproc)
 ```
 
+### Profiling Commands
+To build the profiling targets (compiled with Release optimizations, debug symbols `-g`, and `-fno-omit-frame-pointer`):
+```bash
+# Build a profile target
+make hailstone_cpu_profile -j$(nproc)
+
+# Profile execution with perf (collect call graph data)
+perf record -g -- ./build/hailstone_cpu_profile --num-blocks 1
+
+# View the profile report mapped to source lines
+perf report --annotate
+```
+*Note: Available profile targets include `hailstone_cpu_profile`, `hailstone_verify_profile`, `hailstone_path_profile`, `hailstone_vulkan_profile`, and `hailstone_hip_profile`.*
+
 ### Verification & Test Commands
 Run these commands after making *any* code or logic changes. Correctness is verified when all suites pass:
 ```bash

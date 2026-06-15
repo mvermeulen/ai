@@ -105,6 +105,7 @@ The search executables (`hailstone_cpu`, `hailstone_vulkan`, and `hailstone_hip`
 * `--num-blocks, --num_blocks COUNT`: Number of blocks to check (each block is $2^{32}$ items, overrides `--end-num`/`--end-block`).
 * `--checkpoint, --checkpoint_file FILE`: Checkpoint file path (default: `hailstone.chk`).
 * `--no-checkpoint, --no_checkpoint`: Disable saving and restoring checkpoints.
+* `--no-save-checkpoint, --no_save_checkpoint`: Disable saving checkpoints at the end of the search (allows warm-starting from a checkpoint without overwriting it).
 * `--use-avx512, --use_avx512`: Force enable AVX-512 vectorized CPU search (enabled by default if supported).
 * `--no-avx512, --no_avx512`: Force disable AVX-512 vectorized CPU search.
 * `--cutoff-width, --cutoff_width VALUE`: Configure the bit-width of Suffix-First search (accepts `8`, `12`, `16`, or `20`). Suffix-First search is enabled by default with width `20` (our fastest configuration). To disable Suffix-First and run the standard search, pass `--cutoff-width 0`.
