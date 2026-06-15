@@ -233,9 +233,21 @@ Because they share the value $V$, their mathematical trajectories from that poin
 
 ---
 
-## 6. Implications for A Priori Optimization
+## 6. Implications for Search Optimization
 
-The mathematical proof and analysis of the counter-examples show that:
-1. **Complete Predictability**: Every steps peak $P \equiv 1 \pmod 4$ starting with `*/` is uniquely determined by a number $Q \equiv 1 \pmod 3$ which is a "pseudo-peak" (the minimal representative in its class modulo 3 for its step count).
-2. **Predictive Verification**: We can completely predict candidate steps peaks of the form `*/` by finding numbers $Q \equiv 1 \pmod 3$ that are highly optimal in steps, and pulling them back via $P = (4Q-1)/3$.
-3. **Pruning Modulo Classes**: Since all steps peaks starting with `*/` require $Q \equiv 1 \pmod 3$ to be highly optimal, we can study the structure of $Q$ to filter out non-viable residue classes $P \pmod{2^N}$. If a class $P \pmod{2^N}$ maps to a class $Q \pmod{2^{N-2}}$ which is mathematically proven to be dominated by a smaller competitor in another residue class, we can prune the entire class $P \pmod{2^N}$ a priori.
+While the relationship $P = \frac{4Q-1}{3}$ holds mathematically for all steps peaks $P \equiv 1 \pmod 4$ starting with `*/`, translating this relationship into a search optimization presents significant challenges and opportunities:
+
+### Challenges for A Priori Pruning
+To safely prune a residue class modulo $2^N$ *a priori* (i.e. before running the trajectory search up to $P$ or $Q$), we must have a mathematically rigorous guarantee that we will not miss any record-breaking steps peaks.
+1. **Retrospective vs. Predictive**: It is trivial to identify the competitor $Q'$ in retrospect once the trajectories of $P$ and $Q$ have been calculated. However, predicting *in advance* whether a specific pseudo-peak $Q \equiv 1 \pmod 3$ will be blocked by a smaller competitor $Q' < Q$ of another residue class is extremely difficult.
+2. **Requirement of Provable Completeness**: For the search to remain complete, we do not need to identify *all* competitors for every new candidate of the form $(3x+1)/4$. Rather, we need to prove that we will have found *a* competitor (for $P$) so that the peak would have been predicted. If a heuristic incorrectly assumes $Q$ is dominated (when in fact no competitor exists that blocks $P$ from being a steps peak), the search engine will miss $P$ and fail to discover a true global steps peak.
+3. **Mathematical Complexity**: Since Collatz trajectories are highly chaotic, there is currently no known general formula to determine the step count of $Q$ and its competitors $Q'$ without explicitly computing them. Thus, a pure a priori mathematical filter to prune these classes without checking them is likely out of reach.
+
+### Heuristic and Cache-Based Opportunities
+Instead of relying on a priori mathematical pruning (which risks missing peaks if incomplete), we can consider heuristic approaches that accelerate the search by leveraging intermediate states:
+- **Trajectory Cache Cross-Referencing**: During the search, we compute steps for many values in parallel. If a thread computes the step count of an even competitor $Q' \equiv 0 \pmod 3$, we could store this result. When checking a candidate $Q \equiv 1 \pmod 3$, if it is larger than a known $Q'$ with the same or higher step count, we can immediately classify $Q$ as dominated and skip computing its predecessor $P = \frac{4Q-1}{3}$.
+- **Heuristic Filtering**: We can use caches or bounds to identify residue classes where the expected steps count is too low to challenge the current record. However, we must remain extremely cautious to distinguish between heuristic speedups and mathematically complete optimizations.
+
+> [!WARNING]
+> Because of the difficulty in proving that a pseudo-peak is dominated without calculating the competitor's path, using the $(3x+1)/4$ relation as a hard a priori pruning filter is currently **not recommended**. It introduces a high risk of missing record-breaking steps peaks due to the lack of a provable way to guarantee that we will have found a competitor that predicts the peak.
+
