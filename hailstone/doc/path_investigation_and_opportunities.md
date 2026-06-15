@@ -216,13 +216,14 @@ When two starting values share the exact same suffix after their peak marker `^`
 The relative positions of `^` and `|` in a path string reveal whether a number drops below its starting value before or after reaching its peak.
 - **Conjecture**: If a starting number $n$ reaches its stopping time `|` *before* its peak `^`, it is unlikely to be a record-breaking peak in steps.
 - **Rationale**: If `|` appears before `^`, the trajectory drops to some value $n' < n$ before climbing to the peak. Because $n' < n$, the smaller starting number $n'$ already covers the remainder of the trajectory (including the peak and subsequent steps) in fewer total steps. Therefore, another smaller predecessor of $n'$ is mathematically positioned to reach the peak first and accumulate more steps than $n$.
+- **Empirical Validation**: In stopping time peaks, the peak `^` is always reached before the stopping time `|`. For a detailed statistical trace, see the [Paths Taken by Peaks in Stopping Time Investigation](file:///home/mev/source/ai/hailstone/doc/stopping_time_path_investigation.md).
 
 ---
 
 ### Insight D: Collision-Avoidance (Minimality) in Peak Trajectories
 For any record-breaking stopping time ($\sigma$) or maximum value peak, we can analyze the path segment *prior* to reaching the peak (or stopping point) and ask: *Why was there no other path that merged with this one that started from a lower number?*
 - **The Parity of Peak Ancestry**: If a path originating from a lower starting value $k < n$ had merged with $n$'s path before $n$ reached its defining landmark (peak or stopping time), then $k$ would have reached that landmark first. Since $k$ is smaller, $n$ would be dominated and fail to be a peak.
-- **Path Pattern Analysis**: This implies that the pre-peak segments of record-breaking paths must possess properties that prevent early collisions (merging) with trajectories of smaller numbers. We can study specific pattern signatures—such as long sequences of repeating divisions `//...` or repeating multiplications `**...`—to understand how stopping time and max value trajectories preserve their minimality and why certain starting numbers succeed in becoming peaks.
+- **Path Pattern Analysis**: This implies that the pre-peak segments of record-breaking paths must possess properties that prevent early collisions (merging) with trajectories of smaller numbers. We can study specific pattern signatures—such as long sequences of repeating divisions `//...` or repeating multiplications `**...`—to understand how stopping time and max value trajectories preserve their minimality and why certain starting numbers succeed in becoming peaks. For a complete analysis of the collision avoidance, run lengths, and containment results of stopping time paths, see the [Paths Taken by Peaks in Stopping Time Investigation](file:///home/mev/source/ai/hailstone/doc/stopping_time_path_investigation.md).
 
 ---
 
