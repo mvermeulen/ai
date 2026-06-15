@@ -18,8 +18,21 @@ struct uint128 {
     HD_ATTR uint128(uint64_t l, uint64_t h) : low(l), high(h) {}
 };
 
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+HD_ATTR unsigned __int128 to_native(const uint128& a) {
+    return (static_cast<unsigned __int128>(a.high) << 64) | a.low;
+}
+HD_ATTR uint128 to_struct(unsigned __int128 n) {
+    return uint128(static_cast<uint64_t>(n), static_cast<uint64_t>(n >> 64));
+}
+#endif
+
 HD_ATTR bool operator==(const uint128& a, const uint128& b) {
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+    return to_native(a) == to_native(b);
+#else
     return a.low == b.low && a.high == b.high;
+#endif
 }
 
 HD_ATTR bool operator!=(const uint128& a, const uint128& b) {
@@ -27,8 +40,12 @@ HD_ATTR bool operator!=(const uint128& a, const uint128& b) {
 }
 
 HD_ATTR bool operator<(const uint128& a, const uint128& b) {
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+    return to_native(a) < to_native(b);
+#else
     if (a.high != b.high) return a.high < b.high;
     return a.low < b.low;
+#endif
 }
 
 HD_ATTR bool operator<=(const uint128& a, const uint128& b) {
@@ -44,21 +61,36 @@ HD_ATTR bool operator>=(const uint128& a, const uint128& b) {
 }
 
 HD_ATTR uint128 operator+(const uint128& a, const uint128& b) {
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+    return to_struct(to_native(a) + to_native(b));
+#else
     uint128 res;
     res.low = a.low + b.low;
     res.high = a.high + b.high + (res.low < a.low ? 1 : 0);
     return res;
+#endif
 }
 
 HD_ATTR uint128 operator-(const uint128& a, const uint128& b) {
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+    return to_struct(to_native(a) - to_native(b));
+#else
     uint128 res;
     res.low = a.low - b.low;
     uint64_t borrow = (a.low < b.low) ? 1 : 0;
     res.high = a.high - b.high - borrow;
     return res;
+#endif
 }
 
 HD_ATTR uint128 add_check_overflow(uint128 a, uint128 b, bool& overflow) {
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+    unsigned __int128 al = to_native(a);
+    unsigned __int128 bl = to_native(b);
+    unsigned __int128 res = al + bl;
+    overflow = (res < al);
+    return to_struct(res);
+#else
     uint128 res;
     res.low = a.low + b.low;
     uint64_t carry = (res.low < a.low) ? 1 : 0;
@@ -66,14 +98,21 @@ HD_ATTR uint128 add_check_overflow(uint128 a, uint128 b, bool& overflow) {
     bool carry_high = (res.high < a.high) || (carry && res.high == a.high);
     overflow = carry_high;
     return res;
+#endif
 }
 
 HD_ATTR uint128 shift_left_1(uint128 a, bool& overflow) {
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+    unsigned __int128 al = to_native(a);
+    overflow = (al & (static_cast<unsigned __int128>(1) << 127)) != 0;
+    return to_struct(al << 1);
+#else
     uint128 res;
     overflow = (a.high & 0x8000000000000000ULL) != 0;
     res.high = (a.high << 1) | (a.low >> 63);
     res.low = a.low << 1;
     return res;
+#endif
 }
 
 HD_ATTR uint128 shift_right(uint128 a, int p) {

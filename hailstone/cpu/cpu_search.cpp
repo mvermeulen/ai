@@ -78,23 +78,25 @@ CollatzStats compute_collatz(uint128 n) {
 
         // Division by 2^p to make it odd again
         int p = count_trailing_zeros(next_val);
+        uint128 next_val_shifted = shift_right(next_val, p);
         
         // Track stopping time (sigma) on T-iterates: next_val >> 1, next_val >> 2, ..., next_val >> p
         if (!has_stopped_sigma) {
-            for (int k = 1; k <= p; ++k) {
-                uint128 val_k = shift_right(next_val, k);
-                if (val_k < n) {
-                    stats.stopping_time = t_steps + k;
-                    has_stopped_sigma = true;
-                    break;
+            if (next_val_shifted < n) {
+                for (int k = 1; k <= p; ++k) {
+                    uint128 val_k = shift_right(next_val, k);
+                    if (val_k < n) {
+                        stats.stopping_time = t_steps + k;
+                        has_stopped_sigma = true;
+                        break;
+                    }
                 }
             }
         }
 
-        next_val = shift_right(next_val, p);
         stats.steps += p;
         t_steps += p;
-        curr = next_val;
+        curr = next_val_shifted;
 
         if (curr < n) {
             dropped_below_start = true;
@@ -166,23 +168,25 @@ CollatzStats compute_collatz_poly(uint128 n, uint32_t current_max_steps) {
 
         // Division by 2^p to make it odd again
         int p = count_trailing_zeros(next_val);
+        uint128 next_val_shifted = shift_right(next_val, p);
         
         // Track stopping time (sigma) on T-iterates: next_val >> 1, next_val >> 2, ..., next_val >> p
         if (!has_stopped_sigma) {
-            for (int k = 1; k <= p; ++k) {
-                uint128 val_k = shift_right(next_val, k);
-                if (val_k < n) {
-                    stats.stopping_time = t_steps + k;
-                    has_stopped_sigma = true;
-                    break;
+            if (next_val_shifted < n) {
+                for (int k = 1; k <= p; ++k) {
+                    uint128 val_k = shift_right(next_val, k);
+                    if (val_k < n) {
+                        stats.stopping_time = t_steps + k;
+                        has_stopped_sigma = true;
+                        break;
+                    }
                 }
             }
         }
 
-        next_val = shift_right(next_val, p);
         stats.steps += p;
         t_steps += p;
-        curr = next_val;
+        curr = next_val_shifted;
 
         if (curr < n) {
             dropped_below_start = true;
@@ -223,8 +227,10 @@ void cpu_search_range(uint128 start, uint128 end,
 
     for (; curr <= end; curr = curr + uint128(2)) {
         // Process predictions up to curr
-        predictor.process_up_to(curr, steps_peaks);
-        global_peaks.current_max_steps = predictor.current_max_steps;
+        if (!predictor.active_predictions.empty()) {
+            predictor.process_up_to(curr, steps_peaks);
+            global_peaks.current_max_steps = predictor.current_max_steps;
+        }
 
         // Modulo 6 cutoff: if curr % 6 == 5, skip
         // Since curr is odd, curr % 6 can be 1, 3, or 5.
@@ -330,8 +336,10 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
 
     for (; curr <= end_64; curr += 2) {
         uint128 u128_curr(curr);
-        predictor.process_up_to(u128_curr, steps_peaks);
-        global_peaks.current_max_steps = predictor.current_max_steps;
+        if (!predictor.active_predictions.empty()) {
+            predictor.process_up_to(u128_curr, steps_peaks);
+            global_peaks.current_max_steps = predictor.current_max_steps;
+        }
 
         uint64_t sum_mod3 = curr % 3;
         if (sum_mod3 == 2) {
@@ -375,21 +383,23 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
                 }
 
                 int p = ctz64(next_val);
+                uint64_t next_val_shifted = next_val >> p;
                 if (!has_stopped_sigma) {
-                    for (int k = 1; k <= p; ++k) {
-                        uint64_t val_k = next_val >> k;
-                        if (val_k < val) {
-                            stopping_time = t_steps + k;
-                            has_stopped_sigma = true;
-                            break;
+                    if (next_val_shifted < val) {
+                        for (int k = 1; k <= p; ++k) {
+                            uint64_t val_k = next_val >> k;
+                            if (val_k < val) {
+                                stopping_time = t_steps + k;
+                                has_stopped_sigma = true;
+                                break;
+                            }
                         }
                     }
                 }
 
-                next_val >>= p;
                 steps += p;
                 t_steps += p;
-                temp_curr = next_val;
+                temp_curr = next_val_shifted;
 
                 if (temp_curr < val) {
                     dropped_below_start = true;
@@ -1315,43 +1325,94 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
             metrics.total_numbers_checked += std_allowed_size;
             metrics.numbers_skipped_mod6 += std_skipped;
 
-            for (uint32_t suffix : allowed) {
-                uint128 curr = base + uint128(suffix);
-
-                predictor.process_up_to(curr, steps_peaks);
-                global_peaks.current_max_steps = predictor.current_max_steps;
-
-                CollatzStats stats;
-                if (curr >= uint128(1 << POLY_WIDTH)) {
-                    stats = compute_collatz_poly(curr, init_max_steps);
-                } else {
-                    stats = compute_collatz(curr);
+            bool check_predictor = false;
+            if (!predictor.active_predictions.empty()) {
+                uint128 min_pred = predictor.active_predictions[0].pred_n;
+                for (const auto& p : predictor.active_predictions) {
+                    if (p.pred_n < min_pred) min_pred = p.pred_n;
                 }
-
-                if (stats.overflow) {
-                    metrics.numbers_overflowed++;
-                    continue;
+                uint128 base_end = base + uint128((1ULL << width) - 1);
+                if (min_pred <= base_end) {
+                    check_predictor = true;
                 }
+            }
 
-                metrics.total_steps_computed += stats.steps;
+            if (check_predictor) {
+                for (uint32_t suffix : allowed) {
+                    uint128 curr = base + uint128(suffix);
 
-                // Check max_value peak
-                if (stats.max_value > global_peaks.current_max_value) {
-                    global_peaks.current_max_value = stats.max_value;
-                    max_value_peaks.push_back({curr, stats.max_value});
-                }
-
-                // Check steps peak
-                if (stats.steps > global_peaks.current_max_steps) {
-                    predictor.add_confirmed_peak(curr, stats.steps);
+                    predictor.process_up_to(curr, steps_peaks);
                     global_peaks.current_max_steps = predictor.current_max_steps;
-                    steps_peaks.push_back({curr, uint128(stats.steps)});
-                }
 
-                // Check stopping time (sigma) peak
-                if (stats.stopping_time > global_peaks.current_max_sigma) {
-                    global_peaks.current_max_sigma = stats.stopping_time;
-                    sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+                    CollatzStats stats;
+                    if (curr >= uint128(1 << POLY_WIDTH)) {
+                        stats = compute_collatz_poly(curr, init_max_steps);
+                    } else {
+                        stats = compute_collatz(curr);
+                    }
+
+                    if (stats.overflow) {
+                        metrics.numbers_overflowed++;
+                        continue;
+                    }
+
+                    metrics.total_steps_computed += stats.steps;
+
+                    // Check max_value peak
+                    if (stats.max_value > global_peaks.current_max_value) {
+                        global_peaks.current_max_value = stats.max_value;
+                        max_value_peaks.push_back({curr, stats.max_value});
+                    }
+
+                    // Check steps peak
+                    if (stats.steps > global_peaks.current_max_steps) {
+                        predictor.add_confirmed_peak(curr, stats.steps);
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+                        steps_peaks.push_back({curr, uint128(stats.steps)});
+                    }
+
+                    // Check stopping time (sigma) peak
+                    if (stats.stopping_time > global_peaks.current_max_sigma) {
+                        global_peaks.current_max_sigma = stats.stopping_time;
+                        sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+                    }
+                }
+            } else {
+                for (uint32_t suffix : allowed) {
+                    uint128 curr = base + uint128(suffix);
+
+                    CollatzStats stats;
+                    if (curr >= uint128(1 << POLY_WIDTH)) {
+                        stats = compute_collatz_poly(curr, init_max_steps);
+                    } else {
+                        stats = compute_collatz(curr);
+                    }
+
+                    if (stats.overflow) {
+                        metrics.numbers_overflowed++;
+                        continue;
+                    }
+
+                    metrics.total_steps_computed += stats.steps;
+
+                    // Check max_value peak
+                    if (stats.max_value > global_peaks.current_max_value) {
+                        global_peaks.current_max_value = stats.max_value;
+                        max_value_peaks.push_back({curr, stats.max_value});
+                    }
+
+                    // Check steps peak
+                    if (stats.steps > global_peaks.current_max_steps) {
+                        predictor.add_confirmed_peak(curr, stats.steps);
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+                        steps_peaks.push_back({curr, uint128(stats.steps)});
+                    }
+
+                    // Check stopping time (sigma) peak
+                    if (stats.stopping_time > global_peaks.current_max_sigma) {
+                        global_peaks.current_max_sigma = stats.stopping_time;
+                        sigma_peaks.push_back({curr, uint128(stats.stopping_time)});
+                    }
                 }
             }
         } else {
