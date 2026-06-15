@@ -27,7 +27,7 @@ perf record -g -- ./build/hailstone_cpu_profile --num-blocks 1
 # View the profile report mapped to source lines
 perf report --annotate
 ```
-*Note: Available profile targets include `hailstone_cpu_profile`, `hailstone_verify_profile`, `hailstone_path_profile`, `hailstone_vulkan_profile`, and `hailstone_hip_profile`.*
+*Note: Available profile targets include `hailstone_cpu_profile`, `hailstone_verify_profile`, `hailstone_path_profile`, `hailstone_vulkan_profile`, and `hailstone_hip_profile`. For full profiling instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/profiling.md).*
 
 ### Verification & Test Commands
 Run these commands after making *any* code or logic changes. Correctness is verified when all suites pass:
