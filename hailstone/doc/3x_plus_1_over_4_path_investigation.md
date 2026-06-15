@@ -112,6 +112,22 @@ Therefore, **no such $Q' < Q$ with $Q' \equiv 1 \pmod 3$ can exist.**
 > [!TIP]
 > **Conclusion**: Even though $Q$ may not be the *global* steps peak (because there is some smaller competitor $Q'' < Q$ with $Q'' \not\equiv 1 \pmod 3$ that takes $\ge S(Q)$ steps), $Q$ is guaranteed to be the **minimal starting value in the residue class $1 \pmod 3$** that takes $S(Q)$ steps.
 
+### Prediction via Even Peak + 1 Heuristic
+
+We have introduced a new prediction heuristic: when an even steps peak $E$ is confirmed, we check if $E + 1$ has the same trajectory path (i.e. they merge at the same step count). If they do, we generate predictions using $E + 1$ as a virtual confirmed steps peak.
+
+Applying this heuristic to the 6 counter-examples:
+1. **$P=25$ (Successor $Q=19$, Competitor $E=18$):**
+   $18$ is an even steps peak (20 steps). Since $18$ and $19$ merge at 22 with the exact same step count (5 steps), they have the same path. We use $19 \equiv 1 \pmod 3$ to predict $P = \frac{4(19)-1}{3} = 25$ (23 steps). **(Found!)**
+2. **$P=73$ (Successor $Q=55$, Competitor $E=54$):**
+   $54$ is an even steps peak (112 steps). Since $54$ and $55$ merge at 94 with the exact same step count (7 steps), they have the same path. We use $55 \equiv 1 \pmod 3$ to predict $P = \frac{4(55)-1}{3} = 73$ (115 steps). **(Found!)**
+3. **$P=169,941,673$ (Successor $Q=127,456,255$, Competitor $E=127,456,254$):**
+   $127,456,254$ is an even steps peak (950 steps). Since $127,456,254$ and $127,456,255$ merge at $1,837,442,495$ with the exact same step count (22 steps), they have the same path. We use $127,456,255 \equiv 1 \pmod 3$ to predict $P = \frac{4(127,456,255)-1}{3} = 169,941,673$ (953 steps). **(Found!)**
+
+For the remaining three counter-examples ($P=313, 649, 1,501,353$), their competitors ($231, 327, 1,117,065$) are odd. Because the competitors are odd, there is no even steps peak $E$ to serve as a starting point for this heuristic.
+
+**Summary:** With the new heuristic, **3 out of the 6** previously unpredicted counter-examples are now successfully predicted.
+
 ### Analysis of the 6 Counter-Examples
 
 Let us verify this rule for the 6 counter-examples by finding the smaller competitor $Q'' < Q$ that prevents $Q$ from being a steps peak:

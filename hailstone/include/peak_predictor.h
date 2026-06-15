@@ -55,6 +55,42 @@ public:
         return res;
     }
 
+    static inline bool have_same_path(uint128 n, uint128 n_plus_1) {
+        uint128 x = n;
+        uint128 y = n_plus_1;
+        uint32_t steps_x = 0;
+        uint32_t steps_y = 0;
+
+        const uint32_t max_steps = 10000;
+
+        while (x != y && (x > uint128(1) || y > uint128(1))) {
+            if (steps_x > max_steps || steps_y > max_steps) {
+                return false;
+            }
+            if (x > uint128(1)) {
+                if ((x.low & 1) == 0) {
+                    x = shift_right(x, 1);
+                } else {
+                    bool overflow = false;
+                    x = mul3_add1(x, overflow);
+                    if (overflow) return false;
+                }
+                steps_x++;
+            }
+            if (y > uint128(1)) {
+                if ((y.low & 1) == 0) {
+                    y = shift_right(y, 1);
+                } else {
+                    bool overflow = false;
+                    y = mul3_add1(y, overflow);
+                    if (overflow) return false;
+                }
+                steps_y++;
+            }
+        }
+        return (x == y && steps_x == steps_y);
+    }
+
     void add_confirmed_peak(uint128 n, uint32_t steps) {
         // 1. Update max steps
         if (steps > current_max_steps) {
@@ -89,6 +125,29 @@ public:
                 uint128 pred_n = divide_by_3(four_n_minus_1);
                 uint32_t pred_steps = steps + 3;
                 add_prediction_if_better(pred_n, pred_steps, n);
+            }
+        }
+
+        // 3b. Try predicting based on n + 1 if n is an even peak
+        if ((n.low & 1) == 0) {
+            uint128 n_plus_1 = n + uint128(1);
+            if (n_plus_1 >= n) { // check overflow
+                if (have_same_path(n, n_plus_1)) {
+                    uint64_t np1_mod3 = (n_plus_1.high % 3 + n_plus_1.low % 3) % 3;
+                    if (np1_mod3 == 0) {
+                        uint128 pred_n = n_plus_1 + n_plus_1;
+                        uint32_t pred_steps = steps + 1;
+                        add_prediction_if_better(pred_n, pred_steps, n_plus_1);
+                    } else if (np1_mod3 == 1) {
+                        uint128 four_np1 = n_plus_1 + n_plus_1 + n_plus_1 + n_plus_1;
+                        if (four_np1 >= n_plus_1) {
+                            uint128 four_np1_minus_1 = four_np1 - uint128(1);
+                            uint128 pred_n = divide_by_3(four_np1_minus_1);
+                            uint32_t pred_steps = steps + 3;
+                            add_prediction_if_better(pred_n, pred_steps, n_plus_1);
+                        }
+                    }
+                }
             }
         }
 

@@ -1,4 +1,5 @@
 #include "uint128.h"
+#include "peak_predictor.h"
 #include <iostream>
 #include <random>
 #include <cassert>
@@ -206,6 +207,37 @@ void test_fuzz() {
     }
 }
 
+void test_peak_predictor_even_heuristic() {
+    PeakPredictor predictor;
+    // Add peak 27 (steps = 111)
+    predictor.add_confirmed_peak(uint128(27), 111);
+
+    // Predictor should have generated:
+    // From 27 (27 % 3 == 0): P = 54 (steps = 112)
+    bool found_54 = false;
+    for (const auto& p : predictor.active_predictions) {
+        if (p.pred_n == uint128(54)) {
+            assert(p.pred_steps == 112);
+            found_54 = true;
+        }
+    }
+    assert(found_54);
+
+    // Confirm peak 54. Since 54 is even, it should trigger the even peak + 1 heuristic:
+    // - checks if 55 has the same path (which it does, both merge at 94 in 7 steps).
+    // - predicts from 55 (55 % 3 == 1): P = (4 * 55 - 1) / 3 = 73 (steps = 112 + 3 = 115).
+    predictor.add_confirmed_peak(uint128(54), 112);
+
+    bool found_73 = false;
+    for (const auto& p : predictor.active_predictions) {
+        if (p.pred_n == uint128(73)) {
+            assert(p.pred_steps == 115);
+            found_73 = true;
+        }
+    }
+    assert(found_73);
+}
+
 int main() {
     std::cout << "Running uint128 unit tests..." << std::endl;
     test_constructors();
@@ -216,6 +248,7 @@ int main() {
     test_ctz();
     test_mul3_add1();
     test_fuzz();
+    test_peak_predictor_even_heuristic();
     std::cout << "All uint128 unit tests passed successfully!" << std::endl;
     return 0;
 }
