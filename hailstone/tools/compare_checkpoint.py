@@ -77,6 +77,13 @@ def compare_lists(name, list_cand, list_gold, limit):
     missing_in_cand = sorted(list(gold_keys - cand_keys))
     extra_in_cand = sorted(list(cand_keys - gold_keys))
 
+    ignored_extra_peaks = []
+    if name == "sigma_peaks":
+        # Extra peaks in candidate are allowed if they are above 7.8 billion (7,800,000,000),
+        # because the Leavens paper's printed table of stopping time peaks stopped before that threshold.
+        ignored_extra_peaks = [k for k in extra_in_cand if k > 7800000000]
+        extra_in_cand = [k for k in extra_in_cand if k <= 7800000000]
+
     mismatches = []
     common_keys = sorted(list(cand_keys & gold_keys))
     for k in common_keys:
@@ -94,6 +101,11 @@ def compare_lists(name, list_cand, list_gold, limit):
         discrepancies = True
         print(f"  [FAIL] Extra {name} (starting numbers in Candidate but not Golden):")
         for k in extra_in_cand:
+            print(f"    - Starting number: {k:,} (candidate value: {cand_dict[k]:,})")
+
+    if ignored_extra_peaks:
+        print(f"  [INFO] Ignored {len(ignored_extra_peaks)} extra {name} above 7.8 billion:")
+        for k in ignored_extra_peaks:
             print(f"    - Starting number: {k:,} (candidate value: {cand_dict[k]:,})")
 
     if mismatches:
@@ -169,11 +181,22 @@ def main():
         else:
             print(f"  [OK] Global max_steps is correct ({cand['max_steps']:,})")
 
-        if cand["max_sigma"] != gold_sg_at_limit:
-            has_errors = True
-            print(f"  [FAIL] Global max_sigma mismatch: Candidate has {cand['max_sigma']:,}, expected {gold_sg_at_limit:,}")
+        if limit <= 7800000000:
+            if cand["max_sigma"] != gold_sg_at_limit:
+                has_errors = True
+                print(f"  [FAIL] Global max_sigma mismatch: Candidate has {cand['max_sigma']:,}, expected {gold_sg_at_limit:,}")
+            else:
+                print(f"  [OK] Global max_sigma is correct ({cand['max_sigma']:,})")
         else:
-            print(f"  [OK] Global max_sigma is correct ({cand['max_sigma']:,})")
+            cand_sg_max = max([p[1] for p in cand["sigma_peaks"] if p[0] <= limit]) if cand["sigma_peaks"] else 0
+            if cand["max_sigma"] < gold_sg_at_limit:
+                has_errors = True
+                print(f"  [FAIL] Global max_sigma mismatch: Candidate has {cand['max_sigma']:,}, expected at least {gold_sg_at_limit:,}")
+            elif cand["max_sigma"] != cand_sg_max:
+                has_errors = True
+                print(f"  [FAIL] Global max_sigma inconsistency: Candidate header has {cand['max_sigma']:,}, but candidate peaks max is {cand_sg_max:,}")
+            else:
+                print(f"  [OK] Global max_sigma is correct and consistent ({cand['max_sigma']:,})")
     else:
         print("  [INFO] Candidate search limit is larger than golden master limit; skipping global summary validation.")
 
