@@ -207,3 +207,37 @@ python3 benchmarks/benchmark.py --mode full
 ```
 
 Benchmark results and peak counts will automatically append to the optimization history in [benchmarks/README.md](file:///home/mev/source/ai/hailstone/benchmarks/README.md) and [benchmarks/history.json](file:///home/mev/source/ai/hailstone/benchmarks/history.json).
+
+---
+
+## Distributed Search Mode
+
+The distributed search mode splits the Collatz peak search range across a cluster of worker machines. It comprises two main Python programs that use only standard libraries (zero installation required on workers):
+
+1. **Worker Daemon (`distributed/daemon.py`)**: Runs on each worker machine. It auto-detects compiled binaries (CPU, Vulkan, HIP), runs startup micro-benchmarks to register local capabilities, and runs search partitions as subprocesses.
+2. **Central Controller (`distributed/controller.py`)**: Runs on the coordinator machine. It partitions the search range dynamically based on workers' throughputs, schedules tasks, manages timeouts (fault tolerance), merges peaks using a strict sorting/filtering algorithm, and hosts a premium Web UI.
+
+### Step-by-Step Setup
+
+1. **Build the C++ binaries** on all nodes (workers and controller):
+   ```bash
+   mkdir -p build && cd build
+   cmake -DCMAKE_BUILD_TYPE=Release ..
+   make -j$(nproc)
+   ```
+
+2. **Run Worker Daemons** on the participating nodes:
+   ```bash
+   python3 distributed/daemon.py --port 5000
+   ```
+
+3. **Start the Controller** on the host server:
+   ```bash
+   python3 distributed/controller.py --workers worker1_ip:5000,worker2_ip:5000 --port 8080 --checkpoint hailstone_distributed.chk
+   ```
+
+4. **Monitor and Control via Web UI**:
+   Open a browser to `http://<controller_ip>:8080`.
+   - Configure a search range, select the target backend, adjust the **Target Job Duration** (used to size chunks dynamically), and start/pause searches.
+   - Discovered peaks are immediately merged and saved to `hailstone_distributed.chk` in real-time. This file is 100% compatible with the standard single-node C++ binaries.
+

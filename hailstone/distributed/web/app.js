@@ -1,0 +1,279 @@
+// State Management
+let currentTab = 'max-value';
+
+// Helper: Format large numbers with commas
+function formatBigInt(str) {
+    if (!str || str === "0") return "0";
+    if (str.length > 21) {
+        return str; // Return as-is for extremely large numbers to preserve exact digits
+    }
+    return str.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// Helper: Format seconds to readable duration
+function formatDuration(sec) {
+    if (sec < 60) return `${sec.toFixed(1)}s`;
+    const mins = Math.floor(sec / 60);
+    const secs = Math.floor(sec % 60);
+    return `${mins}m ${secs}s`;
+}
+
+// Tab Switching
+window.switchTab = function(tabName) {
+    currentTab = tabName;
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    
+    // Find active button
+    const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => 
+        btn.getAttribute('onclick').includes(tabName)
+    );
+    if (activeBtn) activeBtn.classList.add('active');
+    
+    const activeContent = document.getElementById(`${tabName}-tab`);
+    if (activeContent) activeContent.classList.add('active');
+};
+
+// Poll controller status
+async function updateDashboard() {
+    try {
+        const response = await fetch('/api/status');
+        if (!response.ok) throw new Error('Network response not ok');
+        const data = await response.json();
+        
+        // 1. Update overall status badge
+        const badge = document.getElementById('global-status-badge');
+        if (data.is_running) {
+            badge.textContent = 'Searching';
+            badge.className = 'badge running';
+            document.getElementById('start-btn').disabled = true;
+            document.getElementById('stop-btn').disabled = false;
+            toggleInputs(true);
+        } else {
+            badge.textContent = 'Idle';
+            badge.className = 'badge idle';
+            document.getElementById('start-btn').disabled = false;
+            document.getElementById('stop-btn').disabled = true;
+            toggleInputs(false);
+        }
+
+        // 2. Update throughput & aggregate metrics
+        const speed = data.progress.combined_throughput_m_s || 0;
+        document.getElementById('header-throughput').textContent = `${speed.toFixed(2)} M/s`;
+        
+        document.getElementById('stats-checked').textContent = formatBigInt(data.progress.total_numbers_checked.toString());
+        document.getElementById('stats-steps').textContent = formatBigInt(data.progress.total_steps_computed.toString());
+        document.getElementById('stats-time').textContent = formatDuration(data.progress.elapsed_seconds);
+        document.getElementById('stats-next-num').textContent = formatBigInt(data.progress.next_search_num);
+
+        // 3. Update Progress Bar
+        const progressPercent = data.progress.percent_completed || 0;
+        document.getElementById('progress-fill').style.width = `${progressPercent}%`;
+        document.getElementById('progress-percent').textContent = `${progressPercent.toFixed(2)}%`;
+
+        // 4. Render Worker Nodes
+        renderWorkers(data.workers, data.task.backend);
+
+        // 5. Render Peaks Tables (Sorting descending to show newest peaks first)
+        renderPeaksTable('max-value-peaks-body', data.global_peaks.max_value_peaks, 'max_value');
+        renderPeaksTable('steps-peaks-body', data.global_peaks.steps_peaks, 'steps');
+        renderPeaksTable('sigma-peaks-body', data.global_peaks.sigma_peaks, 'sigma');
+
+    } catch (error) {
+        console.error('Error fetching dashboard status:', error);
+    }
+}
+
+// Enable/Disable form inputs
+function toggleInputs(disabled) {
+    document.getElementById('start-num').disabled = disabled;
+    document.getElementById('end-num').disabled = disabled;
+    document.getElementById('backend').disabled = disabled;
+    document.getElementById('cutoff-width').disabled = disabled;
+    document.getElementById('target-duration').disabled = disabled;
+}
+
+// Render cluster worker list
+function renderWorkers(workers, activeBackend) {
+    const container = document.getElementById('workers-container');
+    const keys = Object.keys(workers);
+    
+    document.getElementById('workers-count').textContent = `${keys.length} Node${keys.length === 1 ? '' : 's'}`;
+    
+    if (keys.length === 0) {
+        container.innerHTML = '<div class="empty-state">No workers registered. Add one below or launch with --workers.</div>';
+        return;
+    }
+    
+    let html = '';
+    keys.forEach(addr => {
+        const w = workers[addr];
+        const statusClass = w.status === 'online' ? 'online' : (w.status === 'busy' ? 'busy' : 'offline');
+        const loadStr = w.system_load ? w.system_load[0].toFixed(2) : '0.00';
+        
+        let benchmarkHtml = '';
+        if (w.backends) {
+            Object.keys(w.backends).forEach(b => {
+                const speed = w.backends[b];
+                if (speed !== null) {
+                    const activeClass = b === activeBackend && w.status === 'busy' ? 'active' : '';
+                    benchmarkHtml += `<span class="bench-tag ${activeClass}">${b.toUpperCase()}: ${speed.toFixed(1)} M/s</span>`;
+                }
+            });
+        }
+        
+        let activeJobHtml = '';
+        if (w.status === 'busy' && w.active_job) {
+            const job = w.active_job;
+            const elapsed = Math.floor(Date.now() / 1000 - job.start_time);
+            activeJobHtml = `
+                <div class="worker-job-info">
+                    Job: ${job.job_id.substring(0, 12)}...<br>
+                    Range: [${formatBigInt(job.start_num.toString())}, ${formatBigInt(job.end_num.toString())}]<br>
+                    Running for ${elapsed}s
+                </div>
+            `;
+        }
+
+        html += `
+            <div class="worker-card animate-fade-in">
+                <div class="worker-header">
+                    <div class="worker-identity">
+                        <span class="worker-addr">${addr}</span>
+                        <span class="worker-cores">${w.cpu_cores || '?'} Cores | Load: ${loadStr}</span>
+                    </div>
+                    <span class="status-indicator">
+                        <span class="dot ${statusClass}"></span>
+                        ${w.status.toUpperCase()}
+                    </span>
+                </div>
+                ${activeJobHtml}
+                <div class="worker-body">
+                    <div class="worker-benchmarks">
+                        ${benchmarkHtml || '<span class="bench-tag">No backends discovered</span>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+// Render specific peaks table
+function renderPeaksTable(tableId, peaks, metricType) {
+    const tbody = document.getElementById(tableId);
+    if (!peaks || peaks.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="2" class="empty-table">No peaks found. Start search to see results.</td></tr>`;
+        return;
+    }
+
+    // Sort descending by start_val (using string length and string comparison for safe bigint sort)
+    const sortedPeaks = [...peaks].sort((a, b) => {
+        const lenA = a.start_val.length;
+        const lenB = b.start_val.length;
+        if (lenA !== lenB) return lenB - lenA;
+        return b.start_val.localeCompare(a.start_val);
+    });
+
+    let html = '';
+    sortedPeaks.forEach(peak => {
+        html += `
+            <tr>
+                <td>${formatBigInt(peak.start_val)}</td>
+                <td>${formatBigInt(peak.metric_val)}</td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+// Event Listeners
+document.getElementById('config-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const payload = {
+        start_num: parseInt(document.getElementById('start-num').value.replace(/,/g, '')),
+        end_num: parseInt(document.getElementById('end-num').value.replace(/,/g, '')),
+        backend: document.getElementById('backend').value,
+        cutoff_width: parseInt(document.getElementById('cutoff-width').value),
+        target_duration: parseFloat(document.getElementById('target-duration').value)
+    };
+
+    if (isNaN(payload.start_num) || isNaN(payload.end_num)) {
+        alert('Please enter valid numeric values for starting and ending numbers.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.dumps(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to start search');
+        
+        console.log('Search started successfully:', result);
+        updateDashboard();
+    } catch (err) {
+        alert(`Error starting search: ${err.message}`);
+    }
+});
+
+document.getElementById('stop-btn').addEventListener('click', async () => {
+    try {
+        const response = await fetch('/api/stop', { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to stop search');
+        
+        console.log('Search stopped successfully:', result);
+        updateDashboard();
+    } catch (err) {
+        alert(`Error stopping search: ${err.message}`);
+    }
+});
+
+document.getElementById('daemon-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const addressInput = document.getElementById('daemon-address');
+    const address = addressInput.value.trim();
+    if (!address) return;
+
+    try {
+        const response = await fetch('/api/daemons', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.dumps({ address })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Failed to add worker');
+        
+        console.log('Worker registered successfully:', result);
+        addressInput.value = '';
+        updateDashboard();
+    } catch (err) {
+        alert(`Error registering worker: ${err.message}`);
+    }
+});
+
+// Initial load & Polling Loop
+updateDashboard();
+setInterval(updateDashboard, 1000);
+
+// Help Modal Controls
+window.openHelp = function() {
+    document.getElementById('help-modal').style.display = 'flex';
+};
+
+window.closeHelp = function() {
+    document.getElementById('help-modal').style.display = 'none';
+};
+
+// Close modal when clicking outside content area
+window.addEventListener('click', (e) => {
+    const modal = document.getElementById('help-modal');
+    if (e.target === modal) {
+        closeHelp();
+    }
+});
