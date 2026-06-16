@@ -12,9 +12,9 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 11,group,E,2026-06-14,GER,CUW,7,1,-1,-1,final,Houston
 12,group,E,2026-06-14,ECU,CIV,0,1,-1,-1,final,Dallas
 13,group,G,2026-06-15,BEL,EGY,1,1,-1,-1,final,New York/New Jersey
-14,group,G,2026-06-15,IRN,NZL,0,0,-1,-1,upcoming,Philadelphia
+14,group,G,2026-06-15,IRN,NZL,2,2,-1,-1,final,Philadelphia
 15,group,H,2026-06-15,ESP,CPV,0,0,-1,-1,final,Miami
-16,group,H,2026-06-15,URU,KSA,-1,-1,-1,-1,scheduled,Boston
+16,group,H,2026-06-15,URU,KSA,1,1,-1,-1,final,Boston
 17,group,I,2026-06-16,FRA,SEN,-1,-1,-1,-1,scheduled,Toronto
 18,group,I,2026-06-16,NOR,IRQ,-1,-1,-1,-1,scheduled,Seattle
 19,group,J,2026-06-16,ARG,ALG,-1,-1,-1,-1,scheduled,Houston

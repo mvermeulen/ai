@@ -5,9 +5,9 @@ As the search proceeds, this document is updated to record the historical peaks 
 
 ## Search Status
 
-- **Current Range Searched**: `[3, 74,766,790,688,768]` (up to block 17408.00)
-- **Global Max Value**: 1,274,106,920,208,158,465,786,267,728 (≈ 1.274e+27)
-- **Global Max Steps**: 1,659
+- **Current Range Searched**: `[3, 162,727,720,910,848]` (up to block 37888.00)
+- **Global Max Value**: 2,530,584,067,833,784,961,226,236,392 (≈ 2.531e+27)
+- **Global Max Steps**: 1,823
 - **Global Max Stopping Time ($\sigma$)**: 722
 
 ---
@@ -80,6 +80,7 @@ Tracked when a starting value $n$ generates a trajectory whose maximum intermedi
 | 3,716,509,988,199 (≈ 3.717e+12) | 207,936,463,344,549,949,044,875,464 (≈ 2.079e+26) |
 | 9,016,346,070,511 (≈ 9.016e+12) | 252,229,527,183,443,335,194,424,192 (≈ 2.522e+26) |
 | 64,848,224,337,147 (≈ 6.485e+13) | 1,274,106,920,208,158,465,786,267,728 (≈ 1.274e+27) |
+| 116,050,121,715,711 (≈ 1.161e+14) | 2,530,584,067,833,784,961,226,236,392 (≈ 2.531e+27) |
 
 ---
 
@@ -194,6 +195,9 @@ Tracked when a starting value $n$ takes more total steps to reach $1$ than any p
 | 48,575,069,253,735 (≈ 4.858e+13) | 1,638 | 13 | `***/****...` |  |
 | 51,173,735,510,107 (≈ 5.117e+13) | 1,651 | 13 | `**/***/*...` |  |
 | 60,650,353,197,163 (≈ 6.065e+13) | 1,659 | 5 | `**/*/` |  |
+| 80,867,137,596,217 (≈ 8.087e+13) | 1,662 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 60,650,353,197,163) |
+| 100,759,293,214,567 (≈ 1.008e+14) | 1,820 | 101 | `***/****...` |  |
+| 134,345,724,286,089 (≈ 1.343e+14) | 1,823 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 100,759,293,214,567) |
 
 \* Note: The successor value $Q$ is not itself a historical steps peak (a counter-example to direct peak-to-peak prediction). See [3x_plus_1_over_4_path_investigation.md](file:///home/mev/source/ai/hailstone/doc/3x_plus_1_over_4_path_investigation.md) for the mathematical analysis.
 
