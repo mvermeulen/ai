@@ -35,12 +35,12 @@ check_cxx_compiler_flag("-mavx512f -mavx512cd -mavx512dq" COMPILER_SUPPORTS_AVX5
 if(COMPILER_SUPPORTS_AVX512)
     message(STATUS "AVX-512 compiler support detected. Vectorized CPU search will be compiled.")
     add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
-    set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512cd -mavx512dq")
+    set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-O3 -march=native -mavx512f -mavx512cd -mavx512dq")
     target_compile_definitions(hailstone_cpu PRIVATE HAS_AVX512_COMPILER_SUPPORT)
     
     # Profile CPU target
     add_executable(hailstone_cpu_profile cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
-    set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512cd -mavx512dq")
+    set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-O3 -march=native -mavx512f -mavx512cd -mavx512dq")
     target_compile_definitions(hailstone_cpu_profile PRIVATE HAS_AVX512_COMPILER_SUPPORT)
 else()
     message(WARNING "Compiler does not support AVX-512 flags. Vectorized search will be disabled.")

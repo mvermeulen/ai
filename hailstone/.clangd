@@ -1,7 +1,11 @@
 CompileFlags:
+  Compiler: /usr/lib/llvm-21/bin/clang++
   Add:
     - -Wno-unknown-warning-option
     - -Wno-user-defined-literals
     - -Wno-ignored-attributes
-    - -I/home/mev/source/ai/hailstone/.clangd_includes
-    - -I/usr/lib/gcc/x86_64-linux-gnu/15/include
+---
+If:
+  PathMatch: .*cpu_search_avx512\.cpp
+Diagnostics:
+  Suppress: ["*"]

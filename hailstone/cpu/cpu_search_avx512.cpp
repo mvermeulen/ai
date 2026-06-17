@@ -99,13 +99,23 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
             __m512i v_curr = _mm512_load_epi64(lane_curr);
             __m512i v_steps = _mm512_load_epi64(lane_steps);
             __m512i v_max_val = _mm512_load_epi64(lane_max_val);
-            __m512i v_dropped = _mm512_setzero_si512(); // 0: not dropped below start, -1: dropped
 
-            __m512i v_poly_width_mask = _mm512_set1_epi64(1 << POLY_WIDTH);
+            // Hoist loop-invariant vector constants outside the while loop
+            const __m512i v_zero = _mm512_setzero_si512();
+            const __m512i v_one = _mm512_set1_epi64(1);
+            const __m512i v_minus_one = _mm512_set1_epi64(-1LL);
+            const __m512i v_63 = _mm512_set1_epi64(63);
+            const __m512i v_1050 = _mm512_set1_epi64(1050);
+            const __m512i v_overflow_limit = _mm512_set1_epi64(OVERFLOW_LIMIT);
+            const __m512i v_block_limit = _mm512_set1_epi64(0x100000000ULL);
+            const __m512i v_init_max_steps = _mm512_set1_epi64(init_max_steps);
+            const __m512i v_poly_width_mask = _mm512_set1_epi64(1 << POLY_WIDTH);
+
+            __m512i v_dropped = v_zero; // 0: not dropped below start, -1: dropped
 
             while (active_mask != 0) {
                 // Safeguard against 64-bit overflow (curr > OVERFLOW_LIMIT)
-                __mmask8 overflow_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, _mm512_set1_epi64(OVERFLOW_LIMIT), _MM_CMPINT_GT);
+                __mmask8 overflow_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, v_overflow_limit, _MM_CMPINT_GT);
                 if (overflow_mask != 0) {
                     _mm512_store_epi64(lane_curr, v_curr);
                     _mm512_store_epi64(lane_steps, v_steps);
@@ -148,15 +158,15 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
 
                 // Update dropped status for active lanes using current v_curr before the step
                 __mmask8 dropped_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, v_start_val, _MM_CMPINT_LT);
-                v_dropped = _mm512_mask_blend_epi64(dropped_mask, v_dropped, _mm512_set1_epi64(-1LL));
+                v_dropped = _mm512_mask_blend_epi64(dropped_mask, v_dropped, v_minus_one);
 
                 // Check termination conditions (Escape & Prune) BEFORE Collatz math
                 __mmask8 escape_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, v_poly_width_mask, _MM_CMPINT_LT);
 
-                __mmask8 dropped_bits = _mm512_mask_cmp_epi64_mask(active_mask, v_dropped, _mm512_setzero_si512(), _MM_CMPINT_NE);
-                __mmask8 in_block_0_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, _mm512_set1_epi64(0x100000000ULL), _MM_CMPINT_LT);
-                __m512i v_steps_offset = _mm512_add_epi64(v_steps, _mm512_set1_epi64(1050));
-                __mmask8 pruned_bits = _mm512_mask_cmp_epu64_mask(active_mask & dropped_bits & in_block_0_mask, v_steps_offset, _mm512_set1_epi64(init_max_steps), _MM_CMPINT_LT);
+                __mmask8 dropped_bits = _mm512_mask_cmp_epi64_mask(active_mask, v_dropped, v_zero, _MM_CMPINT_NE);
+                __mmask8 in_block_0_mask = _mm512_mask_cmp_epu64_mask(active_mask, v_curr, v_block_limit, _MM_CMPINT_LT);
+                __m512i v_steps_offset = _mm512_add_epi64(v_steps, v_1050);
+                __mmask8 pruned_bits = _mm512_mask_cmp_epu64_mask(active_mask & dropped_bits & in_block_0_mask, v_steps_offset, v_init_max_steps, _MM_CMPINT_LT);
 
                 __mmask8 completed_mask = escape_mask | pruned_bits;
 
@@ -216,23 +226,23 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
                 if (active_mask != 0) {
                     // Collatz math: next_val = 3 * curr_val + 1
                     __m512i v_next = _mm512_add_epi64(_mm512_slli_epi64(v_curr, 1), v_curr);
-                    v_next = _mm512_add_epi64(v_next, _mm512_set1_epi64(1));
+                    v_next = _mm512_add_epi64(v_next, v_one);
 
                     // Update max value for lanes that have NOT dropped below start
-                    __mmask8 not_dropped_mask = _mm512_mask_cmp_epi64_mask(active_mask, v_dropped, _mm512_setzero_si512(), _MM_CMPINT_EQ);
+                    __mmask8 not_dropped_mask = _mm512_mask_cmp_epi64_mask(active_mask, v_dropped, v_zero, _MM_CMPINT_EQ);
                     v_max_val = _mm512_mask_max_epu64(v_max_val, not_dropped_mask, v_max_val, v_next);
 
                     // ctz = 63 - lzcnt(next & -next)
-                    __m512i v_neg = _mm512_sub_epi64(_mm512_setzero_si512(), v_next);
+                    __m512i v_neg = _mm512_sub_epi64(v_zero, v_next);
                     __m512i v_lowest_bit = _mm512_and_si512(v_next, v_neg);
                     __m512i v_lz = _mm512_lzcnt_epi64(v_lowest_bit);
-                    __m512i v_ctz = _mm512_sub_epi64(_mm512_set1_epi64(63), v_lz);
+                    __m512i v_ctz = _mm512_sub_epi64(v_63, v_lz);
 
                     // Shift right variable
                     v_curr = _mm512_srlv_epi64(v_next, v_ctz);
 
                     // Steps increment = ctz + 1
-                    __m512i v_inc = _mm512_add_epi64(v_ctz, _mm512_set1_epi64(1));
+                    __m512i v_inc = _mm512_add_epi64(v_ctz, v_one);
                     v_steps = _mm512_mask_add_epi64(v_steps, active_mask, v_steps, v_inc);
                 }
 
