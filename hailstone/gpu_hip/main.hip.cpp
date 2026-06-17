@@ -213,7 +213,7 @@ int main(int argc, char* argv[]) {
     bool checkpoint_enabled = true;
     bool save_checkpoint_enabled = true;
     std::string checkpoint_file = "hailstone.chk";
-    int cutoff_width = 24;
+    int cutoff_width = 20;
 
     std::vector<std::string> positional_args;
 
