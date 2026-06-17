@@ -5,8 +5,7 @@ import json
 import threading
 import time
 import urllib.parse
-import urllib.request
-import urllib.error
+import socket
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingTCPServer
 
@@ -20,30 +19,122 @@ DEFAULT_THROUGHPUT = {
     "hip": 300.0
 }
 
-def http_get(url, timeout=2):
+def tcp_exchange(address, cmd, payload=None, timeout=2.0):
     try:
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8")), None
-    except urllib.error.URLError as e:
-        return None, str(e.reason)
+        host, port = address.split(":")
+        port = int(port)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
+        
+        request = f"{cmd}\n"
+        if payload:
+            request += payload
+            if not request.endswith("\n"):
+                request += "\n"
+                
+        sock.sendall(request.encode("utf-8"))
+        
+        response = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+            
+        sock.close()
+        return json.loads(response.decode("utf-8")), None
     except Exception as e:
         return None, str(e)
 
-def http_post(url, data, timeout=2):
+def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, job_id, expected_timeout):
     try:
-        json_data = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(
-            url, 
-            data=json_data,
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8")), None
-    except urllib.error.URLError as e:
-        return None, str(e.reason)
+        host, port = address.split(":")
+        port = int(port)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(expected_timeout)
+        sock.connect((host, port))
+        
+        with state.lock:
+            if address in state.active_jobs and state.active_jobs[address]["job_id"] == job_id:
+                state.active_jobs[address]["socket"] = sock
+        
+        request = f"COMPUTE {backend} {start} {end} {cutoff}\n{checkpoint_payload}\n__END_CHECKPOINT__\n"
+        sock.sendall(request.encode("utf-8"))
+        
+        buffer = ""
+        checkpoint_data = ""
+        in_checkpoint = False
+        metrics = {
+            "elapsed_seconds": 0.0,
+            "numbers_checked": 0,
+            "steps_computed": 0,
+            "throughput_m_numbers_s": 0.0
+        }
+        
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            buffer += chunk.decode("utf-8")
+            
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                
+                if line == "__BEGIN_CHECKPOINT__":
+                    in_checkpoint = True
+                elif line == "__END_CHECKPOINT__":
+                    in_checkpoint = False
+                elif in_checkpoint:
+                    checkpoint_data += line + "\n"
+                else:
+                    if "Elapsed Time:" in line:
+                        val = line.split(":", 1)[1].replace("s", "").strip()
+                        metrics["elapsed_seconds"] = float(val)
+                    elif "Kernel Execution Time:" in line:
+                        val = line.split(":", 1)[1].replace("ms", "").strip()
+                        metrics["elapsed_seconds"] = float(val) / 1000.0
+                    elif "Numbers Checked:" in line:
+                        metrics["numbers_checked"] = int(line.split(":", 1)[1].strip())
+                    elif "Steps Computed:" in line:
+                        metrics["steps_computed"] = int(line.split(":", 1)[1].strip())
+                    elif "Throughput:" in line:
+                        val = line.split(":", 1)[1].replace("M numbers/s", "").strip()
+                        metrics["throughput_m_numbers_s"] = float(val)
+        
+        sock.close()
+        
+        if checkpoint_data:
+            print(f"[Success] Job {job_id} completed on {address} in {metrics['elapsed_seconds']:.2f}s.")
+            state.merge_worker_checkpoint(checkpoint_data)
+            with state.lock:
+                state.total_numbers_checked += metrics["numbers_checked"]
+                state.total_steps_computed += metrics["steps_computed"]
+                state.elapsed_seconds += metrics["elapsed_seconds"]
+                state.active_jobs.pop(address, None)
+                worker = state.workers.get(address)
+                if worker:
+                    worker["status"] = "online"
+        else:
+            print(f"[Failed] Job {job_id} failed on {address}: Socket closed before checkpoint received.")
+            with state.lock:
+                if address in state.active_jobs and state.active_jobs[address]["job_id"] == job_id:
+                    state.failed_chunks.append((start, end))
+                    state.active_jobs.pop(address, None)
+                    worker = state.workers.get(address)
+                    if worker and worker["status"] != "offline":
+                        worker["status"] = "online"
+
     except Exception as e:
-        return None, str(e)
+        print(f"[Failed] Job {job_id} exception on {address}: {e}")
+        with state.lock:
+            if address in state.active_jobs and state.active_jobs[address]["job_id"] == job_id:
+                state.failed_chunks.append((start, end))
+                state.active_jobs.pop(address, None)
+                worker = state.workers.get(address)
+                if worker and worker["status"] != "offline":
+                    worker["status"] = "online"
 
 class ControllerState:
     def __init__(self, checkpoint_path=DEFAULT_CHECKPOINT):
@@ -104,6 +195,12 @@ class ControllerState:
                     "last_seen": 0.0
                 }
                 print(f"Registered worker: {address}")
+
+    def remove_worker(self, address):
+        with self.lock:
+            if address in self.workers:
+                del self.workers[address]
+                print(f"Removed worker: {address}")
 
     def load_checkpoint(self):
         if not os.path.exists(self.checkpoint_path):
@@ -308,8 +405,7 @@ def background_scheduler():
         try:
             # 1. Health check & update workers state
             for worker_addr in list(state.workers.keys()):
-                url = f"http://{worker_addr}/status"
-                data, err = http_get(url, timeout=1.5)
+                data, err = tcp_exchange(worker_addr, "STATUS", timeout=1.5)
                 
                 with state.lock:
                     w = state.workers[worker_addr]
@@ -318,7 +414,7 @@ def background_scheduler():
                         if w["error_count"] >= 3:
                             w["status"] = "offline"
                     else:
-                        w["status"] = "busy" if data["status"] == "searching" else "online"
+                        w["status"] = "busy" if data["status"] == "busy" else "online"
                         w["backends"] = data["backends"]
                         w["cpu_cores"] = data["cpu_cores"]
                         w["system_load"] = data["system_load"]
@@ -339,42 +435,19 @@ def background_scheduler():
                     reason = "went offline" if is_offline else "timed out"
                     print(f"[Warning] Job {job['job_id']} on {worker_addr} {reason}. Re-queuing range [{job['start_num']}, {job['end_num']}].")
                     
-                    # Request cancellation from daemon asynchronously (best effort)
-                    threading.Thread(target=http_post, args=(f"http://{worker_addr}/api/cancel", {})).start()
+                    sock = job.get("socket")
+                    if sock:
+                        try:
+                            sock.close()
+                        except:
+                            pass
                     
                     with state.lock:
                         state.failed_chunks.append((job["start_num"], job["end_num"]))
                         state.active_jobs.pop(worker_addr, None)
                         if worker and worker["status"] != "offline":
                             worker["status"] = "online"
-                else:
-                    # Job is running. Poll job status
-                    url = f"http://{worker_addr}/api/job/{job['job_id']}"
-                    res, err = http_get(url, timeout=1.5)
-                    if not err and res:
-                        status = res.get("status")
-                        if status == "completed":
-                            print(f"[Success] Job {job['job_id']} completed on {worker_addr} in {res['elapsed_seconds']:.2f}s.")
-                            
-                            # Merge peak results
-                            state.merge_worker_checkpoint(res["checkpoint_data"])
-                            
-                            # Update stats
-                            with state.lock:
-                                state.total_numbers_checked += res["numbers_checked"]
-                                state.total_steps_computed += res["steps_computed"]
-                                state.elapsed_seconds += res["elapsed_seconds"]
-                                state.active_jobs.pop(worker_addr, None)
-                                if worker:
-                                    worker["status"] = "online"
-                        elif status == "failed":
-                            print(f"[Failed] Job {job['job_id']} failed on {worker_addr}: {res.get('error')}")
-                            with state.lock:
-                                state.failed_chunks.append((job["start_num"], job["end_num"]))
-                                state.active_jobs.pop(worker_addr, None)
-                                if worker:
-                                    worker["status"] = "online"
-
+            
             # 3. Dispatch work if scheduler is active
             with state.lock:
                 run_scheduler = state.is_running
@@ -418,34 +491,23 @@ def background_scheduler():
                             # Prepare start checkpoint data
                             checkpoint_payload = state.serialize_peaks_string()
                             
-                            dispatch_payload = {
-                                "job_id": job_id,
-                                "start_num": str(start),
-                                "end_num": str(end),
-                                "backend": backend,
-                                "cutoff_width": cutoff_width,
-                                "checkpoint_data": checkpoint_payload
-                            }
-                            
                             print(f"Dispatching range [{start}, {end}] to {worker_addr} (expected run: {expected_run:.1f}s, timeout: {timeout_dur:.1f}s)...")
                             
-                            url = f"http://{worker_addr}/api/search"
-                            res, err = http_post(url, dispatch_payload, timeout=2.0)
-                            
                             with state.lock:
-                                if err:
-                                    print(f"Error dispatching job to {worker_addr}: {err}")
-                                    # Restore chunk
-                                    state.failed_chunks.append(chunk_range)
-                                else:
-                                    worker["status"] = "busy"
-                                    state.active_jobs[worker_addr] = {
-                                        "job_id": job_id,
-                                        "start_num": start,
-                                        "end_num": end,
-                                        "start_time": time.time(),
-                                        "timeout": time.time() + timeout_dur
-                                    }
+                                worker["status"] = "busy"
+                                state.active_jobs[worker_addr] = {
+                                    "job_id": job_id,
+                                    "start_num": start,
+                                    "end_num": end,
+                                    "start_time": time.time(),
+                                    "timeout": time.time() + timeout_dur,
+                                    "socket": None
+                                }
+                            
+                            t = threading.Thread(target=tcp_worker_thread, args=(
+                                worker_addr, backend, start, end, cutoff_width, checkpoint_payload, job_id, timeout_dur))
+                            t.daemon = True
+                            t.start()
             
             # Check if everything is finished
             with state.lock:
@@ -630,7 +692,12 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                 # Cancel all running jobs on workers
                 for worker_addr, job in list(state.active_jobs.items()):
                     print(f"Cancelling job {job['job_id']} on {worker_addr}...")
-                    threading.Thread(target=http_post, args=(f"http://{worker_addr}/api/cancel", {})).start()
+                    sock = job.get("socket")
+                    if sock:
+                        try:
+                            sock.close()
+                        except:
+                            pass
                 
                 state.active_jobs = {}
                 state.failed_chunks = []
@@ -645,6 +712,15 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                 return
             state.add_worker(address)
             self.send_json({"status": "registered", "address": address})
+            return
+
+        elif path == "/api/daemons/remove":
+            address = body.get("address")
+            if not address:
+                self.send_json({"error": "Missing 'address' in body"}, 400)
+                return
+            state.remove_worker(address)
+            self.send_json({"status": "removed", "address": address})
             return
 
         self.send_json({"error": "Not Found"}, 404)
@@ -672,7 +748,7 @@ def main():
                 state.add_worker(addr)
     else:
         # Default fallback to register local daemon
-        state.add_worker("localhost:5000")
+        state.add_worker("localhost:5429")
 
     # Start scheduling background thread
     sched_thread = threading.Thread(target=background_scheduler)

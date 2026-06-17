@@ -116,7 +116,7 @@
                     </div>
                     <div class="card-body">
                         <form id="daemon-form" class="inline-form">
-                            <input type="text" id="daemon-address" required placeholder="e.g. 192.168.1.50:5000">
+                            <input type="text" id="daemon-address" required placeholder="e.g. 192.168.1.50:5429">
                             <button type="submit" class="btn btn-secondary">Register</button>
                         </form>
                     </div>
@@ -203,11 +203,17 @@
             </div>
             <div class="modal-body">
                 <h3>1. Launch Worker Daemons</h3>
-                <p>On each participating machine, compile the search binaries and start the daemon:</p>
+                <p>To easily deploy the C++ daemon to Ubuntu/Debian machines, build and install the Debian package:</p>
                 <div class="code-block">
-                    <pre><code>python3 distributed/daemon.py --port 5000</code></pre>
+                    <pre><code>./distributed/package_deb.sh
+# Copy the .deb to worker machines
+sudo dpkg -i hailstoned_1.0.0_amd64.deb</code></pre>
                 </div>
-                <p class="desc">The daemon automatically runs startup micro-benchmarks on available backends (CPU, Vulkan, HIP) to register throughput.</p>
+                <p class="desc">This installs the <code>hailstoned</code> daemon as an <code>xinetd</code> service running automatically on port 5429. The daemon automatically runs startup micro-benchmarks on available backends (CPU, Vulkan, HIP) to register throughput.</p>
+                <p>Alternatively, you can compile and start it standalone:</p>
+                <div class="code-block">
+                    <pre><code>./build/hailstoned --port 5429</code></pre>
+                </div>
 
                 <h3>2. Register Workers</h3>
                 <p>Add workers by submitting their <code>IP:Port</code> in the <strong>"Add Worker Daemon"</strong> section, or define them on startup of the controller:</p>

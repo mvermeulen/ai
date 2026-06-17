@@ -142,10 +142,13 @@ function renderWorkers(workers, activeBackend) {
                         <span class="worker-addr">${addr}</span>
                         <span class="worker-cores">${w.cpu_cores || '?'} Cores | Load: ${loadStr}</span>
                     </div>
-                    <span class="status-indicator">
-                        <span class="dot ${statusClass}"></span>
-                        ${w.status.toUpperCase()}
-                    </span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="status-indicator">
+                            <span class="dot ${statusClass}"></span>
+                            ${w.status.toUpperCase()}
+                        </span>
+                        <button onclick="removeWorker('${addr}')" class="btn btn-icon" style="color: #ff4b4b; background: transparent; border: none; font-size: 16px; cursor: pointer; padding: 0 4px;" title="Remove worker">&times;</button>
+                    </div>
                 </div>
                 ${activeJobHtml}
                 <div class="worker-body">
@@ -256,6 +259,21 @@ document.getElementById('daemon-form').addEventListener('submit', async (e) => {
         alert(`Error registering worker: ${err.message}`);
     }
 });
+
+window.removeWorker = async function(address) {
+    if (!confirm(`Are you sure you want to remove worker ${address}?`)) return;
+    try {
+        const response = await fetch('/api/daemons/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.dumps({ address })
+        });
+        if (!response.ok) throw new Error('Failed to remove worker');
+        updateDashboard();
+    } catch (err) {
+        alert(`Error removing worker: ${err.message}`);
+    }
+};
 
 // Initial load & Polling Loop
 updateDashboard();

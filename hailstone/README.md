@@ -218,28 +218,28 @@ The project includes support for building profiling targets with `-g` and `-fno-
 
 ## Distributed Search Mode
 
-The distributed search mode splits the Collatz peak search range across a cluster of worker machines. It comprises two main Python programs that use only standard libraries (zero installation required on workers):
+The distributed search mode splits the Collatz peak search range across a cluster of worker machines. It comprises a highly optimized C++ daemon and a Python central controller:
 
-1. **Worker Daemon (`distributed/daemon.py`)**: Runs on each worker machine. It auto-detects compiled binaries (CPU, Vulkan, HIP), runs startup micro-benchmarks to register local capabilities, and runs search partitions as subprocesses.
+1. **Worker Daemon (`hailstoned`)**: A high-performance C++ daemon that runs on each worker machine. It auto-detects compiled binaries (CPU, Vulkan, HIP), runs startup micro-benchmarks to register local capabilities, and communicates with the central controller via a raw TCP socket protocol.
 2. **Central Controller (`distributed/controller.py`)**: Runs on the coordinator machine. It partitions the search range dynamically based on workers' throughputs, schedules tasks, manages timeouts (fault tolerance), merges peaks using a strict sorting/filtering algorithm, and hosts a premium Web UI.
 
 ### Step-by-Step Setup
 
-1. **Build the C++ binaries** on all nodes (workers and controller):
+1. **Package and Deploy the Daemon** to all worker machines:
+   On a build machine, run the Debian packager script to compile the binaries and generate a `.deb` package containing the daemon and an `xinetd` service configuration:
    ```bash
-   mkdir -p build && cd build
-   cmake -DCMAKE_BUILD_TYPE=Release ..
-   make -j$(nproc)
+   ./distributed/package_deb.sh
    ```
-
-2. **Run Worker Daemons** on the participating nodes:
+   Copy the generated `hailstoned_1.0.0_amd64.deb` to your worker machines and install it:
    ```bash
-   python3 distributed/daemon.py --port 5000
+   sudo dpkg -i hailstoned_1.0.0_amd64.deb
+   sudo apt-get install -f  # To install any missing dependencies like xinetd
    ```
+   *Alternatively, you can build the binaries manually (`make hailstoned hailstone_cpu`) and run `./build/hailstoned --port 5429` as a standalone background process.*
 
-3. **Start the Controller** on the host server:
+2. **Start the Controller** on the host server:
    ```bash
-   python3 distributed/controller.py --workers worker1_ip:5000,worker2_ip:5000 --port 8080 --checkpoint hailstone_distributed.chk
+   python3 distributed/controller.py --workers worker1_ip:5429,worker2_ip:5429 --port 8080 --checkpoint hailstone_distributed.chk
    ```
 
 4. **Monitor and Control via Web UI**:

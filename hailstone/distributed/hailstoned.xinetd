@@ -1,0 +1,13 @@
+service hailstoned
+{
+        disable         = no
+        type            = UNLISTED
+        socket_type     = stream
+        protocol        = tcp
+        wait            = no
+        user            = nobody
+        server          = /usr/bin/hailstoned
+        port            = 5429
+        instances       = 50
+        per_source      = 10
+}
