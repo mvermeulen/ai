@@ -47,13 +47,13 @@ For $P$ to be a valid odd integer starting value:
 
 ## 3. Analysis of Steps Peaks
 
-An empirical analysis of the 97 historical steps peaks in the range `[3, 8,796,093,022,208]` reveals that **21 steps peaks** start with the `*/` prefix. 
+An empirical analysis of the 110 historical steps peaks in the range `[3, 281,474,976,710,656]` (up to $2^{48}$, see `golden_48.chk`) reveals that **26 steps peaks** start with the `*/` prefix. 
 
-Of these 21 peaks:
-- **15 peaks** are direct extensions of an existing steps peak $Q$ in the database.
-- **6 peaks** are "counter-examples" because the corresponding value $Q = (3P+1)/4$ is **not** a steps peak.
+Of these 26 peaks:
+- **19 peaks** are direct extensions of an existing steps peak $Q$ in the database.
+- **7 peaks** are "counter-examples" because the corresponding value $Q = (3P+1)/4$ is **not** a steps peak.
 
-### Table of the 21 `*/` Steps Peaks
+### Table of the 26 `*/` Steps Peaks
 The following table lists all steps peaks $P$ starting with `*/`, the calculated successor $Q = (3P+1)/4$, and whether $Q$ is a steps peak.
 
 | Peak $P$ | Total Steps | Successor $Q = \frac{3P+1}{4}$ | Steps of $Q$ | Is $Q$ a Steps Peak? |
@@ -79,12 +79,17 @@ The following table lists all steps peaks $P$ starting with `*/`, the calculated
 | 568,847,878,633 | 1,324 | 426,635,908,975 | 1,321 | **Yes** (Peak 426,635,908,975) |
 | 2,775,669,024,745 | 1,440 | 2,081,751,768,559 | 1,437 | **Yes** (Peak 2,081,751,768,559) |
 | 3,700,892,032,993 | 1,443 | 2,775,669,024,745 | 1,440 | **Yes** (Peak 2,775,669,024,745) |
+| 10,516,884,736,489 | 1,566 | 7,887,663,552,367 | 1,563 | **Yes** (Peak 7,887,663,552,367) |
+| 14,022,512,981,985 | 1,569 | 10,516,884,736,489 | 1,566 | **Yes** (Peak 10,516,884,736,489) |
+| 26,262,557,464,201 | 1,588 | 19,696,918,098,151 | 1,585 | No (Counter-example) |
+| 80,867,137,596,217 | 1,662 | 60,650,353,197,163 | 1,659 | **Yes** (Peak 60,650,353,197,163) |
+| 134,345,724,286,089 | 1,823 | 100,759,293,214,567 | 1,820 | **Yes** (Peak 100,759,293,214,567) |
 
 ---
 
 ## 4. Resolving the Counter-Examples
 
-The discovery of 6 counter-examples (such as $P=25$ leading to $Q=19$) suggests at first glance that we cannot predict all `*/` peaks solely from the steps peaks table. However, a deeper mathematical analysis reveals a consistent, elegant rule that resolves these counter-examples.
+The discovery of 7 counter-examples (such as $P=25$ leading to $Q=19$) suggests at first glance that we cannot predict all `*/` peaks solely from the steps peaks table. However, a deeper mathematical analysis reveals a consistent, elegant rule that resolves these counter-examples.
 
 ### The Pseudo-Peak Minimality Rule
 
@@ -116,7 +121,7 @@ Therefore, **no such $Q' < Q$ with $Q' \equiv 1 \pmod 3$ can exist.**
 
 We have introduced a new prediction heuristic: when an even steps peak $E$ is confirmed, we check if $E + 1$ has the same trajectory path (i.e. they merge at the same step count). If they do, we generate predictions using $E + 1$ as a virtual confirmed steps peak.
 
-Applying this heuristic to the 6 counter-examples:
+Applying this heuristic to the 7 counter-examples:
 1. **$P=25$ (Successor $Q=19$, Competitor $E=18$):**
    $18$ is an even steps peak (20 steps). Since $18$ and $19$ merge at 22 with the exact same step count (5 steps), they have the same path. We use $19 \equiv 1 \pmod 3$ to predict $P = \frac{4(19)-1}{3} = 25$ (23 steps). **(Found!)**
 2. **$P=73$ (Successor $Q=55$, Competitor $E=54$):**
@@ -124,13 +129,13 @@ Applying this heuristic to the 6 counter-examples:
 3. **$P=169,941,673$ (Successor $Q=127,456,255$, Competitor $E=127,456,254$):**
    $127,456,254$ is an even steps peak (950 steps). Since $127,456,254$ and $127,456,255$ merge at $1,837,442,495$ with the exact same step count (22 steps), they have the same path. We use $127,456,255 \equiv 1 \pmod 3$ to predict $P = \frac{4(127,456,255)-1}{3} = 169,941,673$ (953 steps). **(Found!)**
 
-For the remaining three counter-examples ($P=313, 649, 1,501,353$), their competitors ($231, 327, 1,117,065$) are odd. Because the competitors are odd, there is no even steps peak $E$ to serve as a starting point for this heuristic.
+For the remaining four counter-examples ($P=313, 649, 1,501,353, 26,262,557,464,201$), their competitors ($231, 327, 1,117,065, 19,536,224,150,271$) are odd. Because the competitors are odd, there is no even steps peak $E$ to serve as a starting point for this heuristic.
 
-**Summary:** With the new heuristic, **3 out of the 6** previously unpredicted counter-examples are now successfully predicted.
+**Summary:** With the new heuristic, **3 out of the 7** previously unpredicted counter-examples are now successfully predicted.
 
-### Analysis of the 6 Counter-Examples
+### Analysis of the 7 Counter-Examples
 
-Let us verify this rule for the 6 counter-examples by finding the smaller competitor $Q'' < Q$ that prevents $Q$ from being a steps peak:
+Let us verify this rule for the 7 counter-examples by finding the smaller competitor $Q'' < Q$ that prevents $Q$ from being a steps peak:
 
 1. **$P=25 \to Q=19$** ($S(19) = 20$):
    - $19 \equiv 1 \pmod 3$.
@@ -156,10 +161,14 @@ Let us verify this rule for the 6 counter-examples by finding the smaller compet
    - $127,456,255 \equiv 1 \pmod 3$.
    - The competitor is **$127,456,254$** ($127,456,254 < 127,456,255$, $127,456,254 \equiv 0 \pmod 3$, $S(127,456,254) = 950$).
    - Since $127,456,254 \equiv 0 \pmod 3$, it has no odd predecessor. Hence, $P=169,941,673$ remains a steps peak.
+7. **$P=26,262,557,464,201 \to Q=19,696,918,098,151$** ($S(19,696,918,098,151) = 1585$):
+   - $19,696,918,098,151 \equiv 1 \pmod 3$.
+   - The competitor is **$19,536,224,150,271$** ($19,536,224,150,271 < 19,696,918,098,151$, $19,536,224,150,271 \equiv 0 \pmod 3$, $S(19,536,224,150,271) = 1585$).
+   - Since $19,536,224,150,271 \equiv 0 \pmod 3$, it has no odd predecessor. Hence, $P=26,262,557,464,201$ remains a steps peak.
 
 ---
 
-## 5. Detailed Convergence Analysis for the 6 Counter-Examples
+## 5. Detailed Convergence Analysis for the 7 Counter-Examples
 
 When we pull back a pseudo-peak $Q$ to construct a steps peak candidate $P = \frac{4Q-1}{3}$, we find that $P$ is a steps peak but $Q$ is not. This is because $Q$ has a smaller even competitor $Q'$ with the same or higher steps count. To understand how these candidates behave, we track at which intermediate value $V$ their trajectories merge with a path of a previously computed steps peak $R < P$.
 
@@ -248,6 +257,20 @@ Because they share the value $V$, their mathematical trajectories from that poin
   - $P$ trajectory: `169,941,673 -> 254,912,510 -> 127,456,255 -> 191,184,383 -> ... (7 intermediate steps) ... -> 4,899,846,653 -> 7,349,769,980 -> 3,674,884,990 -> 1,837,442,495`
   - $R$ trajectory: `63,728,127 -> 95,592,191 -> 143,388,287 -> 215,082,431 -> ... (4 intermediate steps) ... -> 1,633,282,217 -> 2,449,923,326 -> 1,224,961,663 -> 1,837,442,495`
 - **Notation Match**: Suffixes match exactly.
+
+### Counter-Example $P = 26,262,557,464,201$
+- **Earliest Merging Steps Peak**: $R = 14,022,512,981,985$
+- **Convergence Value $V$**: `21,033,769,472,978`
+- **Steps to Reach $V$**:
+  - For $P = 26,262,557,464,201$: reaches $V$ after `13` steps
+  - For $R = 14,022,512,981,985$: reaches $V$ after `1` steps
+- **Unique Prefix Paths before Merge**:
+  - Path prefix for $P$: `*/***/***/*//`
+  - Path prefix for $R$: `*`
+- **Value Trajectory before Merge**:
+  - $P$ trajectory: `26,262,557,464,201 -> 39,393,836,196,302 -> 19,696,918,098,151 -> 29,545,377,147,227 -> 44,318,065,720,841 -> 66,477,098,581,262 -> 33,238,549,290,631 -> 49,857,823,935,947 -> 74,786,735,903,921 -> 112,180,103,855,882 -> 56,090,051,927,941 -> 84,135,077,891,912 -> 42,067,538,945,956 -> 21,033,769,472,978`
+  - $R$ trajectory: `14,022,512,981,985 -> 21,033,769,472,978`
+- **Notation Match**: Trajectories match mathematically from $V$, but string representations differ due to peak/stopping notation markers.
 
 ---
 
