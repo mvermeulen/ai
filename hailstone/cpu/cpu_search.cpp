@@ -12,6 +12,7 @@ inline int omp_get_num_threads() { return 1; }
 #include <stdexcept>
 #include <cassert>
 #include <map>
+#include <cstdlib>
 
 #ifndef POLY_WIDTH
 #define POLY_WIDTH 8
@@ -470,6 +471,15 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
     uint128 curr_start = start_num;
     bool force_sequential = false;
 
+    auto last_report_time = std::chrono::steady_clock::now();
+    double report_interval = 3600.0;
+    const char* env_interval = std::getenv("HAILSTONE_REPORT_INTERVAL");
+    if (env_interval) {
+        try {
+            report_interval = std::stod(env_interval);
+        } catch (...) {}
+    }
+
     while (curr_start <= end_num) {
         int num_threads = omp_get_max_threads();
         if (num_threads < 1) num_threads = 1;
@@ -632,6 +642,17 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
             }
             predictor.prune_predictions_less_than(curr_start);
         }
+
+        // Time-based progress update
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_report_time).count() >= report_interval) {
+            uint64_t current_block = (curr_start.high << 32) | (curr_start.low >> 32);
+            uint64_t start_block = (start_num.high << 32) | (start_num.low >> 32);
+            uint64_t blocks_searched = current_block - start_block;
+            std::cout << "[Progress Update] Blocks searched: " << blocks_searched
+                      << ", Current block: " << current_block << std::endl;
+            last_report_time = now;
+        }
     }
 }
 
@@ -659,6 +680,15 @@ void cpu_search_blocks_gt_0_suffix_first(uint128 start_num, uint128 end_num,
 
     uint128 curr_start = start_num;
     bool force_sequential = false;
+
+    auto last_report_time = std::chrono::steady_clock::now();
+    double report_interval = 3600.0;
+    const char* env_interval = std::getenv("HAILSTONE_REPORT_INTERVAL");
+    if (env_interval) {
+        try {
+            report_interval = std::stod(env_interval);
+        } catch (...) {}
+    }
 
     while (curr_start <= end_num) {
         int num_threads = omp_get_max_threads();
@@ -860,6 +890,17 @@ void cpu_search_blocks_gt_0_suffix_first(uint128 start_num, uint128 end_num,
                 predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
             }
             predictor.prune_predictions_less_than(curr_start);
+        }
+
+        // Time-based progress update
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_report_time).count() >= report_interval) {
+            uint64_t current_block = (curr_start.high << 32) | (curr_start.low >> 32);
+            uint64_t start_block = (start_num.high << 32) | (start_num.low >> 32);
+            uint64_t blocks_searched = current_block - start_block;
+            std::cout << "[Progress Update] Blocks searched: " << blocks_searched
+                      << ", Current block: " << current_block << std::endl;
+            last_report_time = now;
         }
     }
 }

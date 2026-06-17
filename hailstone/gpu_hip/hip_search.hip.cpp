@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <map>
+#include <cstdlib>
 
 __constant__ uint32_t d_steps_table[256];
 __constant__ poly d_fpoly_table[256];
@@ -552,6 +553,15 @@ void hip_search_range(
     double total_kernel_time = 0.0;
     uint64_t total_odds_checked = 0;
 
+    auto last_report_time = std::chrono::steady_clock::now();
+    double report_interval = 3600.0;
+    const char* env_interval = std::getenv("HAILSTONE_REPORT_INTERVAL");
+    if (env_interval) {
+        try {
+            report_interval = std::stod(env_interval);
+        } catch (...) {}
+    }
+
     while (current_chunk_start <= end) {
         uint128 current_chunk_end = current_chunk_start + uint128(CHUNK_SIZE - 1);
         if (current_chunk_end > end) {
@@ -685,6 +695,17 @@ void hip_search_range(
         }
 
         current_chunk_start = current_chunk_start + uint128(CHUNK_SIZE);
+
+        // Time-based progress update
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_report_time).count() >= report_interval) {
+            uint64_t current_block = (current_chunk_start.high << 32) | (current_chunk_start.low >> 32);
+            uint64_t start_block = (start.high << 32) | (start.low >> 32);
+            uint64_t blocks_searched = current_block - start_block;
+            std::cout << "[Progress Update] Blocks searched: " << blocks_searched
+                      << ", Current block: " << current_block << std::endl;
+            last_report_time = now;
+        }
     }
 
     // Confirm any remaining predictions up to end
@@ -1389,6 +1410,15 @@ void hip_search_range_suffix_first(
     uint64_t total_numbers_processed = 0;
     uint32_t std_allowed_size = (uint32_t)base_suffixes.std_allowed.size();
 
+    auto last_report_time = std::chrono::steady_clock::now();
+    double report_interval = 3600.0;
+    const char* env_interval = std::getenv("HAILSTONE_REPORT_INTERVAL");
+    if (env_interval) {
+        try {
+            report_interval = std::stod(env_interval);
+        } catch (...) {}
+    }
+
     while (current_chunk_start <= end) {
         uint128 current_chunk_end = current_chunk_start + uint128(CHUNK_SIZE - 1);
         if (current_chunk_end > end) {
@@ -1646,6 +1676,17 @@ void hip_search_range_suffix_first(
 
         total_numbers_processed += (current_chunk_end - current_chunk_start + uint128(1)).low;
         current_chunk_start = current_chunk_start + uint128(CHUNK_SIZE);
+
+        // Time-based progress update
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_report_time).count() >= report_interval) {
+            uint64_t current_block = (current_chunk_start.high << 32) | (current_chunk_start.low >> 32);
+            uint64_t start_block = (start.high << 32) | (start.low >> 32);
+            uint64_t blocks_searched = current_block - start_block;
+            std::cout << "[Progress Update] Blocks searched: " << blocks_searched
+                      << ", Current block: " << current_block << std::endl;
+            last_report_time = now;
+        }
     }
 
     // Confirm any remaining predictions up to end

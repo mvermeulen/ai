@@ -4,3 +4,4 @@ CompileFlags:
     - -Wno-user-defined-literals
     - -Wno-ignored-attributes
     - -I/home/mev/source/ai/hailstone/.clangd_includes
+    - -I/usr/lib/gcc/x86_64-linux-gnu/15/include

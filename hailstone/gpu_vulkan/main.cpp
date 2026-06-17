@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <chrono>
 #include <map>
+#include <cstdlib>
 #include <vulkan/vulkan.h>
 #include "steps_table.h"
 #include "peak_predictor.h"
@@ -515,6 +516,15 @@ void vulkan_search_range_internal(
     const unsigned __int128 CHUNK_SIZE = 2000000;
     unsigned __int128 current_chunk_start = start_val;
 
+    auto last_report_time = std::chrono::steady_clock::now();
+    double report_interval = 3600.0;
+    const char* env_interval = std::getenv("HAILSTONE_REPORT_INTERVAL");
+    if (env_interval) {
+        try {
+            report_interval = std::stod(env_interval);
+        } catch (...) {}
+    }
+
     while (current_chunk_start <= end_val) {
         unsigned __int128 current_chunk_end = current_chunk_start + CHUNK_SIZE - 1;
         if (current_chunk_end > end_val) {
@@ -950,6 +960,17 @@ void vulkan_search_range_internal(
     }
 
     current_chunk_start += CHUNK_SIZE;
+
+    // Time-based progress update
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::seconds>(now - last_report_time).count() >= report_interval) {
+        uint64_t current_block = static_cast<uint64_t>(current_chunk_start >> 32);
+        uint64_t start_block = static_cast<uint64_t>(start_val >> 32);
+        uint64_t blocks_searched = current_block - start_block;
+        std::cout << "[Progress Update] Blocks searched: " << blocks_searched
+                  << ", Current block: " << current_block << std::endl;
+        last_report_time = now;
+    }
 }
 
 // Confirm any remaining predictions up to end_val

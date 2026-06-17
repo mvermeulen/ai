@@ -15,9 +15,9 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 14,group,G,2026-06-15,IRN,NZL,2,2,-1,-1,final,Philadelphia
 15,group,H,2026-06-15,ESP,CPV,0,0,-1,-1,final,Miami
 16,group,H,2026-06-15,URU,KSA,1,1,-1,-1,final,Boston
-17,group,I,2026-06-16,FRA,SEN,-1,-1,-1,-1,scheduled,Toronto
-18,group,I,2026-06-16,NOR,IRQ,-1,-1,-1,-1,scheduled,Seattle
-19,group,J,2026-06-16,ARG,ALG,-1,-1,-1,-1,scheduled,Houston
+17,group,I,2026-06-16,FRA,SEN,3,1,-1,-1,final,Toronto
+18,group,I,2026-06-16,NOR,IRQ,4,1,-1,-1,final,Seattle
+19,group,J,2026-06-16,ARG,ALG,3,0,-1,-1,final,Houston
 20,group,L,2026-06-17,ENG,CRO,-1,-1,-1,-1,scheduled,Boston
 21,group,L,2026-06-17,PAN,GHA,-1,-1,-1,-1,scheduled,Atlanta
 22,group,J,2026-06-17,AUT,JOR,-1,-1,-1,-1,scheduled,Kansas City
