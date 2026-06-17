@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <map>
 #include <cstdlib>
+#include <cstdio>
 
 __constant__ uint32_t d_steps_table[256];
 __constant__ poly d_fpoly_table[256];
@@ -864,6 +865,65 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     
     return res;
 }
+
+bool load_allowed_suffixes_binary(const std::string& filepath, BaseDependentSuffixes& suffixes) {
+    FILE* fp = fopen(filepath.c_str(), "rb");
+    if (!fp) return false;
+
+    uint32_t header[7];
+    if (fread(header, sizeof(uint32_t), 7, fp) != 7) {
+        fclose(fp);
+        return false;
+    }
+
+    uint32_t std_count = header[0];
+    uint32_t count_0 = header[1];
+    uint32_t count_2 = header[2];
+    uint32_t count_4 = header[3];
+    suffixes.std_skipped_0 = header[4];
+    suffixes.std_skipped_1 = header[5];
+    suffixes.std_skipped_2 = header[6];
+
+    suffixes.std_allowed.resize(std_count);
+    suffixes.allowed_0.resize(count_0);
+    suffixes.allowed_2.resize(count_2);
+    suffixes.allowed_4.resize(count_4);
+
+    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count ||
+        fread(suffixes.allowed_0.data(), sizeof(uint32_t), count_0, fp) != count_0 ||
+        fread(suffixes.allowed_2.data(), sizeof(uint32_t), count_2, fp) != count_2 ||
+        fread(suffixes.allowed_4.data(), sizeof(uint32_t), count_4, fp) != count_4) {
+        fclose(fp);
+        return false;
+    }
+
+    fclose(fp);
+    return true;
+}
+
+BaseDependentSuffixes load_allowed_suffixes_24() {
+    BaseDependentSuffixes suffixes;
+    std::vector<std::string> paths = {
+        "build/allowed_suffixes_24.bin",
+        "allowed_suffixes_24.bin",
+        "cpu/allowed_suffixes_24.bin",
+        "gpu_vulkan/allowed_suffixes_24.bin"
+    };
+    bool loaded = false;
+    for (const auto& path : paths) {
+        if (load_allowed_suffixes_binary(path, suffixes)) {
+            loaded = true;
+            break;
+        }
+    }
+    if (!loaded) {
+        std::cerr << "\nError: Could not load build-time precomputed allowed_suffixes_24.bin file from any search path!" << std::endl;
+        std::cerr << "Please ensure the binary file was generated and exists." << std::endl;
+        std::exit(1);
+    }
+    return suffixes;
+}
+
 
 template <bool USE_64BIT, bool CHECK_START, bool CHECK_END>
 __global__ void collatz_search_kernel_suffix_first(

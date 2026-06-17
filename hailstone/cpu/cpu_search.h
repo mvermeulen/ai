@@ -48,6 +48,10 @@ std::vector<uint32_t> generate_allowed_suffixes(int width);
 // Generates base-dependent allowed suffixes lists
 BaseDependentSuffixes generate_base_dependent_suffixes(int width);
 
+// Load build-time precomputed 24-bit allowed suffixes
+bool load_allowed_suffixes_binary(const std::string& filepath, BaseDependentSuffixes& suffixes);
+BaseDependentSuffixes load_allowed_suffixes_24();
+
 // Suffix-first search for blocks > 0 (128-bit)
 void cpu_search_range_suffix_first(uint128 start, uint128 end, 
                                    int width,

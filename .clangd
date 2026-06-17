@@ -3,4 +3,5 @@ CompileFlags:
   Add:
     - "--rocm-device-lib-path=/usr/lib/llvm-21/lib/clang/21/amdgcn/bitcode"
     - "-I/usr/lib/gcc/x86_64-linux-gnu/15/include"
+    - "--rocm-path=/usr"
 

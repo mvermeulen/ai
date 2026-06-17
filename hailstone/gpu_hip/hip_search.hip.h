@@ -34,6 +34,8 @@ void hip_search_blocks_gt_0(
 );
 
 BaseDependentSuffixes generate_base_dependent_suffixes(int width);
+bool load_allowed_suffixes_binary(const std::string& filepath, BaseDependentSuffixes& suffixes);
+BaseDependentSuffixes load_allowed_suffixes_24();
 
 void hip_search_range_suffix_first(
     uint128 start,

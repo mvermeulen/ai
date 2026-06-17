@@ -13,6 +13,19 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-O3 -march=native)
 endif()
 
+# Build allowed suffixes generator target
+add_executable(hailstone_gen_allowed_24 tools/gen_allowed_suffixes.cpp)
+
+# Generate allowed suffixes binary file at build time
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/allowed_suffixes_24.bin
+    COMMAND hailstone_gen_allowed_24 ${CMAKE_CURRENT_BINARY_DIR}/allowed_suffixes_24.bin
+    DEPENDS hailstone_gen_allowed_24
+    COMMENT "Precomputing allowed suffixes binary (width 24) at build time"
+)
+
+add_custom_target(generate_suffixes_24 DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/allowed_suffixes_24.bin)
+
 # CPU search target
 find_package(OpenMP REQUIRED)
 
@@ -130,6 +143,19 @@ if(CMAKE_HIP_COMPILER)
     target_include_directories(hailstone_hip_profile PRIVATE include)
     target_compile_options(hailstone_hip_profile PRIVATE -g -fno-omit-frame-pointer)
     target_link_options(hailstone_hip_profile PRIVATE -g -fno-omit-frame-pointer)
-else()
-    message(STATUS "HIP compiler not found. Skipping hailstone_hip target.")
 endif()
+
+# Dependencies on build-time precomputed allowed suffixes
+add_dependencies(hailstone_cpu generate_suffixes_24)
+add_dependencies(hailstone_cpu_profile generate_suffixes_24)
+add_dependencies(hailstone_verify generate_suffixes_24)
+add_dependencies(hailstone_verify_profile generate_suffixes_24)
+if(TARGET hailstone_vulkan)
+    add_dependencies(hailstone_vulkan generate_suffixes_24)
+    add_dependencies(hailstone_vulkan_profile generate_suffixes_24)
+endif()
+if(TARGET hailstone_hip)
+    add_dependencies(hailstone_hip generate_suffixes_24)
+    add_dependencies(hailstone_hip_profile generate_suffixes_24)
+endif()
+

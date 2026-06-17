@@ -207,8 +207,7 @@ void print_help() {
                "checkpoints at the end of search\n"
             << "  --use-avx512, --use_avx512           Force enable AVX-512 vectorized search\n"
             << "  --no-avx512, --no_avx512             Force disable AVX-512 vectorized search\n"
-            << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with "
-               "given bit-width (8, 12, 16, or 20)\n\n"
+            << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, 20, or 24)\n\n"
             << "Note: Positional parameters can still be used as a fallback if "
                "no named options are provided.\n";
 }
@@ -247,7 +246,7 @@ int main(int argc, char *argv[]) {
   bool save_checkpoint_enabled = true;
   bool avx512_enabled = true;
   std::string checkpoint_file = "hailstone.chk";
-  int cutoff_width = 20;
+  int cutoff_width = 24;
 
   std::vector<std::string> positional_args;
 
@@ -328,8 +327,8 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  if (cutoff_width != 0 && cutoff_width != 8 && cutoff_width != 12 && cutoff_width != 16 && cutoff_width != 20) {
-    std::cerr << "Error: --cutoff-width must be 8, 12, 16, or 20." << std::endl;
+  if (cutoff_width != 0 && cutoff_width != 8 && cutoff_width != 12 && cutoff_width != 16 && cutoff_width != 20 && cutoff_width != 24) {
+    std::cerr << "Error: --cutoff-width must be 8, 12, 16, 20, or 24." << std::endl;
     return 1;
   }
 
@@ -415,9 +414,16 @@ int main(int argc, char *argv[]) {
 
   if (cutoff_width > 0) {
     std::cout << "Using Suffix-First Search with width: " << cutoff_width << std::endl;
-    std::cout << "Generating allowed suffixes... " << std::flush;
-    auto base_suffixes = generate_base_dependent_suffixes(cutoff_width);
-    std::cout << base_suffixes.std_allowed.size() << " allowed suffixes generated." << std::endl;
+    BaseDependentSuffixes base_suffixes;
+    if (cutoff_width == 24) {
+        std::cout << "Loading allowed suffixes... " << std::flush;
+        base_suffixes = load_allowed_suffixes_24();
+        std::cout << base_suffixes.std_allowed.size() << " allowed suffixes loaded." << std::endl;
+    } else {
+        std::cout << "Generating allowed suffixes... " << std::flush;
+        base_suffixes = generate_base_dependent_suffixes(cutoff_width);
+        std::cout << base_suffixes.std_allowed.size() << " allowed suffixes generated." << std::endl;
+    }
 
     uint128 threshold(1 << cutoff_width);
     if (start < threshold) {

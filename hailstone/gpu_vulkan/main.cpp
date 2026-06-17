@@ -10,6 +10,7 @@
 #include <chrono>
 #include <map>
 #include <cstdlib>
+#include <cstdio>
 #include <vulkan/vulkan.h>
 #include "steps_table.h"
 #include "peak_predictor.h"
@@ -169,6 +170,65 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     
     return res;
 }
+
+bool load_allowed_suffixes_binary(const std::string& filepath, BaseDependentSuffixes& suffixes) {
+    FILE* fp = fopen(filepath.c_str(), "rb");
+    if (!fp) return false;
+
+    uint32_t header[7];
+    if (fread(header, sizeof(uint32_t), 7, fp) != 7) {
+        fclose(fp);
+        return false;
+    }
+
+    uint32_t std_count = header[0];
+    uint32_t count_0 = header[1];
+    uint32_t count_2 = header[2];
+    uint32_t count_4 = header[3];
+    suffixes.std_skipped_0 = header[4];
+    suffixes.std_skipped_1 = header[5];
+    suffixes.std_skipped_2 = header[6];
+
+    suffixes.std_allowed.resize(std_count);
+    suffixes.allowed_0.resize(count_0);
+    suffixes.allowed_2.resize(count_2);
+    suffixes.allowed_4.resize(count_4);
+
+    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count ||
+        fread(suffixes.allowed_0.data(), sizeof(uint32_t), count_0, fp) != count_0 ||
+        fread(suffixes.allowed_2.data(), sizeof(uint32_t), count_2, fp) != count_2 ||
+        fread(suffixes.allowed_4.data(), sizeof(uint32_t), count_4, fp) != count_4) {
+        fclose(fp);
+        return false;
+    }
+
+    fclose(fp);
+    return true;
+}
+
+BaseDependentSuffixes load_allowed_suffixes_24() {
+    BaseDependentSuffixes suffixes;
+    std::vector<std::string> paths = {
+        "build/allowed_suffixes_24.bin",
+        "allowed_suffixes_24.bin",
+        "cpu/allowed_suffixes_24.bin",
+        "gpu_vulkan/allowed_suffixes_24.bin"
+    };
+    bool loaded = false;
+    for (const auto& path : paths) {
+        if (load_allowed_suffixes_binary(path, suffixes)) {
+            loaded = true;
+            break;
+        }
+    }
+    if (!loaded) {
+        std::cerr << "\nError: Could not load build-time precomputed allowed_suffixes_24.bin file from any search path!" << std::endl;
+        std::cerr << "Please ensure the binary file was generated and exists." << std::endl;
+        std::exit(1);
+    }
+    return suffixes;
+}
+
 
 // Error check helper
 #define VK_CHECK(x) \
@@ -1076,7 +1136,7 @@ void print_help() {
               << "  --checkpoint, --checkpoint_file FILE Checkpoint file path (default: hailstone.chk)\n"
               << "  --no-checkpoint, --no_checkpoint     Disable saving and restoring checkpoints\n"
               << "  --no-save-checkpoint, --no_save_checkpoint Disable saving checkpoints at the end of search\n"
-              << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, or 20)\n\n"
+              << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, 20, or 24)\n\n"
               << "Note: Positional parameters can still be used as a fallback if no named options are provided.\n";
 }
 
@@ -1106,7 +1166,7 @@ int main(int argc, char* argv[]) {
     bool checkpoint_enabled = true;
     bool save_checkpoint_enabled = true;
     std::string checkpoint_file = "hailstone.chk";
-    int cutoff_width = 20;
+    int cutoff_width = 24;
 
     std::vector<std::string> positional_args;
 
@@ -1183,8 +1243,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (cutoff_width != 0 && cutoff_width != 8 && cutoff_width != 12 && cutoff_width != 16 && cutoff_width != 20) {
-        std::cerr << "Error: --cutoff-width must be 8, 12, 16, or 20." << std::endl;
+    if (cutoff_width != 0 && cutoff_width != 8 && cutoff_width != 12 && cutoff_width != 16 && cutoff_width != 20 && cutoff_width != 24) {
+        std::cerr << "Error: --cutoff-width must be 8, 12, 16, 20, or 24." << std::endl;
         return 1;
     }
 
@@ -1417,8 +1477,13 @@ int main(int argc, char* argv[]) {
 
     if (cutoff_width > 0) {
         std::cout << "Using Suffix-First Search with width: " << cutoff_width << std::endl;
-        std::cout << "Generating allowed suffixes... " << std::flush;
-        base_suffixes = generate_base_dependent_suffixes(cutoff_width);
+        if (cutoff_width == 24) {
+            std::cout << "Loading allowed suffixes... " << std::flush;
+            base_suffixes = load_allowed_suffixes_24();
+        } else {
+            std::cout << "Generating allowed suffixes... " << std::flush;
+            base_suffixes = generate_base_dependent_suffixes(cutoff_width);
+        }
         
         offset_0 = 0;
         size_0 = static_cast<uint32_t>(base_suffixes.allowed_0.size());
@@ -1432,10 +1497,17 @@ int main(int argc, char* argv[]) {
         size_4 = static_cast<uint32_t>(base_suffixes.allowed_4.size());
         allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_4.begin(), base_suffixes.allowed_4.end());
 
-        std::cout << base_suffixes.std_allowed.size() << " std, " 
-                  << size_0 << " mod0, " 
-                  << size_2 << " mod2, " 
-                  << size_4 << " mod4 allowed suffixes generated." << std::endl;
+        if (cutoff_width == 24) {
+            std::cout << base_suffixes.std_allowed.size() << " std, " 
+                      << size_0 << " mod0, " 
+                      << size_2 << " mod2, " 
+                      << size_4 << " mod4 allowed suffixes loaded." << std::endl;
+        } else {
+            std::cout << base_suffixes.std_allowed.size() << " std, " 
+                      << size_0 << " mod0, " 
+                      << size_2 << " mod2, " 
+                      << size_4 << " mod4 allowed suffixes generated." << std::endl;
+        }
     } else {
         allowed_suffixes_packed = { 0 };
     }
