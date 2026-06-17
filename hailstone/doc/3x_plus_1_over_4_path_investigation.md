@@ -269,3 +269,50 @@ Instead of relying on a priori mathematical pruning (which risks missing peaks i
 > [!WARNING]
 > Because of the difficulty in proving that a pseudo-peak is dominated without calculating the competitor's path, using the $(3x+1)/4$ relation as a hard a priori pruning filter is currently **not recommended**. It introduces a high risk of missing record-breaking steps peaks due to the lack of a provable way to guarantee that we will have found a competitor that predicts the peak.
 
+---
+
+## 7. Experiment: Predicting from Peaks or Ties
+
+### Hypothesis
+In high-performance sequential search, our current prediction rules generate a candidate $P = \frac{4Q-1}{3}$ only when its successor $Q$ is a **confirmed steps peak** (or if the even peak $+ 1$ heuristic applies).
+We propose expanding the prediction rule: **generate predictions from any starting value $Q$ that either sets a new steps peak record OR ties the current steps peak record.**
+
+Since exceptions are caused by $Q$ being blocked by a smaller competitor $Q' < Q$ with an equal or greater step count, $Q$ must tie or fall below the current peak. If $Q$ ties the peak record, this expanded rule should generate the prediction for $P$.
+
+### Experimental Results on the 6 Exceptions
+We ran a sequential simulation of the search up to the database limit. The table below evaluates whether the modified prediction rule catches the 6 exceptions (plus the 7th exception at 26T, which falls outside the database range of `[3, 8,796,093,022,208]`):
+
+| Exception Peak $P$ | Successor $Q = \frac{3P+1}{4}$ | Steps of $Q$ | Peak Steps at $Q$ (Competitor) | Does $Q$ Tie Peak? | Predicted by Original (with $+1$ heuristic)? | Predicted by Modified (Peaks or Ties)? |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **25** | 19 | 20 | 20 (from 18) | **Yes** | **Yes** (from 18+1) | **Yes** (from 19) |
+| **73** | 55 | 112 | 112 (from 54) | **Yes** | **Yes** (from 54+1) | **Yes** (from 55) |
+| **313** | 235 | 127 | 127 (from 231) | **Yes** | No | **Yes** (from 235) |
+| **649** | 487 | 141 | 143 (from 327) | **No** (141 < 143) | No | **No** |
+| **1,501,353** | 1,126,015 | 527 | 527 (from 1,117,065) | **Yes** | No | **Yes** (from 1,126,015) |
+| **169,941,673** | 127,456,255 | 950 | 950 (from 127,456,254) | **Yes** | **Yes** (from 127,456,254+1) | **Yes** (from 127,456,255) |
+| **26,262,557,464,201** | 19,696,918,098,151 | 1585 | 1585 (from 19,536,224,150,271) | **Yes** | No | **Yes** (from 19,696,918,098,151) |
+
+#### Analysis of the Missed Exception ($P = 649$)
+The only exception missed by the modified rule is **649**. 
+- Its successor is $Q = 487$ (141 steps).
+- When the search reaches 487, the active peak record is 143 steps (set by 327).
+- Because 141 is strictly less than 143, 487 does not tie the peak. Therefore, the tie-based rule does not generate a prediction from 487, and 649 remains unpredicted.
+
+### Discussion & Implications for Suffix Cutoff
+
+1. **Inherent Incompleteness**: While the modified rule ("predict from peaks or ties") successfully catches **5 out of 6** database exceptions (and **6 out of 7** overall exceptions), the fact that **649** remains unpredicted is a critical blocker. 
+   - For $P = 649$, its successor $Q = 487$ takes 141 steps, which is strictly less than the active record of 143 steps (set by 327).
+   - Because 487 is neither a peak nor a tie, no local heuristic based on active peak records can ever generate the prediction for 649.
+   - Consequently, there is no mathematical guarantee that similar, larger exceptions do not exist in unsearched ranges (e.g. beyond 175T).
+
+2. **Absolute Priority of Correctness**: 
+   - In a Collatz search engine, correctness is the absolute highest priority. Missing even a single peak is completely unacceptable.
+   - Arguing that exceptions like 649 are "rare" or using a hardcoded list of known exceptions only works for ranges that have already been searched and verified. It is mathematically invalid to extrapolate this to unsearched ranges.
+   - Therefore, any optimization strategy (such as a suffix cutoff) that relies on the completeness of peak predictions to prune the search space is **mathematically unsafe** and must be rejected.
+
+3. **Recommendation**:
+   - **Pruning Strategy**: A priori search space pruning must be restricted **solely** to mathematically complete and proven rules. This includes the Vermeulen polynomial (`fpoly`) collision/even-class exclusion and modulo 6 checks, which do not depend on step counts or peak records and are guaranteed to preserve all peaks.
+   - **Role of the Peak Predictor**: The `PeakPredictor` should **never** be used to prune the search space. Its usage must remain strictly limited to verification (e.g., cross-referencing and confirming predicted peaks during execution) or as a diagnostic tool, where incompleteness does not threaten the correctness of the search.
+
+
+
