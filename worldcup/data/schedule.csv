@@ -20,7 +20,7 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 19,group,J,2026-06-16,ARG,ALG,3,0,-1,-1,final,Houston
 20,group,L,2026-06-17,ENG,CRO,-1,-1,-1,-1,scheduled,Boston
 21,group,L,2026-06-17,PAN,GHA,-1,-1,-1,-1,scheduled,Atlanta
-22,group,J,2026-06-17,AUT,JOR,-1,-1,-1,-1,scheduled,Kansas City
+22,group,J,2026-06-17,AUT,JOR,3,1,-1,-1,final,Kansas City
 23,group,K,2026-06-17,POR,COD,-1,-1,-1,-1,scheduled,San Francisco
 24,group,K,2026-06-17,COL,UZB,-1,-1,-1,-1,scheduled,Los Angeles
 25,group,A,2026-06-18,MEX,KOR,-1,-1,-1,-1,scheduled,Guadalajara
