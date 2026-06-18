@@ -120,7 +120,14 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
                         worker["throughput_history"] = {}
                     if backend not in worker["throughput_history"]:
                         worker["throughput_history"][backend] = []
-                    worker["throughput_history"][backend].append(metrics["throughput_m_numbers_s"])
+                    
+                    range_size = end - start + 1
+                    if metrics["elapsed_seconds"] > 0:
+                        range_throughput = (range_size / 1000000.0) / metrics["elapsed_seconds"]
+                        worker["throughput_history"][backend].append(range_throughput)
+                    else:
+                        worker["throughput_history"][backend].append(metrics["throughput_m_numbers_s"])
+                        
                     if len(worker["throughput_history"][backend]) > 5:
                         worker["throughput_history"][backend].pop(0)
         else:

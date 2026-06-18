@@ -12,10 +12,21 @@ function formatBigInt(str) {
 
 // Helper: Format seconds to readable duration
 function formatDuration(sec) {
+    if (sec === null || sec === undefined || !isFinite(sec) || sec < 0) return '--';
     if (sec < 60) return `${sec.toFixed(1)}s`;
-    const mins = Math.floor(sec / 60);
-    const secs = Math.floor(sec % 60);
-    return `${mins}m ${secs}s`;
+    
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    
+    let parts = [];
+    if (d > 0) parts.push(`${d}d`);
+    if (h > 0) parts.push(`${h}h`);
+    if (d === 0 && m > 0) parts.push(`${m}m`);
+    if (d === 0 && h === 0 && s > 0) parts.push(`${s}s`);
+    
+    return parts.join(' ') || '0s';
 }
 
 // Tab Switching
@@ -61,6 +72,28 @@ async function updateDashboard() {
         const speed = data.progress.combined_throughput_m_s || 0;
         document.getElementById('header-throughput').textContent = `${speed.toFixed(2)} M/s`;
         
+        // Calculate ETA
+        const endNum = data.task.end_num;
+        const etaContainer = document.getElementById('eta-container');
+        if (data.is_running && speed > 0 && endNum !== "1000000000000000000000000000000") {
+            try {
+                const remainingNums = BigInt(endNum) - BigInt(data.progress.next_search_num) + 1n;
+                const speedNumsPerSec = Number(speed) * 1000000;
+                if (remainingNums > 0n) {
+                    const remainingSecs = Number(remainingNums) / speedNumsPerSec;
+                    document.getElementById('header-eta').textContent = formatDuration(remainingSecs);
+                    etaContainer.style.display = 'flex';
+                } else {
+                    document.getElementById('header-eta').textContent = '--';
+                    etaContainer.style.display = 'flex';
+                }
+            } catch (e) {
+                etaContainer.style.display = 'none';
+            }
+        } else {
+            etaContainer.style.display = 'none';
+        }
+        
         document.getElementById('stats-checked').textContent = formatBigInt(data.progress.total_numbers_checked.toString());
         document.getElementById('stats-steps').textContent = formatBigInt(data.progress.total_steps_computed.toString());
         document.getElementById('stats-time').textContent = formatDuration(data.progress.elapsed_seconds);
@@ -105,7 +138,18 @@ function renderWorkers(workers, activeBackend) {
         return;
     }
     
-    let html = '';
+    // Prevent blinking effect by reusing existing DOM elements instead of full innerHTML replace
+    Array.from(container.children).forEach(child => {
+        if (child.classList.contains('empty-state')) {
+            child.remove();
+            return;
+        }
+        const addr = child.getAttribute('data-addr');
+        if (!workers[addr]) {
+            child.remove();
+        }
+    });
+
     keys.forEach(addr => {
         const w = workers[addr];
         const statusClass = w.status === 'online' ? 'online' : (w.status === 'busy' ? 'busy' : 'offline');
@@ -114,7 +158,13 @@ function renderWorkers(workers, activeBackend) {
         let benchmarkHtml = '';
         if (w.backends) {
             Object.keys(w.backends).forEach(b => {
-                const speed = w.backends[b];
+                let speed = w.backends[b];
+                
+                if (w.throughput_history && w.throughput_history[b] && w.throughput_history[b].length > 0) {
+                    const hist = w.throughput_history[b];
+                    speed = hist.reduce((sum, val) => sum + val, 0) / hist.length;
+                }
+                
                 if (speed !== null) {
                     const activeClass = b === activeBackend && w.status === 'busy' ? 'active' : '';
                     benchmarkHtml += `<span class="bench-tag ${activeClass}">${b.toUpperCase()}: ${speed.toFixed(1)} M/s</span>`;
@@ -135,32 +185,37 @@ function renderWorkers(workers, activeBackend) {
             `;
         }
 
-        html += `
-            <div class="worker-card animate-fade-in">
-                <div class="worker-header">
-                    <div class="worker-identity">
-                        <span class="worker-addr">${addr}</span>
-                        <span class="worker-cores">${w.cpu_cores || '?'} Cores | Load: ${loadStr}</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span class="status-indicator">
-                            <span class="dot ${statusClass}"></span>
-                            ${w.status.toUpperCase()}
-                        </span>
-                        <button onclick="removeWorker('${addr}')" class="btn btn-icon" style="color: #ff4b4b; background: transparent; border: none; font-size: 16px; cursor: pointer; padding: 0 4px;" title="Remove worker">&times;</button>
-                    </div>
+        const htmlContent = `
+            <div class="worker-header">
+                <div class="worker-identity">
+                    <span class="worker-addr">${addr}</span>
+                    <span class="worker-cores">${w.cpu_cores || '?'} Cores | Load: ${loadStr}</span>
                 </div>
-                ${activeJobHtml}
-                <div class="worker-body">
-                    <div class="worker-benchmarks">
-                        ${benchmarkHtml || '<span class="bench-tag">No backends discovered</span>'}
-                    </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="status-indicator">
+                        <span class="dot ${statusClass}"></span>
+                        ${w.status.toUpperCase()}
+                    </span>
+                    <button onclick="removeWorker('${addr}')" class="btn btn-icon" style="color: #ff4b4b; background: transparent; border: none; font-size: 16px; cursor: pointer; padding: 0 4px;" title="Remove worker">&times;</button>
+                </div>
+            </div>
+            ${activeJobHtml}
+            <div class="worker-body">
+                <div class="worker-benchmarks">
+                    ${benchmarkHtml || '<span class="bench-tag">No backends discovered</span>'}
                 </div>
             </div>
         `;
+        
+        let card = document.querySelector(`.worker-card[data-addr="${addr.replace(/:/g, '\\:')}"]`);
+        if (!card) {
+            card = document.createElement('div');
+            card.className = 'worker-card animate-fade-in';
+            card.setAttribute('data-addr', addr);
+            container.appendChild(card);
+        }
+        card.innerHTML = htmlContent;
     });
-    
-    container.innerHTML = html;
 }
 
 // Render specific peaks table
