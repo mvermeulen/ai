@@ -645,11 +645,29 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                     self.send_json({"error": "Search is already running"}, 400)
                     return
                 
-                start_num = int(body.get("start_num", 3))
-                end_num = int(body.get("end_num", 100000))
                 backend = body.get("backend", "cpu")
                 cutoff_width = int(body.get("cutoff_width", 20))
                 target_duration = float(body.get("target_duration", 1.0))
+
+                start_val = body.get("start_num")
+                if start_val is None or start_val == "":
+                    start_num = state.next_search_num
+                else:
+                    try:
+                        start_num = int(start_val)
+                    except Exception:
+                        self.send_json({"error": "Invalid start number"}, 400)
+                        return
+
+                end_val = body.get("end_num")
+                if end_val is None or end_val == "":
+                    end_num = 10**30  # Effectively continuous
+                else:
+                    try:
+                        end_num = int(end_val)
+                    except Exception:
+                        self.send_json({"error": "Invalid end number"}, 400)
+                        return
 
                 if start_num < 3 or end_num < start_num:
                     self.send_json({"error": "Invalid start/end numbers"}, 400)

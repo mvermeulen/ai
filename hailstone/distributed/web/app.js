@@ -195,24 +195,36 @@ function renderPeaksTable(tableId, peaks, metricType) {
 document.getElementById('config-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     
+    const startStr = document.getElementById('start-num').value;
+    const endStr = document.getElementById('end-num').value;
+
+    function parseNum(s) {
+        if (!s || s.trim() === '') return null;
+        s = s.replace(/,/g, '').trim();
+        const pMatch = s.match(/^(\d+)\s*(?:\^|\*\*)\s*(\d+)$/);
+        if (pMatch) {
+            try { return (BigInt(pMatch[1]) ** BigInt(pMatch[2])).toString(); } catch(e) {}
+        }
+        if (/^\d+e\d+$/i.test(s)) return BigInt(Number(s)).toString();
+        try { return BigInt(s).toString(); } catch(e) { return null; }
+    }
+
+    const startNum = parseNum(startStr);
+    const endNum = parseNum(endStr);
+
     const payload = {
-        start_num: parseInt(document.getElementById('start-num').value.replace(/,/g, '')),
-        end_num: parseInt(document.getElementById('end-num').value.replace(/,/g, '')),
         backend: document.getElementById('backend').value,
         cutoff_width: parseInt(document.getElementById('cutoff-width').value),
         target_duration: parseFloat(document.getElementById('target-duration').value)
     };
-
-    if (isNaN(payload.start_num) || isNaN(payload.end_num)) {
-        alert('Please enter valid numeric values for starting and ending numbers.');
-        return;
-    }
+    if (startNum) payload.start_num = startNum;
+    if (endNum) payload.end_num = endNum;
 
     try {
         const response = await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.dumps(payload)
+            body: JSON.stringify(payload)
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to start search');
@@ -247,7 +259,7 @@ document.getElementById('daemon-form').addEventListener('submit', async (e) => {
         const response = await fetch('/api/daemons', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.dumps({ address })
+            body: JSON.stringify({ address })
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Failed to add worker');
@@ -266,7 +278,7 @@ window.removeWorker = async function(address) {
         const response = await fetch('/api/daemons/remove', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.dumps({ address })
+            body: JSON.stringify({ address })
         });
         if (!response.ok) throw new Error('Failed to remove worker');
         updateDashboard();
