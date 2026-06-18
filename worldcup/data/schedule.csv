@@ -24,9 +24,9 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 23,group,K,2026-06-17,POR,COD,1,1,-1,-1,final,San Francisco
 24,group,K,2026-06-17,COL,UZB,3,1,-1,-1,final,Los Angeles
 25,group,A,2026-06-18,MEX,KOR,-1,-1,-1,-1,scheduled,Guadalajara
-26,group,A,2026-06-18,RSA,CZE,-1,-1,-1,-1,scheduled,Monterrey
+26,group,A,2026-06-18,RSA,CZE,1,1,-1,-1,final,Monterrey
 27,group,B,2026-06-18,CAN,QAT,-1,-1,-1,-1,scheduled,Vancouver
-28,group,B,2026-06-18,SUI,BIH,-1,-1,-1,-1,scheduled,Toronto
+28,group,B,2026-06-18,SUI,BIH,4,1,-1,-1,final,Toronto
 29,group,D,2026-06-19,USA,AUS,-1,-1,-1,-1,scheduled,Seattle
 30,group,D,2026-06-19,PAR,TUR,-1,-1,-1,-1,scheduled,San Francisco
 31,group,C,2026-06-19,BRA,HAI,-1,-1,-1,-1,scheduled,New York/New Jersey
