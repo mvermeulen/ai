@@ -1,7 +1,40 @@
 #!/bin/bash
 set -e
 
-VERSION="1.0.0"
+derive_version() {
+    local desc
+    desc="$(git describe --tags --long --always --dirty 2>/dev/null || echo "0.0.0-0-gunknown")"
+
+    # Convert common tag format to Debian-compatible version:
+    # v1.2.3-4-gabc1234 -> 1.2.3+4.gabc1234
+    if [[ "$desc" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([0-9a-fA-F]+)(-dirty)?$ ]]; then
+        local base="${BASH_REMATCH[1]}"
+        local count="${BASH_REMATCH[2]}"
+        local hash="${BASH_REMATCH[3]}"
+        local dirty="${BASH_REMATCH[4]}"
+        if [[ "$count" == "0" ]]; then
+            echo "${base}${dirty:+~dirty}"
+        else
+            echo "${base}+${count}.g${hash}${dirty:+~dirty}"
+        fi
+        return
+    fi
+
+    # Fallback for hash-only descriptions.
+    if [[ "$desc" =~ ^([0-9a-fA-F]+)(-dirty)?$ ]]; then
+        local hash="${BASH_REMATCH[1]}"
+        local dirty="${BASH_REMATCH[2]}"
+        echo "0.0.0+git.${hash}${dirty:+~dirty}"
+        return
+    fi
+
+    # Last resort: keep only Debian-safe characters.
+    echo "$desc" | sed -E 's/^v//; s/[^0-9A-Za-z.+:~]+/./g'
+}
+
+VERSION="${VERSION:-$(derive_version)}"
+COMMIT_HASH="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+GIT_DESCRIBE="$(git describe --tags --long --always --dirty 2>/dev/null || echo unknown)"
 BUILD_DIR="build_deb"
 PKG_DIR="${BUILD_DIR}/hailstoned_${VERSION}_amd64"
 
@@ -16,6 +49,7 @@ rm -rf ${BUILD_DIR}
 mkdir -p ${PKG_DIR}/DEBIAN
 mkdir -p ${PKG_DIR}/usr/bin
 mkdir -p ${PKG_DIR}/etc/xinetd.d
+mkdir -p ${PKG_DIR}/usr/share/doc/hailstoned
 
 cp build/hailstoned ${PKG_DIR}/usr/bin/
 cp build/hailstone_cpu ${PKG_DIR}/usr/bin/
@@ -25,14 +59,21 @@ cp build/hailstone_cpu ${PKG_DIR}/usr/bin/
 
 cp distributed/hailstoned.xinetd ${PKG_DIR}/etc/xinetd.d/hailstoned
 
-cat << 'EOF' > ${PKG_DIR}/DEBIAN/control
+cat << EOF > ${PKG_DIR}/usr/share/doc/hailstoned/build-info
+Build commit: ${COMMIT_HASH}
+Git describe: ${GIT_DESCRIBE}
+Build timestamp (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+EOF
+
+cat << EOF > ${PKG_DIR}/DEBIAN/control
 Package: hailstoned
-Version: 1.0.0
+Version: ${VERSION}
 Architecture: amd64
 Maintainer: mev <mev@example.com>
 Depends: xinetd, libc6
 Description: Hailstone Distributed Search Daemon
  A high-performance daemon wrapper for hailstone compute cluster workers.
+ Built from commit: ${COMMIT_HASH}
 EOF
 
 cat << 'EOF' > ${PKG_DIR}/DEBIAN/postinst
@@ -50,3 +91,4 @@ echo "Building Debian package..."
 dpkg-deb --build ${PKG_DIR}
 mv ${BUILD_DIR}/hailstoned_${VERSION}_amd64.deb ./
 echo "Done! Package generated at ./hailstoned_${VERSION}_amd64.deb"
+echo "Source commit: ${COMMIT_HASH} (${GIT_DESCRIBE})"
