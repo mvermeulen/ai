@@ -116,6 +116,13 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
                 worker = state.workers.get(address)
                 if worker:
                     worker["status"] = "online"
+                    if "throughput_history" not in worker:
+                        worker["throughput_history"] = {}
+                    if backend not in worker["throughput_history"]:
+                        worker["throughput_history"][backend] = []
+                    worker["throughput_history"][backend].append(metrics["throughput_m_numbers_s"])
+                    if len(worker["throughput_history"][backend]) > 5:
+                        worker["throughput_history"][backend].pop(0)
         else:
             print(f"[Failed] Job {job_id} failed on {address}: Socket closed before checkpoint received.")
             with state.lock:
@@ -189,6 +196,7 @@ class ControllerState:
                 self.workers[address] = {
                     "status": "offline",
                     "backends": {},
+                    "throughput_history": {},
                     "cpu_cores": 0,
                     "system_load": [0.0, 0.0, 0.0],
                     "error_count": 0,
@@ -465,6 +473,11 @@ def background_scheduler():
                         if throughput is None or throughput == 0:
                             continue # Backend unsupported on worker
                         
+                        if "throughput_history" in worker and backend in worker["throughput_history"]:
+                            hist = worker["throughput_history"][backend]
+                            if hist:
+                                throughput = sum(hist) / len(hist)
+                        
                         # We have an idle worker! Decide next range
                         chunk_range = None
                         with state.lock:
@@ -599,7 +612,12 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                 for w_addr, job in state.active_jobs.items():
                     worker = state.workers.get(w_addr)
                     if worker:
-                        combined_throughput += worker["backends"].get(state.task_backend, 0.0)
+                        t = worker["backends"].get(state.task_backend, 0.0)
+                        if "throughput_history" in worker and state.task_backend in worker["throughput_history"]:
+                            hist = worker["throughput_history"][state.task_backend]
+                            if hist:
+                                t = sum(hist) / len(hist)
+                        combined_throughput += t
 
                 res = {
                     "is_running": state.is_running,

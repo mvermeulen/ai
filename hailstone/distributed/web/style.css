@@ -137,6 +137,7 @@ body {
     font-weight: 700;
     color: var(--accent-blue);
     font-family: var(--font-mono);
+    word-break: break-all;
 }
 
 /* Dashboard Grid Layout */
@@ -376,6 +377,7 @@ select option {
     font-size: 18px;
     font-weight: 700;
     font-family: var(--font-mono);
+    word-break: break-all;
 }
 
 .stat-value.monospace {
