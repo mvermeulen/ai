@@ -207,7 +207,7 @@
                 <div class="code-block">
                     <pre><code>./distributed/package_deb.sh
 # Copy the .deb to worker machines
-sudo dpkg -i hailstoned_1.0.0_amd64.deb</code></pre>
+sudo dpkg -i hailstoned_<version>_amd64.deb</code></pre>
                 </div>
                 <p class="desc">This installs the <code>hailstoned</code> daemon as an <code>xinetd</code> service running automatically on port 5429. The daemon automatically runs startup micro-benchmarks on available backends (CPU, Vulkan, HIP) to register throughput.</p>
                 <p>Alternatively, you can compile and start it standalone:</p>
@@ -226,6 +226,10 @@ sudo dpkg -i hailstoned_1.0.0_amd64.deb</code></pre>
 
                 <h3>4. Fault Tolerance</h3>
                 <p>If a worker node crashes, goes offline, or takes longer than its expected run duration (plus buffer), the controller cancels the task and re-queues the search range, protecting against data loss.</p>
+
+                <h3>5. Flexible Search Mode</h3>
+                <p>The <strong>Start Number</strong> and <strong>End Number</strong> fields support mathematical expressions (e.g. <code>2^32</code>) and scientific notation (e.g. <code>1e12</code>).</p>
+                <p><strong>Continuous & Resume Mode:</strong> You can leave the <strong>Start Number</strong> blank to automatically resume from the loaded checkpoint's current position. Leave the <strong>End Number</strong> blank to run an infinite, continuous search across the cluster.</p>
             </div>
         </div>
     </div>

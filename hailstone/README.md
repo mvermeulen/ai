@@ -230,9 +230,9 @@ The distributed search mode splits the Collatz peak search range across a cluste
    ```bash
    ./distributed/package_deb.sh
    ```
-   Copy the generated `hailstoned_1.0.0_amd64.deb` to your worker machines and install it:
+   Copy the generated Debian package to your worker machines and install it (the script derives the version automatically from git tags, e.g., `hailstoned_1.3.0_amd64.deb`):
    ```bash
-   sudo dpkg -i hailstoned_1.0.0_amd64.deb
+   sudo dpkg -i hailstoned_<version>_amd64.deb
    sudo apt-get install -f  # To install any missing dependencies like xinetd
    ```
    *Alternatively, you can build the binaries manually (`make hailstoned hailstone_cpu`) and run `./build/hailstoned --port 5429` as a standalone background process.*
@@ -245,5 +245,7 @@ The distributed search mode splits the Collatz peak search range across a cluste
 4. **Monitor and Control via Web UI**:
    Open a browser to `http://<controller_ip>:8080`.
    - Configure a search range, select the target backend, adjust the **Target Job Duration** (used to size chunks dynamically), and start/pause searches.
+   - **Flexible Inputs**: The web interface supports math expressions (e.g., `2^32` or `2**32`) and scientific notation (e.g., `1e12`).
+   - **Continuous & Resume Mode**: Leave the **Start Number** blank to automatically resume from the loaded checkpoint. Leave the **End Number** blank to run an infinite continuous search.
    - Discovered peaks are immediately merged and saved to `hailstone_distributed.chk` in real-time. This file is 100% compatible with the standard single-node C++ binaries.
 
