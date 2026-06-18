@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 std::string get_project_dir() {
     // Assuming binary is in build/ or /usr/bin/
@@ -277,8 +278,18 @@ void handle_client(int client_fd) {
 int main(int argc, char* argv[]) {
     int port = 0;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--port" && i + 1 < argc) {
-            port = std::stoi(argv[i+1]);
+        if (std::string(argv[i]) == "--port") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: --port requires a numeric argument" << std::endl;
+                return 1;
+            }
+            try {
+                port = std::stoi(argv[i + 1]);
+            } catch (const std::exception& e) {
+                std::cerr << "Error: invalid --port value '" << argv[i + 1] << "' (" << e.what() << ")" << std::endl;
+                return 1;
+            }
+            ++i;
         }
     }
 
@@ -294,7 +305,10 @@ int main(int argc, char* argv[]) {
 
     // Standalone multi-threaded server mode
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == -1) return 1;
+    if (server_fd == -1) {
+        std::cerr << "Error: socket(AF_INET, SOCK_STREAM) failed: " << strerror(errno) << " (errno=" << errno << ")" << std::endl;
+        return 1;
+    }
 
     int opt = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -304,8 +318,16 @@ int main(int argc, char* argv[]) {
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(port);
 
-    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) return 1;
-    if (listen(server_fd, 10) < 0) return 1;
+    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
+        std::cerr << "Error: bind(0.0.0.0:" << port << ") failed: " << strerror(errno) << " (errno=" << errno << ")" << std::endl;
+        close(server_fd);
+        return 1;
+    }
+    if (listen(server_fd, 10) < 0) {
+        std::cerr << "Error: listen() failed: " << strerror(errno) << " (errno=" << errno << ")" << std::endl;
+        close(server_fd);
+        return 1;
+    }
 
     std::cout << "Standalone hailstoned running on port " << port << std::endl;
 
