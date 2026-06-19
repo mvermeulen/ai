@@ -4,6 +4,12 @@
 #include "uint128.h"
 #include <vector>
 
+#ifdef EXCLUDE_01_SUFFIX
+    #ifndef TRACK_ALMOST_PEAKS
+        #error "EXCLUDE_01_SUFFIX requires TRACK_ALMOST_PEAKS to be enabled!"
+    #endif
+#endif
+
 // Statistics for a single starting value
 struct CollatzStats {
     uint128 start_val;

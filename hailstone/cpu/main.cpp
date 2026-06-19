@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <algorithm>
 #ifdef _OPENMP
 #include <omp.h>
 #else
@@ -438,6 +439,22 @@ int main(int argc, char *argv[]) {
         base_suffixes = generate_base_dependent_suffixes(cutoff_width);
         std::cout << base_suffixes.std_allowed.size() << " allowed suffixes generated." << std::endl;
     }
+
+#ifdef EXCLUDE_01_SUFFIX
+    auto remove_01 = [](uint32_t suffix) { return (suffix & 3) == 1; };
+    auto update_vector = [&](std::vector<uint32_t>& v, uint32_t& skipped_count) {
+        size_t old_size = v.size();
+        v.erase(std::remove_if(v.begin(), v.end(), remove_01), v.end());
+        skipped_count += (old_size - v.size());
+    };
+    update_vector(base_suffixes.allowed_0, base_suffixes.std_skipped_0);
+    update_vector(base_suffixes.allowed_2, base_suffixes.std_skipped_2);
+    update_vector(base_suffixes.allowed_4, base_suffixes.std_skipped_1); // allowed_4 uses std_skipped_1
+
+    size_t old_std_size = base_suffixes.std_allowed.size();
+    base_suffixes.std_allowed.erase(std::remove_if(base_suffixes.std_allowed.begin(), base_suffixes.std_allowed.end(), remove_01), base_suffixes.std_allowed.end());
+    std::cout << "EXCLUDE_01_SUFFIX is ON: Removed " << (old_std_size - base_suffixes.std_allowed.size()) << " suffixes ending in 01." << std::endl;
+#endif
 
     uint128 threshold(1 << cutoff_width);
     if (start < threshold) {

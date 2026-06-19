@@ -18,6 +18,11 @@ if(TRACK_ALMOST_PEAKS)
     add_compile_definitions(TRACK_ALMOST_PEAKS)
 endif()
 
+option(EXCLUDE_01_SUFFIX "Skip 01 suffix in search" OFF)
+if(EXCLUDE_01_SUFFIX)
+    add_compile_definitions(EXCLUDE_01_SUFFIX)
+endif()
+
 # Build allowed suffixes generator target
 add_executable(hailstone_gen_allowed_24 tools/gen_allowed_suffixes.cpp)
 add_executable(hailstone_predictor_study tools/predictor_study.cpp)
