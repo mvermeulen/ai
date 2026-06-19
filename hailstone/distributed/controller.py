@@ -19,6 +19,29 @@ DEFAULT_THROUGHPUT = {
     "hip": 300.0
 }
 
+# Logging settings
+log_lock = threading.Lock()
+log_file_path = None
+
+def log(message):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    prefix = ""
+    message_str = str(message)
+    if message_str.startswith("\n"):
+        prefix = "\n"
+        message_str = message_str[1:]
+    
+    formatted_msg = f"{prefix}[{timestamp}] {message_str}"
+    print(formatted_msg)
+    
+    if log_file_path:
+        with log_lock:
+            try:
+                with open(log_file_path, "a", encoding="utf-8") as f:
+                    f.write(formatted_msg + "\n")
+            except Exception as e:
+                sys.stderr.write(f"[{timestamp}] Error writing to log file {log_file_path}: {e}\n")
+
 def tcp_exchange(address, cmd, payload=None, timeout=2.0):
     try:
         host, port = address.split(":")
@@ -48,6 +71,7 @@ def tcp_exchange(address, cmd, payload=None, timeout=2.0):
         return None, str(e)
 
 def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, job_id, expected_timeout):
+    start_time = time.time()
     try:
         host, port = address.split(":")
         port = int(port)
@@ -106,7 +130,8 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
         sock.close()
         
         if checkpoint_data:
-            print(f"[Success] Job {job_id} completed on {address} in {metrics['elapsed_seconds']:.2f}s.")
+            actual_elapsed = time.time() - start_time
+            log(f"[Success] Job {job_id} completed on {address} in {metrics['elapsed_seconds']:.2f}s (actual controller time: {actual_elapsed:.2f}s).")
             state.merge_worker_checkpoint(checkpoint_data)
             with state.lock:
                 state.total_numbers_checked += metrics["numbers_checked"]
@@ -131,7 +156,8 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
                     if len(worker["throughput_history"][backend]) > 5:
                         worker["throughput_history"][backend].pop(0)
         else:
-            print(f"[Failed] Job {job_id} failed on {address}: Socket closed before checkpoint received.")
+            actual_elapsed = time.time() - start_time
+            log(f"[Failed] Job {job_id} failed on {address} after {actual_elapsed:.2f}s: Socket closed before checkpoint received.")
             with state.lock:
                 if address in state.active_jobs and state.active_jobs[address]["job_id"] == job_id:
                     state.failed_chunks.append((start, end))
@@ -141,7 +167,8 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
                         worker["status"] = "online"
 
     except Exception as e:
-        print(f"[Failed] Job {job_id} exception on {address}: {e}")
+        actual_elapsed = time.time() - start_time
+        log(f"[Failed] Job {job_id} exception on {address} after {actual_elapsed:.2f}s: {e}")
         with state.lock:
             if address in state.active_jobs and state.active_jobs[address]["job_id"] == job_id:
                 state.failed_chunks.append((start, end))
@@ -210,20 +237,20 @@ class ControllerState:
                     "error_count": 0,
                     "last_seen": 0.0
                 }
-                print(f"Registered worker: {address}")
+                log(f"Registered worker: {address}")
 
     def remove_worker(self, address):
         with self.lock:
             if address in self.workers:
                 del self.workers[address]
-                print(f"Removed worker: {address}")
+                log(f"Removed worker: {address}")
 
     def load_checkpoint(self):
         if not os.path.exists(self.checkpoint_path):
-            print(f"No existing checkpoint found at {self.checkpoint_path}. Starting clean.")
+            log(f"No existing checkpoint found at {self.checkpoint_path}. Starting clean.")
             return
         
-        print(f"Loading consolidated checkpoint: {self.checkpoint_path}")
+        log(f"Loading consolidated checkpoint: {self.checkpoint_path}")
         try:
             res = {
                 "last_num": 0,
@@ -280,9 +307,9 @@ class ControllerState:
             
             self.global_peaks = res
             self.next_search_num = res["last_num"] + 1
-            print(f"Loaded peak state successfully. Resuming from starting number: {self.next_search_num}")
+            log(f"Loaded peak state successfully. Resuming from starting number: {self.next_search_num}")
         except Exception as e:
-            print(f"Error reading checkpoint file: {e}")
+            log(f"Error reading checkpoint file: {e}")
 
     def save_checkpoint(self):
         try:
@@ -317,7 +344,7 @@ class ControllerState:
                     f.write("\n")
             # print(f"Saved consolidated checkpoint to {self.checkpoint_path}")
         except Exception as e:
-            print(f"Error saving consolidated checkpoint: {e}")
+            log(f"Error saving consolidated checkpoint: {e}")
 
     def prune_peaks(self):
         # Strictly applies Collatz peak condition to the lists
@@ -479,7 +506,7 @@ def background_scheduler():
                 
                 if is_offline or is_timeout:
                     reason = "went offline" if is_offline else "timed out"
-                    print(f"[Warning] Job {job['job_id']} on {worker_addr} {reason}. Re-queuing range [{job['start_num']}, {job['end_num']}].")
+                    log(f"[Warning] Job {job['job_id']} on {worker_addr} {reason}. Re-queuing range [{job['start_num']}, {job['end_num']}].")
                     
                     sock = job.get("socket")
                     if sock:
@@ -542,7 +569,7 @@ def background_scheduler():
                             # Prepare start checkpoint data
                             checkpoint_payload = state.serialize_peaks_string()
                             
-                            print(f"Dispatching range [{start}, {end}] to {worker_addr} (expected run: {expected_run:.1f}s, timeout: {timeout_dur:.1f}s)...")
+                            log(f"Dispatching range [{start}, {end}] to {worker_addr} (expected run: {expected_run:.1f}s, timeout: {timeout_dur:.1f}s)...")
                             
                             with state.lock:
                                 worker["status"] = "busy"
@@ -563,11 +590,11 @@ def background_scheduler():
             # Check if everything is finished
             with state.lock:
                 if state.is_running and state.next_search_num > task_end and not state.active_jobs and not state.failed_chunks:
-                    print("=== Distributed Search Completed successfully! ===")
+                    log("=== Distributed Search Completed successfully! ===")
                     state.is_running = False
                     
         except Exception as e:
-            print(f"Scheduler exception: {e}")
+            log(f"Scheduler exception: {e}")
             
         time.sleep(1.0)
 
@@ -749,7 +776,7 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                     state.global_peaks["last_num"] = start_num - 1
                 
                 state.is_running = True
-                print(f"=== Starting Distributed Search: [{start_num}, {end_num}] via {backend} ===")
+                log(f"=== Starting Distributed Search: [{start_num}, {end_num}] via {backend} ===")
                 
             self.send_json({"status": "started"})
             return
@@ -760,12 +787,12 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                     self.send_json({"status": "idle", "message": "Search is not currently running"})
                     return
                 
-                print("Stopping distributed search on request...")
+                log("Stopping distributed search on request...")
                 state.is_running = False
                 
                 # Cancel all running jobs on workers
                 for worker_addr, job in list(state.active_jobs.items()):
-                    print(f"Cancelling job {job['job_id']} on {worker_addr}...")
+                    log(f"Cancelling job {job['job_id']} on {worker_addr}...")
                     sock = job.get("socket")
                     if sock:
                         try:
@@ -808,7 +835,13 @@ def main():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to run the controller Web UI on")
     parser.add_argument("--workers", type=str, default="", help="Comma-separated list of worker daemon host:ports")
     parser.add_argument("--checkpoint", type=str, default=DEFAULT_CHECKPOINT, help="Consolidated checkpoint file path")
+    parser.add_argument("--log", type=str, default=None, help="File path to log controller output to")
     args = parser.parse_args()
+
+    # Initialize Logger
+    if args.log:
+        global log_file_path
+        log_file_path = os.path.abspath(args.log)
 
     # Initialize Controller State
     global state
@@ -830,11 +863,11 @@ def main():
     sched_thread.start()
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), ControllerHTTPHandler)
-    print(f"Central controller running on http://localhost:{args.port}")
+    log(f"Central controller running on http://localhost:{args.port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping controller server...")
+        log("\nStopping controller server...")
         server.shutdown()
         server.server_close()
 
