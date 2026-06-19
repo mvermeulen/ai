@@ -87,6 +87,14 @@ TeamOutcome MonteCarlo::simulateIteration(const Tournament& tournament, std::mt1
 
     // 4. Track progression
     TeamOutcome outcome;
+    for (const auto& group : sim.getGroups()) {
+        auto standings = sim.teamsByGroup(group);
+        if (standings.size() > 0) outcome.group1st[standings[0]->abbreviation()]++;
+        if (standings.size() > 1) outcome.group2nd[standings[1]->abbreviation()]++;
+        if (standings.size() > 2) outcome.group3rd[standings[2]->abbreviation()]++;
+        if (standings.size() > 3) outcome.group4th[standings[3]->abbreviation()]++;
+    }
+
     for (const auto& [abbr, team] : sim.allTeams()) {
         outcome.avgGoals[abbr] = team.goalsFor();
         outcome.avgPoints[abbr] = team.points();
@@ -228,6 +236,10 @@ MatchSimulationResults MonteCarlo::simulate(const Tournament& tournament,
 
     // Initialize maps
     for (const auto& [abbr, team] : tournament.allTeams()) {
+        results.group1stProbability[abbr] = 0.0;
+        results.group2ndProbability[abbr] = 0.0;
+        results.group3rdProbability[abbr] = 0.0;
+        results.group4thProbability[abbr] = 0.0;
         results.r32Probability[abbr] = 0.0;
         results.r16Probability[abbr] = 0.0;
         results.qfProbability[abbr] = 0.0;
@@ -256,6 +268,10 @@ MatchSimulationResults MonteCarlo::simulate(const Tournament& tournament,
         #pragma omp for schedule(static)
         for (int i = 0; i < iterations; ++i) {
             TeamOutcome outcome = simulateIteration(tournament, threadRng);
+            for (const auto& [abbr, count] : outcome.group1st) local.group1st[abbr] += count;
+            for (const auto& [abbr, count] : outcome.group2nd) local.group2nd[abbr] += count;
+            for (const auto& [abbr, count] : outcome.group3rd) local.group3rd[abbr] += count;
+            for (const auto& [abbr, count] : outcome.group4th) local.group4th[abbr] += count;
             for (const auto& [abbr, count] : outcome.makeR32) local.makeR32[abbr] += count;
             for (const auto& [abbr, count] : outcome.makeR16) local.makeR16[abbr] += count;
             for (const auto& [abbr, count] : outcome.makeQF) local.makeQF[abbr] += count;
@@ -267,6 +283,10 @@ MatchSimulationResults MonteCarlo::simulate(const Tournament& tournament,
 
         #pragma omp critical
         {
+            for (const auto& [abbr, count] : local.group1st) aggregate.group1st[abbr] += count;
+            for (const auto& [abbr, count] : local.group2nd) aggregate.group2nd[abbr] += count;
+            for (const auto& [abbr, count] : local.group3rd) aggregate.group3rd[abbr] += count;
+            for (const auto& [abbr, count] : local.group4th) aggregate.group4th[abbr] += count;
             for (const auto& [abbr, count] : local.makeR32) aggregate.makeR32[abbr] += count;
             for (const auto& [abbr, count] : local.makeR16) aggregate.makeR16[abbr] += count;
             for (const auto& [abbr, count] : local.makeQF) aggregate.makeQF[abbr] += count;
@@ -284,6 +304,10 @@ MatchSimulationResults MonteCarlo::simulate(const Tournament& tournament,
     }
     for (int i = 0; i < iterations; ++i) {
         TeamOutcome outcome = simulateIteration(tournament, rng_);
+        for (const auto& [abbr, count] : outcome.group1st) aggregate.group1st[abbr] += count;
+        for (const auto& [abbr, count] : outcome.group2nd) aggregate.group2nd[abbr] += count;
+        for (const auto& [abbr, count] : outcome.group3rd) aggregate.group3rd[abbr] += count;
+        for (const auto& [abbr, count] : outcome.group4th) aggregate.group4th[abbr] += count;
         for (const auto& [abbr, count] : outcome.makeR32) aggregate.makeR32[abbr] += count;
         for (const auto& [abbr, count] : outcome.makeR16) aggregate.makeR16[abbr] += count;
         for (const auto& [abbr, count] : outcome.makeQF) aggregate.makeQF[abbr] += count;
@@ -296,6 +320,10 @@ MatchSimulationResults MonteCarlo::simulate(const Tournament& tournament,
 
     // Compute final probabilities
     for (const auto& [abbr, team] : tournament.allTeams()) {
+        results.group1stProbability[abbr] = static_cast<double>(aggregate.group1st[abbr]) / iterations;
+        results.group2ndProbability[abbr] = static_cast<double>(aggregate.group2nd[abbr]) / iterations;
+        results.group3rdProbability[abbr] = static_cast<double>(aggregate.group3rd[abbr]) / iterations;
+        results.group4thProbability[abbr] = static_cast<double>(aggregate.group4th[abbr]) / iterations;
         results.r32Probability[abbr] = static_cast<double>(aggregate.makeR32[abbr]) / iterations;
         results.r16Probability[abbr] = static_cast<double>(aggregate.makeR16[abbr]) / iterations;
         results.qfProbability[abbr] = static_cast<double>(aggregate.makeQF[abbr]) / iterations;

@@ -89,7 +89,8 @@ int main(int argc, char* argv[]) {
         if (command == "status") {
             std::cout << "Computing group standings..." << std::endl;
             tournament.computeStandings();
-            AsciiPrinter::printAllStandings(tournament);
+            auto results = mc.simulate(tournament, 10000, 12345);
+            AsciiPrinter::printAllStandings(tournament, &results);
         } else if (command == "simulate") {
             int iterations = 100000;
             if (argc > 2) {

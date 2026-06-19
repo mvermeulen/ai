@@ -5,8 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <set>
-
-void AsciiPrinter::printAllStandings(const Tournament& tournament) {
+void AsciiPrinter::printAllStandings(const Tournament& tournament, const MatchSimulationResults* simResults) {
     std::vector<std::string> groups = tournament.getGroups();
     std::sort(groups.begin(), groups.end());
 
@@ -27,9 +26,9 @@ void AsciiPrinter::printAllStandings(const Tournament& tournament) {
     for (const auto& group : groups) {
         std::cout << "┌──────────────────────────────────────────────┐\n";
         std::cout << "│ GROUP " << group << "                                      │\n";
-        std::cout << "├──────────────┬──────┬──────┬──────┬──────────┤\n";
-        std::cout << "│ Team         │ Pts  │ GD   │ GF   │ Status   │\n";
-        std::cout << "├──────────────┼──────┼──────┼──────┼──────────┤\n";
+        std::cout << "├──────────────┬──────┬──────┬──────┬──────────────┤\n";
+        std::cout << "│ Team         │ Pts  │ GD   │ GF   │ Status       │\n";
+        std::cout << "├──────────────┼──────┼──────┼──────┼──────────────┤\n";
 
         auto standings = tournament.teamsByGroup(group);
         for (size_t i = 0; i < standings.size(); ++i) {
@@ -41,13 +40,37 @@ void AsciiPrinter::printAllStandings(const Tournament& tournament) {
                 status = "Adv (3rd) ";
             }
 
+            if (simResults != nullptr) {
+                auto it = simResults->r32Probability.find(team->abbreviation());
+                if (it != simResults->r32Probability.end()) {
+                    double r32 = it->second;
+                    double g1 = simResults->group1stProbability.at(team->abbreviation());
+                    double g2 = simResults->group2ndProbability.at(team->abbreviation());
+                    double g3 = simResults->group3rdProbability.at(team->abbreviation());
+
+                    if (g1 >= 0.999999) {
+                        status = "*CLINCH 1ST*";
+                    } else if (g2 >= 0.999999) {
+                        status = "*CLINCH 2ND*";
+                    } else if (g3 >= 0.999999) {
+                        status = "*CLINCH 3RD*";
+                    } else if (g1 + g2 >= 0.999999) {
+                        status = "*CLINCH TOP2";
+                    } else if (r32 >= 0.999999) {
+                        status = "*CLINCH R32*";
+                    } else if (r32 <= 0.000001) {
+                        status = "*ELIMINATED*";
+                    }
+                }
+            }
+
             std::cout << "│ " << std::left << std::setw(12) << team->fullName()
                       << " │ " << std::right << std::setw(4) << team->points()
                       << " │ " << std::setw(4) << team->goalDifference()
                       << " │ " << std::setw(4) << team->goalsFor()
-                      << " │ " << std::left << std::setw(8) << status << " │\n";
+                      << " │ " << std::left << std::setw(12) << status << " │\n";
         }
-        std::cout << "└──────────────┴──────┴──────┴──────┴──────────┘\n\n";
+        std::cout << "└──────────────┴──────┴──────┴──────┴──────────────┘\n\n";
     }
 }
 

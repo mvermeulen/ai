@@ -8,6 +8,10 @@
 #include <random>
 
 struct TeamOutcome {
+    std::map<std::string, int> group1st;
+    std::map<std::string, int> group2nd;
+    std::map<std::string, int> group3rd;
+    std::map<std::string, int> group4th;
     std::map<std::string, int> makeR32;
     std::map<std::string, int> makeR16;
     std::map<std::string, int> makeQF;
@@ -20,6 +24,10 @@ struct TeamOutcome {
 
 struct MatchSimulationResults {
     int totalIterations;
+    std::map<std::string, double> group1stProbability;
+    std::map<std::string, double> group2ndProbability;
+    std::map<std::string, double> group3rdProbability;
+    std::map<std::string, double> group4thProbability;
     std::map<std::string, double> r32Probability;
     std::map<std::string, double> r16Probability;
     std::map<std::string, double> qfProbability;

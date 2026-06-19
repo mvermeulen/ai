@@ -971,8 +971,13 @@ std::string buildDashboardHtml() {
         card.className = 'card';
         let rowsHtml = teams.map((t, idx) => {
           let styleClass = idx < 2 ? 'qualify-top2' : (t.adv_3rd ? 'qualify-3rd' : '');
+          let abbrHtml = `<span class="team-badge">${t.abbr}</span>`;
+          if (t.clinched_status !== "") {
+             let badgeColor = t.clinched_status === "ELIMINATED" ? "var(--danger-color)" : "var(--success-color)";
+             abbrHtml += ` <span style="font-size: 0.65rem; color: ${badgeColor}; border: 1px solid ${badgeColor}; padding: 1px 4px; border-radius: 4px; margin-left: 4px; vertical-align: middle;">${t.clinched_status}</span>`;
+          }
           return `<tr class="${styleClass}">
-            <td><span class="team-badge">${t.abbr}</span></td>
+            <td>${abbrHtml}</td>
             <td>${t.pts}</td>
             <td>${t.gd}</td>
             <td>${t.gf}</td>
@@ -1905,6 +1910,10 @@ std::string WebServer::standingsJson() const {
     Tournament temp = tournament_;
     temp.computeStandings();
 
+    MonteCarlo mc;
+    mc.setModelParameters(baseRate_, alpha_, hostAdvantage_);
+    auto results = mc.simulate(temp, 10000, 12345);
+
     std::vector<std::string> groupsList = temp.getGroups();
     std::sort(groupsList.begin(), groupsList.end());
 
@@ -1935,13 +1944,36 @@ std::string WebServer::standingsJson() const {
             firstTeam = false;
 
             bool adv3rd = bestThirdsAbbr.count(team->abbreviation()) > 0;
+            std::string clinchedStatus = "";
+            auto r32it = results.r32Probability.find(team->abbreviation());
+            if (r32it != results.r32Probability.end()) {
+                double r32 = r32it->second;
+                double g1 = results.group1stProbability.at(team->abbreviation());
+                double g2 = results.group2ndProbability.at(team->abbreviation());
+                double g3 = results.group3rdProbability.at(team->abbreviation());
+
+                if (g1 >= 0.999999) {
+                    clinchedStatus = "CLINCHED 1ST";
+                } else if (g2 >= 0.999999) {
+                    clinchedStatus = "CLINCHED 2ND";
+                } else if (g3 >= 0.999999) {
+                    clinchedStatus = "CLINCHED 3RD";
+                } else if (g1 + g2 >= 0.999999) {
+                    clinchedStatus = "CLINCHED TOP 2";
+                } else if (r32 >= 0.999999) {
+                    clinchedStatus = "CLINCHED R32";
+                } else if (r32 <= 0.000001) {
+                    clinchedStatus = "ELIMINATED";
+                }
+            }
 
             out << "{\"abbr\":\"" << team->abbreviation()
                 << "\",\"name\":\"" << jsonEscape(team->fullName())
                 << "\",\"pts\":" << team->points()
                 << ",\"gd\":" << team->goalDifference()
                 << ",\"gf\":" << team->goalsFor()
-                << ",\"adv_3rd\":" << (adv3rd ? "true" : "false") << "}";
+                << ",\"adv_3rd\":" << (adv3rd ? "true" : "false")
+                << ",\"clinched_status\":\"" << clinchedStatus << "\"}";
         }
         out << "]";
     }
