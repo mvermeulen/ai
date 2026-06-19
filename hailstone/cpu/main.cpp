@@ -110,6 +110,15 @@ bool save_checkpoint(const std::string &filename, uint128 last_num,
   }
   ofs << "\n";
 
+#ifdef TRACK_ALMOST_PEAKS
+  ofs << "almost_steps_peaks:\n";
+  for (const auto &peak : global_peaks.almost_steps_peaks) {
+    ofs << to_string(peak.start_val) << " " << to_string(peak.metric_val)
+        << "\n";
+  }
+  ofs << "\n";
+#endif
+
   ofs.close();
   return true;
 }
@@ -144,6 +153,9 @@ bool load_checkpoint(const std::string &filename, uint128 &last_num,
     } else if (line == "sigma_peaks:") {
       section = "sigma_peaks";
       continue;
+    } else if (line == "almost_steps_peaks:") {
+      section = "almost_steps_peaks";
+      continue;
     }
 
     if (section == "header") {
@@ -175,6 +187,8 @@ bool load_checkpoint(const std::string &filename, uint128 &last_num,
           steps_peaks.push_back(record);
         } else if (section == "sigma_peaks") {
           sigma_peaks.push_back(record);
+        } else if (section == "almost_steps_peaks") {
+          global_peaks.almost_steps_peaks.push_back(record);
         }
       }
     }
@@ -526,6 +540,11 @@ int main(int argc, char *argv[]) {
   for (const auto &peak : steps_peaks) {
     final_predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
   }
+#ifdef TRACK_ALMOST_PEAKS
+  for (const auto &peak : global_peaks.almost_steps_peaks) {
+    final_predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+  }
+#endif
   final_predictor.print_future_predictions_by_block();
 
   return 0;

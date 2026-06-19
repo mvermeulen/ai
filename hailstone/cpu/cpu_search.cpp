@@ -273,11 +273,39 @@ void cpu_search_range(uint128 start, uint128 end,
         }
 
         // Check steps peak
-        if (stats.steps > global_peaks.current_max_steps) {
+        #ifdef TRACK_ALMOST_PEAKS
+
+        if (stats.steps + 2 >= global_peaks.current_max_steps) {
+
             predictor.add_confirmed_peak(curr, stats.steps);
-            global_peaks.current_max_steps = predictor.current_max_steps;
-            steps_peaks.push_back({curr, uint128(stats.steps)});
+
+            if (stats.steps > global_peaks.current_max_steps) {
+
+                global_peaks.current_max_steps = predictor.current_max_steps;
+
+                steps_peaks.push_back({curr, uint128(stats.steps)});
+
+            } else {
+
+                global_peaks.almost_steps_peaks.push_back({curr, uint128(stats.steps)});
+
+            }
+
         }
+
+        #else
+
+        if (stats.steps > global_peaks.current_max_steps) {
+
+            predictor.add_confirmed_peak(curr, stats.steps);
+
+            global_peaks.current_max_steps = predictor.current_max_steps;
+
+            steps_peaks.push_back({curr, uint128(stats.steps)});
+
+        }
+
+        #endif
 
         // Check stopping time (sigma) peak
         if (stats.stopping_time > global_peaks.current_max_sigma) {
@@ -423,11 +451,55 @@ void cpu_search_block_0(uint128 start_num, uint128 end_num,
             max_value_peaks.push_back({uint128(curr), u128_max_val});
         }
 
-        if (steps > global_peaks.current_max_steps) {
+        #ifdef TRACK_ALMOST_PEAKS
+
+
+        if (steps + 2 >= global_peaks.current_max_steps) {
+
+
             predictor.add_confirmed_peak(uint128(curr), steps);
-            global_peaks.current_max_steps = predictor.current_max_steps;
-            steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+            if (steps > global_peaks.current_max_steps) {
+
+
+                global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+                steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+            } else {
+
+
+                global_peaks.almost_steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+            }
+
+
         }
+
+
+        #else
+
+
+        if (steps > global_peaks.current_max_steps) {
+
+
+            predictor.add_confirmed_peak(uint128(curr), steps);
+
+
+            global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+            steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+        }
+
+
+        #endif
 
         if (stopping_time > global_peaks.current_max_sigma) {
             global_peaks.current_max_sigma = stopping_time;
@@ -523,6 +595,16 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
             for (const auto& peak : steps_peaks) {
                 predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
             }
+
+            #ifdef TRACK_ALMOST_PEAKS
+
+            for (const auto& peak : global_peaks.almost_steps_peaks) {
+
+                predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+
+            }
+
+            #endif
             predictor.prune_predictions_less_than(block_end + uint128(1));
 
             curr_start = block_end + uint128(1);
@@ -560,6 +642,21 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
                 for (const auto& peak : steps_peaks) {
                     predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
                 }
+
+
+                #ifdef TRACK_ALMOST_PEAKS
+
+
+                for (const auto& peak : global_peaks.almost_steps_peaks) {
+
+
+                    predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+
+
+                }
+
+
+                #endif
                 predictor.prune_predictions_less_than(block_ends[0] + uint128(1));
 
                 curr_start = block_ends[0] + uint128(1);
@@ -641,6 +738,16 @@ void cpu_search_blocks_gt_0(uint128 start_num, uint128 end_num,
             for (const auto& peak : steps_peaks) {
                 predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
             }
+
+            #ifdef TRACK_ALMOST_PEAKS
+
+            for (const auto& peak : global_peaks.almost_steps_peaks) {
+
+                predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+
+            }
+
+            #endif
             predictor.prune_predictions_less_than(curr_start);
         }
 
@@ -744,6 +851,16 @@ void cpu_search_blocks_gt_0_suffix_first(uint128 start_num, uint128 end_num,
             for (const auto& peak : steps_peaks) {
                 predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
             }
+
+            #ifdef TRACK_ALMOST_PEAKS
+
+            for (const auto& peak : global_peaks.almost_steps_peaks) {
+
+                predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+
+            }
+
+            #endif
             predictor.prune_predictions_less_than(block_end + uint128(1));
 
             curr_start = block_end + uint128(1);
@@ -791,6 +908,21 @@ void cpu_search_blocks_gt_0_suffix_first(uint128 start_num, uint128 end_num,
                 for (const auto& peak : steps_peaks) {
                     predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
                 }
+
+
+                #ifdef TRACK_ALMOST_PEAKS
+
+
+                for (const auto& peak : global_peaks.almost_steps_peaks) {
+
+
+                    predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+
+
+                }
+
+
+                #endif
                 predictor.prune_predictions_less_than(block_ends[0] + uint128(1));
 
                 curr_start = block_ends[0] + uint128(1);
@@ -890,6 +1022,16 @@ void cpu_search_blocks_gt_0_suffix_first(uint128 start_num, uint128 end_num,
             for (const auto& peak : steps_peaks) {
                 predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
             }
+
+            #ifdef TRACK_ALMOST_PEAKS
+
+            for (const auto& peak : global_peaks.almost_steps_peaks) {
+
+                predictor.add_confirmed_peak(peak.start_val, peak.metric_val.low);
+
+            }
+
+            #endif
             predictor.prune_predictions_less_than(curr_start);
         }
 
@@ -1244,11 +1386,55 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
                     max_value_peaks.push_back({uint128(curr), u128_max_val});
                 }
 
-                if (steps > global_peaks.current_max_steps) {
+                #ifdef TRACK_ALMOST_PEAKS
+
+
+                if (steps + 2 >= global_peaks.current_max_steps) {
+
+
                     predictor.add_confirmed_peak(uint128(curr), steps);
-                    global_peaks.current_max_steps = predictor.current_max_steps;
-                    steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                    if (steps > global_peaks.current_max_steps) {
+
+
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+                        steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                    } else {
+
+
+                        global_peaks.almost_steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                    }
+
+
                 }
+
+
+                #else
+
+
+                if (steps > global_peaks.current_max_steps) {
+
+
+                    predictor.add_confirmed_peak(uint128(curr), steps);
+
+
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+                    steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                }
+
+
+                #endif
 
                 if (stopping_time > global_peaks.current_max_sigma) {
                     global_peaks.current_max_sigma = stopping_time;
@@ -1352,11 +1538,55 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
                     max_value_peaks.push_back({uint128(curr), u128_max_val});
                 }
 
-                if (steps > global_peaks.current_max_steps) {
+                #ifdef TRACK_ALMOST_PEAKS
+
+
+                if (steps + 2 >= global_peaks.current_max_steps) {
+
+
                     predictor.add_confirmed_peak(uint128(curr), steps);
-                    global_peaks.current_max_steps = predictor.current_max_steps;
-                    steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                    if (steps > global_peaks.current_max_steps) {
+
+
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+                        steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                    } else {
+
+
+                        global_peaks.almost_steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                    }
+
+
                 }
+
+
+                #else
+
+
+                if (steps > global_peaks.current_max_steps) {
+
+
+                    predictor.add_confirmed_peak(uint128(curr), steps);
+
+
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+                    steps_peaks.push_back({uint128(curr), uint128(steps)});
+
+
+                }
+
+
+                #endif
 
                 if (stopping_time > global_peaks.current_max_sigma) {
                     global_peaks.current_max_sigma = stopping_time;
@@ -1466,11 +1696,39 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
                     }
 
                     // Check steps peak
-                    if (stats.steps > global_peaks.current_max_steps) {
+                    #ifdef TRACK_ALMOST_PEAKS
+
+                    if (stats.steps + 2 >= global_peaks.current_max_steps) {
+
                         predictor.add_confirmed_peak(curr, stats.steps);
-                        global_peaks.current_max_steps = predictor.current_max_steps;
-                        steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                        if (stats.steps > global_peaks.current_max_steps) {
+
+                            global_peaks.current_max_steps = predictor.current_max_steps;
+
+                            steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                        } else {
+
+                            global_peaks.almost_steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                        }
+
                     }
+
+                    #else
+
+                    if (stats.steps > global_peaks.current_max_steps) {
+
+                        predictor.add_confirmed_peak(curr, stats.steps);
+
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+
+                        steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                    }
+
+                    #endif
 
                     // Check stopping time (sigma) peak
                     if (stats.stopping_time > global_peaks.current_max_sigma) {
@@ -1503,11 +1761,39 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
                     }
 
                     // Check steps peak
-                    if (stats.steps > global_peaks.current_max_steps) {
+                    #ifdef TRACK_ALMOST_PEAKS
+
+                    if (stats.steps + 2 >= global_peaks.current_max_steps) {
+
                         predictor.add_confirmed_peak(curr, stats.steps);
-                        global_peaks.current_max_steps = predictor.current_max_steps;
-                        steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                        if (stats.steps > global_peaks.current_max_steps) {
+
+                            global_peaks.current_max_steps = predictor.current_max_steps;
+
+                            steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                        } else {
+
+                            global_peaks.almost_steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                        }
+
                     }
+
+                    #else
+
+                    if (stats.steps > global_peaks.current_max_steps) {
+
+                        predictor.add_confirmed_peak(curr, stats.steps);
+
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+
+                        steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                    }
+
+                    #endif
 
                     // Check stopping time (sigma) peak
                     if (stats.stopping_time > global_peaks.current_max_sigma) {
@@ -1560,11 +1846,39 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
                 }
 
                 // Check steps peak
-                if (stats.steps > global_peaks.current_max_steps) {
+                #ifdef TRACK_ALMOST_PEAKS
+
+                if (stats.steps + 2 >= global_peaks.current_max_steps) {
+
                     predictor.add_confirmed_peak(curr, stats.steps);
-                    global_peaks.current_max_steps = predictor.current_max_steps;
-                    steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                    if (stats.steps > global_peaks.current_max_steps) {
+
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+
+                        steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                    } else {
+
+                        global_peaks.almost_steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                    }
+
                 }
+
+                #else
+
+                if (stats.steps > global_peaks.current_max_steps) {
+
+                    predictor.add_confirmed_peak(curr, stats.steps);
+
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+
+                    steps_peaks.push_back({curr, uint128(stats.steps)});
+
+                }
+
+                #endif
 
                 // Check stopping time (sigma) peak
                 if (stats.stopping_time > global_peaks.current_max_sigma) {

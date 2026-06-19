@@ -2,7 +2,6 @@
 #define HAILSTONE_COMMON_H
 
 #include "uint128.h"
-#include <string>
 #include <vector>
 
 // Statistics for a single starting value
@@ -25,6 +24,8 @@ struct PeakState {
     uint128 current_max_value; // highest max_value seen so far
     uint32_t current_max_steps; // highest steps seen so far
     uint32_t current_max_sigma; // highest stopping_time \sigma seen so far
+    
+    std::vector<PeakRecord> almost_steps_peaks;
 
     HD_ATTR PeakState() 
         : current_max_value(0), current_max_steps(0), current_max_sigma(0) {}

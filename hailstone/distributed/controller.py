@@ -191,7 +191,8 @@ class ControllerState:
             "max_sigma": 0,
             "max_value_peaks": [],     # list of {"start_val": int, "metric_val": int}
             "steps_peaks": [],
-            "sigma_peaks": []
+            "sigma_peaks": [],
+            "almost_steps_peaks": []
         }
 
         # Load initial checkpoint if it exists
@@ -231,7 +232,8 @@ class ControllerState:
                 "max_sigma": 0,
                 "max_value_peaks": [],
                 "steps_peaks": [],
-                "sigma_peaks": []
+                "sigma_peaks": [],
+                "almost_steps_peaks": []
             }
             
             with open(self.checkpoint_path, "r") as f:
@@ -250,6 +252,9 @@ class ControllerState:
                     continue
                 elif line == "sigma_peaks:":
                     section = "sigma_peaks"
+                    continue
+                elif line == "almost_steps_peaks:":
+                    section = "almost_steps_peaks"
                     continue
                 
                 if section == "header":
@@ -305,6 +310,11 @@ class ControllerState:
                 for peak in self.global_peaks["sigma_peaks"]:
                     f.write(f"{peak['start_val']} {peak['metric_val']}\n")
                 f.write("\n")
+                if "almost_steps_peaks" in self.global_peaks:
+                    f.write("almost_steps_peaks:\n")
+                    for peak in self.global_peaks["almost_steps_peaks"]:
+                        f.write(f"{peak['start_val']} {peak['metric_val']}\n")
+                    f.write("\n")
             # print(f"Saved consolidated checkpoint to {self.checkpoint_path}")
         except Exception as e:
             print(f"Error saving consolidated checkpoint: {e}")
@@ -334,6 +344,17 @@ class ControllerState:
             
             self.global_peaks[section] = filtered
         
+        if "almost_steps_peaks" in self.global_peaks:
+            dedup = {}
+            for p in self.global_peaks["almost_steps_peaks"]:
+                start = p["start_val"]
+                metric = p["metric_val"]
+                if start not in dedup or metric > dedup[start]:
+                    dedup[start] = metric
+            sorted_list = [{"start_val": s, "metric_val": m} for s, m in dedup.items()]
+            sorted_list.sort(key=lambda x: x["start_val"])
+            self.global_peaks["almost_steps_peaks"] = sorted_list
+
         # Update header values
         self.global_peaks["max_value"] = self.global_peaks["max_value_peaks"][-1]["metric_val"] if self.global_peaks["max_value_peaks"] else 0
         self.global_peaks["max_steps"] = self.global_peaks["steps_peaks"][-1]["metric_val"] if self.global_peaks["steps_peaks"] else 0
@@ -362,6 +383,12 @@ class ControllerState:
             lines.append(f"{p['start_val']} {p['metric_val']}")
         lines.append("")
         
+        if "almost_steps_peaks" in self.global_peaks:
+            lines.append("almost_steps_peaks:")
+            for p in self.global_peaks["almost_steps_peaks"]:
+                lines.append(f"{p['start_val']} {p['metric_val']}")
+            lines.append("")
+            
         return "\n".join(lines)
 
     def merge_worker_checkpoint(self, checkpoint_text):
@@ -369,7 +396,8 @@ class ControllerState:
             "last_num": 0,
             "max_value_peaks": [],
             "steps_peaks": [],
-            "sigma_peaks": []
+            "sigma_peaks": [],
+            "almost_steps_peaks": []
         }
         
         section = "header"
@@ -385,6 +413,9 @@ class ControllerState:
                 continue
             elif line == "sigma_peaks:":
                 section = "sigma_peaks"
+                continue
+            elif line == "almost_steps_peaks:":
+                section = "almost_steps_peaks"
                 continue
             
             if section == "header":
@@ -402,7 +433,7 @@ class ControllerState:
         
         # Merge arrays into global state
         with self.lock:
-            for s in ["max_value_peaks", "steps_peaks", "sigma_peaks"]:
+            for s in ["max_value_peaks", "steps_peaks", "sigma_peaks", "almost_steps_peaks"]:
                 self.global_peaks[s].extend(res[s])
             
             # Incrementally update last_num

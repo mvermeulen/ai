@@ -13,8 +13,14 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-O3)
 endif()
 
+option(TRACK_ALMOST_PEAKS "Enable tracking of almost peaks" OFF)
+if(TRACK_ALMOST_PEAKS)
+    add_compile_definitions(TRACK_ALMOST_PEAKS)
+endif()
+
 # Build allowed suffixes generator target
 add_executable(hailstone_gen_allowed_24 tools/gen_allowed_suffixes.cpp)
+add_executable(hailstone_predictor_study tools/predictor_study.cpp)
 
 # Generate allowed suffixes binary file at build time
 add_custom_command(

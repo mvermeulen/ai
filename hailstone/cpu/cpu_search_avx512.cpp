@@ -134,11 +134,39 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
                                 global_peaks.current_max_value = stats.max_value;
                                 max_value_peaks.push_back({start_val_128, stats.max_value});
                             }
-                            if (stats.steps > global_peaks.current_max_steps) {
+                            #ifdef TRACK_ALMOST_PEAKS
+
+                            if (stats.steps + 2 >= global_peaks.current_max_steps) {
+
                                 predictor.add_confirmed_peak(start_val_128, stats.steps);
-                                global_peaks.current_max_steps = predictor.current_max_steps;
-                                steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                                if (stats.steps > global_peaks.current_max_steps) {
+
+                                    global_peaks.current_max_steps = predictor.current_max_steps;
+
+                                    steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                                } else {
+
+                                    global_peaks.almost_steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                                }
+
                             }
+
+                            #else
+
+                            if (stats.steps > global_peaks.current_max_steps) {
+
+                                predictor.add_confirmed_peak(start_val_128, stats.steps);
+
+                                global_peaks.current_max_steps = predictor.current_max_steps;
+
+                                steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                            }
+
+                            #endif
                             if (stats.stopping_time > global_peaks.current_max_sigma) {
                                 global_peaks.current_max_sigma = stats.stopping_time;
                                 sigma_peaks.push_back({start_val_128, uint128(stats.stopping_time)});
@@ -199,11 +227,39 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
                                     global_peaks.current_max_value = stats.max_value;
                                     max_value_peaks.push_back({start_val_128, stats.max_value});
                                 }
-                                if (stats.steps > global_peaks.current_max_steps) {
+                                #ifdef TRACK_ALMOST_PEAKS
+
+                                if (stats.steps + 2 >= global_peaks.current_max_steps) {
+
                                     predictor.add_confirmed_peak(start_val_128, stats.steps);
-                                    global_peaks.current_max_steps = predictor.current_max_steps;
-                                    steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                                    if (stats.steps > global_peaks.current_max_steps) {
+
+                                        global_peaks.current_max_steps = predictor.current_max_steps;
+
+                                        steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                                    } else {
+
+                                        global_peaks.almost_steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                                    }
+
                                 }
+
+                                #else
+
+                                if (stats.steps > global_peaks.current_max_steps) {
+
+                                    predictor.add_confirmed_peak(start_val_128, stats.steps);
+
+                                    global_peaks.current_max_steps = predictor.current_max_steps;
+
+                                    steps_peaks.push_back({start_val_128, uint128(stats.steps)});
+
+                                }
+
+                                #endif
                                 if (stats.stopping_time > global_peaks.current_max_sigma) {
                                     global_peaks.current_max_sigma = stats.stopping_time;
                                     sigma_peaks.push_back({start_val_128, uint128(stats.stopping_time)});
@@ -306,11 +362,55 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
                     max_value_peaks.push_back({curr, stats.max_value});
                 }
 
-                if (stats.steps > global_peaks.current_max_steps) {
+                #ifdef TRACK_ALMOST_PEAKS
+
+
+                if (stats.steps + 2 >= global_peaks.current_max_steps) {
+
+
                     predictor.add_confirmed_peak(curr, stats.steps);
-                    global_peaks.current_max_steps = predictor.current_max_steps;
-                    steps_peaks.push_back({curr, uint128(stats.steps)});
+
+
+                    if (stats.steps > global_peaks.current_max_steps) {
+
+
+                        global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+                        steps_peaks.push_back({curr, uint128(stats.steps)});
+
+
+                    } else {
+
+
+                        global_peaks.almost_steps_peaks.push_back({curr, uint128(stats.steps)});
+
+
+                    }
+
+
                 }
+
+
+                #else
+
+
+                if (stats.steps > global_peaks.current_max_steps) {
+
+
+                    predictor.add_confirmed_peak(curr, stats.steps);
+
+
+                    global_peaks.current_max_steps = predictor.current_max_steps;
+
+
+                    steps_peaks.push_back({curr, uint128(stats.steps)});
+
+
+                }
+
+
+                #endif
 
                 if (stats.stopping_time > global_peaks.current_max_sigma) {
                     global_peaks.current_max_sigma = stats.stopping_time;

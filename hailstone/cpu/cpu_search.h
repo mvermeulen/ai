@@ -2,6 +2,7 @@
 #define HAILSTONE_CPU_SEARCH_H
 
 #include "common.h"
+#include <string>
 
 // Computes Collatz statistics for a single starting value.
 CollatzStats compute_collatz(uint128 n);
