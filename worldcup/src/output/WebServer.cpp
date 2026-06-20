@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <vector>
 #include <set>
+#include <random>
 
 namespace {
 
@@ -602,6 +603,183 @@ std::string buildDashboardHtml() {
       align-items: center;
       margin-bottom: 1.25rem;
     }
+
+    /* Bracket styles */
+    .bracket-wrapper {
+      overflow: auto;
+      max-height: 80vh;
+      padding: 1rem 0;
+    }
+
+    .bracket-inner {
+      min-width: 1400px;
+      padding: 1rem;
+    }
+
+    .bracket-headers {
+      display: flex;
+      gap: 3rem;
+      margin-bottom: 2rem;
+      padding: 0 1rem;
+    }
+
+    .bracket-header-col {
+      width: 250px;
+      flex-shrink: 0;
+      text-align: center;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-primary);
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--accent-color);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .bracket-container {
+      display: flex;
+      gap: 3rem;
+      height: 2400px;
+      padding: 1rem;
+    }
+
+    .bracket-column {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      width: 250px;
+      flex-shrink: 0;
+      position: relative;
+      height: 100%;
+    }
+
+    .bracket-matchup {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      flex: 1;
+      position: relative;
+    }
+
+    /* Vertical connector line on the right side of the matchup pair */
+    .bracket-matchup::after {
+      content: "";
+      position: absolute;
+      right: -1.5rem;
+      top: 25%;
+      bottom: 25%;
+      width: 1.5rem;
+      border: 2px solid var(--border-color);
+      border-left: none;
+      pointer-events: none;
+    }
+
+    /* Horizontal line going from the vertical connector to the next round's card */
+    .bracket-matchup::before {
+      content: "";
+      position: absolute;
+      right: -3rem;
+      top: 50%;
+      width: 1.5rem;
+      height: 2px;
+      background: var(--border-color);
+      pointer-events: none;
+    }
+
+    .bracket-game-card {
+      background: var(--bg-surface);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.75rem;
+      box-shadow: var(--card-shadow);
+      transition: all 0.2s ease-in-out;
+      cursor: pointer;
+      position: relative;
+      z-index: 10;
+    }
+
+    .bracket-game-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent-color);
+      box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
+    }
+
+    .bracket-game-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 0.25rem;
+    }
+
+    .bracket-game-team {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.25rem 0;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .bracket-game-team.winner {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+
+    .bracket-game-team.winner .team-score-badge {
+      background: var(--success-bg);
+      color: var(--success-color);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .bracket-game-team.loser {
+      opacity: 0.55;
+    }
+
+    .team-name-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .team-flag-text {
+      font-weight: 700;
+      font-size: 0.8rem;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      color: var(--text-primary);
+      min-width: 2.2rem;
+      text-align: center;
+    }
+
+    .team-score-badge {
+      font-family: var(--font-display);
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      padding: 0.1rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      min-width: 1.5rem;
+      text-align: center;
+    }
+
+    .third-place-container {
+      margin-top: 2.5rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 2rem;
+      text-align: center;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -616,6 +794,7 @@ std::string buildDashboardHtml() {
       <nav>
         <button id="nav-standings" class="nav-btn" onclick="switchTab('standings')">Group Tables</button>
         <button id="nav-matches" class="nav-btn" onclick="switchTab('matches')">Matches</button>
+        <button id="nav-elimination" class="nav-btn" onclick="switchTab('elimination')">Bracket</button>
         <button id="nav-simulation" class="nav-btn" onclick="switchTab('simulation')">Tournament Sim</button>
         <button id="nav-impact" class="nav-btn" onclick="switchTab('impact')">Match Importance</button>
         <button id="nav-sandbox" class="nav-btn" onclick="switchTab('sandbox')">What-If Sandbox</button>
@@ -677,6 +856,21 @@ std::string buildDashboardHtml() {
             </thead>
             <tbody id="matches-table-body"></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ELIMINATION BRACKET TAB -->
+    <section id="elimination-section" class="view-section">
+      <div class="dashboard-header">
+        <div>
+          <h1 class="page-title">Elimination Bracket</h1>
+          <p class="page-desc">Track and forecast the knockout matches from the Round of 32 down to the Final. Click any unplayed match card to enter scores.</p>
+        </div>
+      </div>
+      <div id="bracket-container-parent" class="card" style="padding: 1.5rem; overflow-x: auto;">
+        <div id="bracket-view" class="bracket-wrapper">
+          <!-- Columns will be dynamically inserted here -->
         </div>
       </div>
     </section>
@@ -851,6 +1045,7 @@ std::string buildDashboardHtml() {
 
       if (tab === 'standings') loadStandings();
       else if (tab === 'matches') loadMatchesList();
+      else if (tab === 'elimination') loadEliminationBracket();
       else if (tab === 'simulation') runSimulation();
       else if (tab === 'impact') runImpactAnalysis();
       else if (tab === 'sandbox') loadSandboxFixtures();
@@ -1188,8 +1383,229 @@ std::string buildDashboardHtml() {
         closeUpdateModal();
         loadStandings();
         if (activeTab === 'matches') loadMatchesList();
+        if (activeTab === 'elimination') loadEliminationBracket();
       } else {
         alert("Error updating score: " + data.error);
+      }
+    }
+
+    function formatTeamName(teamCode) {
+      if (!teamCode) return "";
+      if (teamCode.startsWith("WINNER_GROUP_")) {
+        return "1" + teamCode.replace("WINNER_GROUP_", "");
+      }
+      if (teamCode.startsWith("RUNNER_UP_GROUP_")) {
+        return "2" + teamCode.replace("RUNNER_UP_GROUP_", "");
+      }
+      if (teamCode.startsWith("THIRD_GROUP_")) {
+        return "3rd";
+      }
+      if (teamCode.startsWith("R32_WINNER_")) {
+        return "W" + teamCode.replace("R32_WINNER_", "");
+      }
+      if (teamCode.startsWith("R16_WINNER_")) {
+        return "W" + teamCode.replace("R16_WINNER_", "");
+      }
+      if (teamCode.startsWith("QUARTERFINAL_WINNER_")) {
+        return "W" + teamCode.replace("QUARTERFINAL_WINNER_", "");
+      }
+      if (teamCode.startsWith("SEMIFINAL_WINNER_")) {
+        return "W" + teamCode.replace("SEMIFINAL_WINNER_", "");
+      }
+      if (teamCode.startsWith("TBD_")) {
+        return "TBD";
+      }
+      return teamCode;
+    }
+
+    function formatTeamBadge(teamCode) {
+      return formatTeamName(teamCode).substring(0, 3).toUpperCase();
+    }
+
+    function createBracketCardHtml(match) {
+      const isFinal = match.status === 'final';
+      
+      let homeName = formatTeamName(match.home_team);
+      const homeProb = match.home_win_prob !== undefined ? ` (${Math.round(match.home_win_prob * 100)}%)` : '';
+      const homeDisplay = homeName + homeProb;
+      const homeScore = isFinal ? match.home_score : '-';
+      
+      let awayName = formatTeamName(match.away_team);
+      const awayProb = match.away_win_prob !== undefined ? ` (${Math.round(match.away_win_prob * 100)}%)` : '';
+      const awayDisplay = awayName + awayProb;
+      const awayScore = isFinal ? match.away_score : '-';
+
+      let homeClass = 'bracket-game-team';
+      let awayClass = 'bracket-game-team';
+      if (isFinal) {
+        const homeWon = match.home_score > match.away_score || 
+                        (match.home_score === match.away_score && match.home_penalty_score > match.away_penalty_score);
+        if (homeWon) {
+          homeClass += ' winner';
+          awayClass += ' loser';
+        } else {
+          awayClass += ' winner';
+          homeClass += ' loser';
+        }
+      }
+
+      let shootoutText = '';
+      if (isFinal && match.home_score === match.away_score && match.home_penalty_score >= 0) {
+        shootoutText = ` <span style="font-size: 0.7rem; color: var(--text-secondary);">(PEN ${match.home_penalty_score}-${match.away_penalty_score})</span>`;
+      }
+
+      return `
+        <div class="bracket-game-meta">
+          <span>Match #${match.match_id}</span>
+          <span>${match.date}</span>
+        </div>
+        <div class="bracket-game-teams">
+          <div class="${homeClass}">
+            <div class="team-name-container">
+              <span class="team-flag-text">${formatTeamBadge(match.home_team)}</span>
+              <span>${homeDisplay}</span>
+            </div>
+            <span class="team-score-badge">${homeScore}</span>
+          </div>
+          <div class="${awayClass}">
+            <div class="team-name-container">
+              <span class="team-flag-text">${formatTeamBadge(match.away_team)}</span>
+              <span>${awayDisplay}</span>
+            </div>
+            <span class="team-score-badge">${awayScore}</span>
+          </div>
+        </div>
+        ${shootoutText ? '<div style="text-align: center; margin-top: 0.25rem;">' + shootoutText + '</div>' : ''}
+      `;
+    }
+
+    function createBracketCard(match) {
+      const card = document.createElement('div');
+      card.className = 'bracket-game-card';
+      card.innerHTML = createBracketCardHtml(match);
+      if (match.status !== 'final') {
+        card.onclick = () => triggerUpdateScore(match.match_id, match.home_team, match.away_team);
+      }
+      return card;
+    }
+
+    async function loadEliminationBracket() {
+      const container = document.getElementById('bracket-view');
+      container.innerHTML = '<div class="spinner" style="margin: 4rem auto;"></div>';
+
+      try {
+        const res = await fetch('/api/games');
+        const data = await res.json();
+        const matches = data.games || [];
+
+        const matchMap = {};
+        matches.forEach(m => {
+          matchMap[m.match_id] = m;
+        });
+
+        // 5 columns of matches ordered sequentially to align branch endpoints:
+        const rounds = [
+          {
+            name: "Round of 32",
+            matches: [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87]
+          },
+          {
+            name: "Round of 16",
+            matches: [89, 90, 93, 94, 91, 92, 95, 96]
+          },
+          {
+            name: "Quarterfinals",
+            matches: [97, 98, 99, 100]
+          },
+          {
+            name: "Semifinals",
+            matches: [101, 102]
+          },
+          {
+            name: "Final",
+            matches: [104]
+          }
+        ];
+
+        container.innerHTML = '';
+        const innerContainer = document.createElement('div');
+        innerContainer.className = 'bracket-inner';
+
+        const headersRow = document.createElement('div');
+        headersRow.className = 'bracket-headers';
+        rounds.forEach(round => {
+          const headerCol = document.createElement('div');
+          headerCol.className = 'bracket-header-col';
+          headerCol.innerText = round.name;
+          headersRow.appendChild(headerCol);
+        });
+        innerContainer.appendChild(headersRow);
+
+        const bracketContainer = document.createElement('div');
+        bracketContainer.className = 'bracket-container';
+
+        rounds.forEach((round, roundIdx) => {
+          const column = document.createElement('div');
+          column.className = 'bracket-column';
+
+          if (roundIdx < rounds.length - 1) {
+            for (let i = 0; i < round.matches.length; i += 2) {
+              const matchupDiv = document.createElement('div');
+              matchupDiv.className = 'bracket-matchup';
+
+              const matchId1 = round.matches[i];
+              const matchId2 = round.matches[i+1];
+
+              const match1 = matchMap[matchId1];
+              const match2 = matchMap[matchId2];
+
+              if (match1) matchupDiv.appendChild(createBracketCard(match1));
+              if (match2) matchupDiv.appendChild(createBracketCard(match2));
+
+              column.appendChild(matchupDiv);
+            }
+          } else {
+            const matchId = round.matches[0];
+            const match = matchMap[matchId];
+            if (match) {
+              const finalWrapper = document.createElement('div');
+              finalWrapper.style.display = 'flex';
+              finalWrapper.style.flexDirection = 'column';
+              finalWrapper.style.justifyContent = 'center';
+              finalWrapper.style.height = '100%';
+              finalWrapper.appendChild(createBracketCard(match));
+              column.appendChild(finalWrapper);
+            }
+          }
+
+          bracketContainer.appendChild(column);
+        });
+
+        innerContainer.appendChild(bracketContainer);
+        container.appendChild(innerContainer);
+
+        const thirdPlaceMatch = matchMap[103];
+        if (thirdPlaceMatch) {
+          const tpCard = createBracketCard(thirdPlaceMatch);
+          tpCard.style.margin = '0 auto';
+          tpCard.style.maxWidth = '250px';
+
+          const thirdPlaceContainer = document.createElement('div');
+          thirdPlaceContainer.className = 'third-place-container';
+
+          const tpHeader = document.createElement('div');
+          tpHeader.className = 'bracket-round-header';
+          tpHeader.style.margin = '0 auto 1.5rem auto';
+          tpHeader.style.maxWidth = '250px';
+          tpHeader.style.borderColor = 'var(--warning-color)';
+          tpHeader.innerText = 'Third Place Play-off';
+
+          thirdPlaceContainer.appendChild(tpHeader);
+          thirdPlaceContainer.appendChild(tpCard);
+          container.appendChild(thirdPlaceContainer);
+        }
+      } catch (e) {
+        container.innerHTML = `<div style="color:var(--danger-color); padding:2rem; text-align:center;">Failed to load bracket data: ${e.message}</div>`;
       }
     }
 
@@ -1760,6 +2176,18 @@ std::string WebServer::handleRequest(const std::string& method,
         for (const auto& match : tournament_.allMatches()) {
             if (!first) out << ',';
             first = false;
+
+            double homeWinProb = -1.0;
+            double awayWinProb = -1.0;
+            if (match.stage() != "group") {
+                const Team* homeTeam = tournament_.getTeam(match.homeTeam());
+                const Team* awayTeam = tournament_.getTeam(match.awayTeam());
+                if (homeTeam && awayTeam) {
+                    homeWinProb = calculateMatchWinProbability(*homeTeam, *awayTeam);
+                    awayWinProb = 1.0 - homeWinProb;
+                }
+            }
+
             out << "{\"match_id\":" << match.matchId()
                 << ",\"stage\":\"" << jsonEscape(match.stage())
                 << "\",\"group\":\"" << jsonEscape(match.group())
@@ -1767,8 +2195,12 @@ std::string WebServer::handleRequest(const std::string& method,
                 << "\",\"home_team\":\"" << jsonEscape(match.homeTeam())
                 << "\",\"away_team\":\"" << jsonEscape(match.awayTeam())
                 << "\",\"home_score\":" << match.homeScore()
-                << ",\"away_score\":" << match.awayScore()
-                << ",\"status\":\"" << jsonEscape(match.status())
+                << ",\"away_score\":" << match.awayScore();
+            if (homeWinProb >= 0.0) {
+                out << ",\"home_win_prob\":" << homeWinProb
+                    << ",\"away_win_prob\":" << awayWinProb;
+            }
+            out << ",\"status\":\"" << jsonEscape(match.status())
                 << "\",\"host_city\":\"" << jsonEscape(match.hostCity()) << "\"}";
         }
         out << "]}";
@@ -1900,6 +2332,47 @@ std::string WebServer::handleRequest(const std::string& method,
 
     statusCode = 404;
     return "Not found";
+}
+
+double WebServer::calculateMatchWinProbability(const Team& home, const Team& away) const {
+    double eloDiff = home.eloRating() - away.eloRating();
+    double homeBoost = (home.abbreviation() == "USA" || home.abbreviation() == "MEX" || home.abbreviation() == "CAN") ? hostAdvantage_ : 0.0;
+    double awayBoost = (away.abbreviation() == "USA" || away.abbreviation() == "MEX" || away.abbreviation() == "CAN") ? hostAdvantage_ : 0.0;
+
+    double lambdaHome = baseRate_ * std::exp(alpha_ * eloDiff + homeBoost);
+    double lambdaAway = baseRate_ * std::exp(-alpha_ * eloDiff + awayBoost);
+
+    std::mt19937 rng(12345); 
+    std::poisson_distribution<int> homeDist(lambdaHome);
+    std::poisson_distribution<int> awayDist(lambdaAway);
+    std::poisson_distribution<int> homeETDist(lambdaHome / 3.0);
+    std::poisson_distribution<int> awayETDist(lambdaAway / 3.0);
+    std::uniform_real_distribution<> coin(0.0, 1.0);
+
+    int homeWins = 0;
+    const int runs = 10000;
+    for (int i = 0; i < runs; ++i) {
+        int hs = homeDist(rng);
+        int as = awayDist(rng);
+        if (hs > as) {
+            homeWins++;
+        } else if (hs < as) {
+            // away wins
+        } else {
+            hs += homeETDist(rng);
+            as += awayETDist(rng);
+            if (hs > as) {
+                homeWins++;
+            } else if (hs < as) {
+                // away wins
+            } else {
+                if (coin(rng) < 0.5) {
+                    homeWins++;
+                }
+            }
+        }
+    }
+    return static_cast<double>(homeWins) / runs;
 }
 
 std::string WebServer::standingsJson() const {
