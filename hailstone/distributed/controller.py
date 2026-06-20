@@ -180,6 +180,7 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
 class ControllerState:
     def __init__(self, checkpoint_path=DEFAULT_CHECKPOINT):
         self.lock = threading.Lock()
+        self.checkpoint_lock = threading.Lock()
         self.checkpoint_path = checkpoint_path
         self.project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.web_dir = os.path.join(self.project_dir, "distributed", "web")
@@ -221,9 +222,44 @@ class ControllerState:
             "sigma_peaks": [],
             "almost_steps_peaks": []
         }
+        
+        # Fast dictionary tracking to avoid list duplicates and sorting under lock
+        self.global_peaks_dict = {
+            "max_value_peaks": {},
+            "steps_peaks": {},
+            "sigma_peaks": {},
+            "almost_steps_peaks": {}
+        }
 
         # Load initial checkpoint if it exists
         self.load_checkpoint()
+
+    def _worker_health_checker(self, worker_addr):
+        while True:
+            try:
+                # Check status
+                data, err = tcp_exchange(worker_addr, "STATUS", timeout=1.5)
+                
+                with self.lock:
+                    if worker_addr not in self.workers:
+                        # Worker was removed
+                        break
+                    w = self.workers[worker_addr]
+                    if err:
+                        w["error_count"] += 1
+                        if w["error_count"] >= 3:
+                            w["status"] = "offline"
+                    else:
+                        w["status"] = "busy" if data["status"] == "busy" else "online"
+                        w["backends"] = data["backends"]
+                        w["cpu_cores"] = data["cpu_cores"]
+                        w["system_load"] = data["system_load"]
+                        w["error_count"] = 0
+                        w["last_seen"] = time.time()
+            except Exception as e:
+                log(f"Error in health checker for {worker_addr}: {e}")
+                
+            time.sleep(5.0)
 
     def add_worker(self, address):
         with self.lock:
@@ -238,6 +274,10 @@ class ControllerState:
                     "last_seen": 0.0
                 }
                 log(f"Registered worker: {address}")
+                # Start health checker thread for this worker
+                t = threading.Thread(target=self._worker_health_checker, args=(address,))
+                t.daemon = True
+                t.start()
 
     def remove_worker(self, address):
         with self.lock:
@@ -307,85 +347,110 @@ class ControllerState:
             
             self.global_peaks = res
             self.next_search_num = res["last_num"] + 1
+            # Populate dictionary representation for fast index updates
+            self.global_peaks_dict = {
+                "max_value_peaks": {p["start_val"]: p["metric_val"] for p in res["max_value_peaks"]},
+                "steps_peaks": {p["start_val"]: p["metric_val"] for p in res["steps_peaks"]},
+                "sigma_peaks": {p["start_val"]: p["metric_val"] for p in res["sigma_peaks"]},
+                "almost_steps_peaks": {p["start_val"]: p["metric_val"] for p in res.get("almost_steps_peaks", [])}
+            }
             log(f"Loaded peak state successfully. Resuming from starting number: {self.next_search_num}")
         except Exception as e:
             log(f"Error reading checkpoint file: {e}")
 
     def save_checkpoint(self):
-        try:
-            # Sort and filter peaks to ensure strict mathematical validity
-            self.prune_peaks()
+        with self.checkpoint_lock:
+            with self.lock:
+                last_num = self.global_peaks["last_num"]
+                peaks_dict_copy = {
+                    "max_value_peaks": dict(self.global_peaks_dict["max_value_peaks"]),
+                    "steps_peaks": dict(self.global_peaks_dict["steps_peaks"]),
+                    "sigma_peaks": dict(self.global_peaks_dict["sigma_peaks"]),
+                    "almost_steps_peaks": dict(self.global_peaks_dict["almost_steps_peaks"])
+                }
             
-            # Write standard text-based format
-            with open(self.checkpoint_path, "w") as f:
-                f.write(f"last_num: {self.global_peaks['last_num']}\n")
-                f.write(f"max_value: {self.global_peaks['max_value']}\n")
-                f.write(f"max_steps: {self.global_peaks['max_steps']}\n")
-                f.write(f"max_sigma: {self.global_peaks['max_sigma']}\n\n")
+            try:
+                max_value_peaks = []
+                steps_peaks = []
+                sigma_peaks = []
                 
-                f.write("max_value_peaks:\n")
-                for peak in self.global_peaks["max_value_peaks"]:
-                    f.write(f"{peak['start_val']} {peak['metric_val']}\n")
-                f.write("\n")
+                # 1. Prune max_value_peaks
+                sorted_mv = sorted(peaks_dict_copy["max_value_peaks"].items())
+                max_metric = -1
+                for s, m in sorted_mv:
+                    if m > max_metric:
+                        max_value_peaks.append({"start_val": s, "metric_val": m})
+                        max_metric = m
+                        
+                # 2. Prune steps_peaks
+                sorted_sp = sorted(peaks_dict_copy["steps_peaks"].items())
+                max_metric = -1
+                for s, m in sorted_sp:
+                    if m > max_metric:
+                        steps_peaks.append({"start_val": s, "metric_val": m})
+                        max_metric = m
+                        
+                # 3. Prune sigma_peaks
+                sorted_si = sorted(peaks_dict_copy["sigma_peaks"].items())
+                max_metric = -1
+                for s, m in sorted_si:
+                    if m > max_metric:
+                        sigma_peaks.append({"start_val": s, "metric_val": m})
+                        max_metric = m
                 
-                f.write("steps_peaks:\n")
-                for peak in self.global_peaks["steps_peaks"]:
-                    f.write(f"{peak['start_val']} {peak['metric_val']}\n")
-                f.write("\n")
+                # 4. Almost steps peaks
+                almost_steps_peaks = [{"start_val": s, "metric_val": m} for s, m in sorted(peaks_dict_copy["almost_steps_peaks"].items())]
                 
-                f.write("sigma_peaks:\n")
-                for peak in self.global_peaks["sigma_peaks"]:
-                    f.write(f"{peak['start_val']} {peak['metric_val']}\n")
-                f.write("\n")
-                if "almost_steps_peaks" in self.global_peaks:
-                    f.write("almost_steps_peaks:\n")
-                    for peak in self.global_peaks["almost_steps_peaks"]:
+                max_value = max_value_peaks[-1]["metric_val"] if max_value_peaks else 0
+                max_steps = steps_peaks[-1]["metric_val"] if steps_peaks else 0
+                max_sigma = sigma_peaks[-1]["metric_val"] if sigma_peaks else 0
+                
+                temp_path = self.checkpoint_path + ".tmp"
+                with open(temp_path, "w") as f:
+                    f.write(f"last_num: {last_num}\n")
+                    f.write(f"max_value: {max_value}\n")
+                    f.write(f"max_steps: {max_steps}\n")
+                    f.write(f"max_sigma: {max_sigma}\n\n")
+                    
+                    f.write("max_value_peaks:\n")
+                    for peak in max_value_peaks:
                         f.write(f"{peak['start_val']} {peak['metric_val']}\n")
                     f.write("\n")
-            # print(f"Saved consolidated checkpoint to {self.checkpoint_path}")
-        except Exception as e:
-            log(f"Error saving consolidated checkpoint: {e}")
+                    
+                    f.write("steps_peaks:\n")
+                    for peak in steps_peaks:
+                        f.write(f"{peak['start_val']} {peak['metric_val']}\n")
+                    f.write("\n")
+                    
+                    f.write("sigma_peaks:\n")
+                    for peak in sigma_peaks:
+                        f.write(f"{peak['start_val']} {peak['metric_val']}\n")
+                    f.write("\n")
+                    
+                    if almost_steps_peaks:
+                        f.write("almost_steps_peaks:\n")
+                        for peak in almost_steps_peaks:
+                            f.write(f"{peak['start_val']} {peak['metric_val']}\n")
+                        f.write("\n")
+                
+                os.replace(temp_path, self.checkpoint_path)
+                
+                with self.lock:
+                    self.global_peaks["last_num"] = last_num
+                    self.global_peaks["max_value"] = max_value
+                    self.global_peaks["max_steps"] = max_steps
+                    self.global_peaks["max_sigma"] = max_sigma
+                    self.global_peaks["max_value_peaks"] = max_value_peaks
+                    self.global_peaks["steps_peaks"] = steps_peaks
+                    self.global_peaks["sigma_peaks"] = sigma_peaks
+                    self.global_peaks["almost_steps_peaks"] = almost_steps_peaks
+            except Exception as e:
+                log(f"Error saving consolidated checkpoint: {e}")
 
-    def prune_peaks(self):
-        # Strictly applies Collatz peak condition to the lists
-        for section in ["max_value_peaks", "steps_peaks", "sigma_peaks"]:
-            # Deduplicate by start_val
-            dedup = {}
-            for p in self.global_peaks[section]:
-                start = p["start_val"]
-                metric = p["metric_val"]
-                if start not in dedup or metric > dedup[start]:
-                    dedup[start] = metric
-            
-            # Sort ascending by start_val
-            sorted_list = [{"start_val": s, "metric_val": m} for s, m in dedup.items()]
-            sorted_list.sort(key=lambda x: x["start_val"])
-            
-            # Filter strictly increasing
-            filtered = []
-            max_metric = -1
-            for p in sorted_list:
-                if p["metric_val"] > max_metric:
-                    filtered.append(p)
-                    max_metric = p["metric_val"]
-            
-            self.global_peaks[section] = filtered
-        
-        if "almost_steps_peaks" in self.global_peaks:
-            dedup = {}
-            for p in self.global_peaks["almost_steps_peaks"]:
-                start = p["start_val"]
-                metric = p["metric_val"]
-                if start not in dedup or metric > dedup[start]:
-                    dedup[start] = metric
-            sorted_list = [{"start_val": s, "metric_val": m} for s, m in dedup.items()]
-            sorted_list.sort(key=lambda x: x["start_val"])
-            self.global_peaks["almost_steps_peaks"] = sorted_list
-
-        # Update header values
-        self.global_peaks["max_value"] = self.global_peaks["max_value_peaks"][-1]["metric_val"] if self.global_peaks["max_value_peaks"] else 0
-        self.global_peaks["max_steps"] = self.global_peaks["steps_peaks"][-1]["metric_val"] if self.global_peaks["steps_peaks"] else 0
-        self.global_peaks["max_sigma"] = self.global_peaks["sigma_peaks"][-1]["metric_val"] if self.global_peaks["sigma_peaks"] else 0
+    def save_checkpoint_async(self):
+        t = threading.Thread(target=self.save_checkpoint)
+        t.daemon = True
+        t.start()
 
     def serialize_peaks_string(self):
         # Outputs current peak state as string compatible with daemon input
@@ -461,14 +526,18 @@ class ControllerState:
         # Merge arrays into global state
         with self.lock:
             for s in ["max_value_peaks", "steps_peaks", "sigma_peaks", "almost_steps_peaks"]:
-                self.global_peaks[s].extend(res[s])
+                for peak in res[s]:
+                    start = peak["start_val"]
+                    metric = peak["metric_val"]
+                    if start not in self.global_peaks_dict[s] or metric > self.global_peaks_dict[s][start]:
+                        self.global_peaks_dict[s][start] = metric
             
             # Incrementally update last_num
             if res["last_num"] > self.global_peaks["last_num"]:
                 self.global_peaks["last_num"] = res["last_num"]
             
-            # Prune and save checkpoint file
-            self.save_checkpoint()
+        # Asynchronously prune and save checkpoint file
+        self.save_checkpoint_async()
 
 # Singleton state
 state = ControllerState()
@@ -476,25 +545,7 @@ state = ControllerState()
 def background_scheduler():
     while True:
         try:
-            # 1. Health check & update workers state
-            for worker_addr in list(state.workers.keys()):
-                data, err = tcp_exchange(worker_addr, "STATUS", timeout=1.5)
-                
-                with state.lock:
-                    w = state.workers[worker_addr]
-                    if err:
-                        w["error_count"] += 1
-                        if w["error_count"] >= 3:
-                            w["status"] = "offline"
-                    else:
-                        w["status"] = "busy" if data["status"] == "busy" else "online"
-                        w["backends"] = data["backends"]
-                        w["cpu_cores"] = data["cpu_cores"]
-                        w["system_load"] = data["system_load"]
-                        w["error_count"] = 0
-                        w["last_seen"] = time.time()
-            
-            # 2. Check running jobs and handle adaptive timeouts
+            # 1. Check running jobs and handle adaptive timeouts
             now = time.time()
             for worker_addr, job in list(state.active_jobs.items()):
                 with state.lock:
@@ -596,7 +647,7 @@ def background_scheduler():
         except Exception as e:
             log(f"Scheduler exception: {e}")
             
-        time.sleep(1.0)
+        time.sleep(0.5)
 
 class ControllerHTTPHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
