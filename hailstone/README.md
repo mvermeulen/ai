@@ -218,6 +218,8 @@ The project includes support for building profiling targets with `-g` and `-fno-
 
 ## Distributed Search Mode
 
+![Hailstone Distributed Search Architecture](hailstone-distributed.png)
+
 The distributed search mode splits the Collatz peak search range across a cluster of worker machines. It comprises a highly optimized C++ daemon and a Python central controller:
 
 1. **Worker Daemon (`hailstoned`)**: A high-performance C++ daemon that runs on each worker machine. It auto-detects compiled binaries (CPU, Vulkan, HIP), runs startup micro-benchmarks to register local capabilities, and communicates with the central controller via a raw TCP socket protocol.
