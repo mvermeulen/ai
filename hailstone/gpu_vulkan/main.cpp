@@ -138,9 +138,12 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     
     // Precompute skipped counts for std_allowed
     for (uint32_t s : res.std_allowed) {
-        if (s % 3 == 2) res.std_skipped_0++;
-        if ((1 + s) % 3 == 2) res.std_skipped_1++;
-        if ((2 + s) % 3 == 2) res.std_skipped_2++;
+        for (int B = 0; B < 9; ++B) {
+            uint32_t rem = (B + s) % 9;
+            if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                res.std_skipped[B]++;
+            }
+        }
     }
 
     // Build base-dependent allowed lists
@@ -149,24 +152,25 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
         if (info.has_even) continue;
         
         uint32_t r1 = info.first_suffix;
-        bool has_1 = false;
-        bool has_3 = false;
-        bool has_5 = false;
-        for (uint32_t m : info.members) {
-            uint32_t rem = m % 6;
-            if (rem == 1) has_1 = true;
-            else if (rem == 3) has_3 = true;
-            else if (rem == 5) has_5 = true;
+        // For each base B % 9, check if any member of the class lands on a skipped residue
+        for (int B = 0; B < 9; ++B) {
+            bool has_skipped = false;
+            for (uint32_t m : info.members) {
+                uint32_t rem = (B + m) % 9;
+                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                    has_skipped = true;
+                    break;
+                }
+            }
+            if (!has_skipped) {
+                res.allowed_tables[B].push_back(r1);
+            }
         }
-        
-        if (!has_5) res.allowed_0.push_back(r1);
-        if (!has_3) res.allowed_2.push_back(r1);
-        if (!has_1) res.allowed_4.push_back(r1);
     }
     
-    std::sort(res.allowed_0.begin(), res.allowed_0.end());
-    std::sort(res.allowed_2.begin(), res.allowed_2.end());
-    std::sort(res.allowed_4.begin(), res.allowed_4.end());
+    for (int B = 0; B < 9; ++B) {
+        std::sort(res.allowed_tables[B].begin(), res.allowed_tables[B].end());
+    }
     
     return res;
 }
@@ -175,31 +179,32 @@ bool load_allowed_suffixes_binary(const std::string& filepath, BaseDependentSuff
     FILE* fp = fopen(filepath.c_str(), "rb");
     if (!fp) return false;
 
-    uint32_t header[7];
-    if (fread(header, sizeof(uint32_t), 7, fp) != 7) {
+    uint32_t header[19];
+    if (fread(header, sizeof(uint32_t), 19, fp) != 19) {
         fclose(fp);
         return false;
     }
 
     uint32_t std_count = header[0];
-    uint32_t count_0 = header[1];
-    uint32_t count_2 = header[2];
-    uint32_t count_4 = header[3];
-    suffixes.std_skipped_0 = header[4];
-    suffixes.std_skipped_1 = header[5];
-    suffixes.std_skipped_2 = header[6];
-
     suffixes.std_allowed.resize(std_count);
-    suffixes.allowed_0.resize(count_0);
-    suffixes.allowed_2.resize(count_2);
-    suffixes.allowed_4.resize(count_4);
+    for (int i = 0; i < 9; ++i) {
+        suffixes.allowed_tables[i].resize(header[1 + i]);
+        suffixes.std_skipped[i] = header[10 + i];
+    }
 
-    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count ||
-        fread(suffixes.allowed_0.data(), sizeof(uint32_t), count_0, fp) != count_0 ||
-        fread(suffixes.allowed_2.data(), sizeof(uint32_t), count_2, fp) != count_2 ||
-        fread(suffixes.allowed_4.data(), sizeof(uint32_t), count_4, fp) != count_4) {
+    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count) {
         fclose(fp);
         return false;
+    }
+
+    for (int i = 0; i < 9; ++i) {
+        size_t size = suffixes.allowed_tables[i].size();
+        if (size > 0) {
+            if (fread(suffixes.allowed_tables[i].data(), sizeof(uint32_t), size, fp) != size) {
+                fclose(fp);
+                return false;
+            }
+        }
     }
 
     fclose(fp);
@@ -504,8 +509,7 @@ bool load_checkpoint(const std::string& filename,
 void accumulate_boundary_metrics_vulkan(uint64_t prefix, uint64_t start_64, uint64_t end_64, int width, 
                                         const BaseDependentSuffixes& base_suffixes, GlobalMetricsGpu& metrics) {
     uint64_t base = prefix << width;
-    uint64_t mult = (1ULL << width) % 3;
-    uint64_t base_mod3 = ((prefix % 3) * mult) % 3;
+    uint64_t base_mod9 = base % 9;
     
     for (uint32_t suffix : base_suffixes.std_allowed) {
         uint64_t curr = base | suffix;
@@ -513,7 +517,8 @@ void accumulate_boundary_metrics_vulkan(uint64_t prefix, uint64_t start_64, uint
         if (curr > end_64) break;
         
         metrics.total_checked++;
-        if ((base_mod3 + suffix) % 3 == 2) {
+        uint32_t rem = (base_mod9 + suffix) % 9;
+        if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
             metrics.skipped_mod6++;
         }
     }
@@ -522,9 +527,7 @@ void accumulate_boundary_metrics_vulkan(uint64_t prefix, uint64_t start_64, uint
 void accumulate_boundary_metrics_vulkan_128(unsigned __int128 prefix, unsigned __int128 start, unsigned __int128 end, int width, 
                                             const BaseDependentSuffixes& base_suffixes, GlobalMetricsGpu& metrics) {
     unsigned __int128 base = prefix << width;
-    uint64_t mult = (1ULL << width) % 3;
-    uint64_t prefix_mod3 = static_cast<uint64_t>(prefix % 3);
-    uint64_t base_mod3 = (prefix_mod3 * mult) % 3;
+    uint64_t base_mod9 = static_cast<uint64_t>(base % 9);
     
     for (uint32_t suffix : base_suffixes.std_allowed) {
         unsigned __int128 curr = base + suffix;
@@ -532,7 +535,8 @@ void accumulate_boundary_metrics_vulkan_128(unsigned __int128 prefix, unsigned _
         if (curr > end) break;
         
         metrics.total_checked++;
-        if ((base_mod3 + suffix) % 3 == 2) {
+        uint32_t rem = static_cast<uint32_t>((base_mod9 + suffix) % 9);
+        if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
             metrics.skipped_mod6++;
         }
     }
@@ -543,9 +547,7 @@ void vulkan_search_range_internal(
     unsigned __int128 end_val,
     int cutoff_width,
     const BaseDependentSuffixes& base_suffixes,
-    uint32_t offset_0, uint32_t size_0,
-    uint32_t offset_2, uint32_t size_2,
-    uint32_t offset_4, uint32_t size_4,
+    const uint32_t* offsets, const uint32_t* sizes,
     VkDevice device,
     VkQueue computeQueue,
     VkCommandBuffer commandBuffer,
@@ -660,10 +662,9 @@ void vulkan_search_range_internal(
 
                 if (start_prefix == end_prefix) {
                     // Case 1: Start and end in the same prefix (single boundary)
-                    uint64_t m3 = static_cast<uint64_t>(start_prefix % 3);
-                    uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
-                    uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
-                    uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+                    uint64_t base_mod9 = static_cast<uint64_t>((start_prefix << cutoff_width) % 9);
+                    uint32_t allowed_offset = offsets[base_mod9];
+                    uint32_t allowed_size = sizes[base_mod9];
 
                     if (allowed_size > 0) {
                         uint32_t total_work_items = allowed_size;
@@ -701,37 +702,36 @@ void vulkan_search_range_internal(
                     // Case 2: Start and end prefixes are different
                     bool start_is_boundary = (chunk_start_val > (start_prefix << cutoff_width));
                     if (start_is_boundary) {
-                        uint64_t m3 = static_cast<uint64_t>(start_prefix % 3);
-                        uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
-                        uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
-                        uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+                        uint64_t base_mod9 = static_cast<uint64_t>((start_prefix << cutoff_width) % 9);
+                        uint32_t allowed_offset = offsets[base_mod9];
+                        uint32_t allowed_size = sizes[base_mod9];
 
-                    if (allowed_size > 0) {
-                        uint32_t total_work_items = allowed_size;
-                        uint32_t gc = (total_work_items + 255) / 256;
+                        if (allowed_size > 0) {
+                            uint32_t total_work_items = allowed_size;
+                            uint32_t gc = (total_work_items + 255) / 256;
 
-                        PushConstantsGpu pcs{};
-                        pcs.start_prefix_low = static_cast<uint64_t>(start_prefix);
-                        pcs.start_prefix_high = static_cast<uint64_t>(start_prefix >> 64);
-                        pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
-                        pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
-                        pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
-                        pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
-                        pcs.allowed_suffixes_size = allowed_size;
-                        pcs.cutoff_width = cutoff_width;
-                        pcs.total_work_items = total_work_items;
-                        pcs.allowed_offset = allowed_offset;
-                        pcs.prefix_stride = 1;
-                        pcs.check_start = 1;
-                        pcs.check_end = 0;
-                        pcs.init_max_val_low = masterPeaks.max_val.low;
-                        pcs.init_max_val_high = masterPeaks.max_val.high;
-                        pcs.init_max_steps = masterPeaks.max_steps;
-                        pcs.init_max_sigma = masterPeaks.max_sigma;
+                            PushConstantsGpu pcs{};
+                            pcs.start_prefix_low = static_cast<uint64_t>(start_prefix);
+                            pcs.start_prefix_high = static_cast<uint64_t>(start_prefix >> 64);
+                            pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
+                            pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
+                            pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
+                            pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
+                            pcs.allowed_suffixes_size = allowed_size;
+                            pcs.cutoff_width = cutoff_width;
+                            pcs.total_work_items = total_work_items;
+                            pcs.allowed_offset = allowed_offset;
+                            pcs.prefix_stride = 1;
+                            pcs.check_start = 1;
+                            pcs.check_end = 0;
+                            pcs.init_max_val_low = masterPeaks.max_val.low;
+                            pcs.init_max_val_high = masterPeaks.max_val.high;
+                            pcs.init_max_steps = masterPeaks.max_steps;
+                            pcs.init_max_sigma = masterPeaks.max_sigma;
 
-                        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
-                        vkCmdDispatch(commandBuffer, gc, 1, 1);
-                    }
+                            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
+                            vkCmdDispatch(commandBuffer, gc, 1, 1);
+                        }
 
                         if (use_64bit) {
                             accumulate_boundary_metrics_vulkan(static_cast<uint64_t>(start_prefix), static_cast<uint64_t>(chunk_start_val), ((static_cast<uint64_t>(start_prefix) + 1) << cutoff_width) - 1, cutoff_width, base_suffixes, masterMetrics);
@@ -742,43 +742,42 @@ void vulkan_search_range_internal(
 
                     bool end_is_boundary = (chunk_end_val < (((end_prefix + 1) << cutoff_width) - 1));
                     if (end_is_boundary) {
-                        uint64_t m3 = static_cast<uint64_t>(end_prefix % 3);
-                        uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
-                        uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
-                        uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+                        uint64_t base_mod9 = static_cast<uint64_t>((end_prefix << cutoff_width) % 9);
+                        uint32_t allowed_offset = offsets[base_mod9];
+                        uint32_t allowed_size = sizes[base_mod9];
 
-                    if (allowed_size > 0) {
-                        uint32_t total_work_items = allowed_size;
-                        uint32_t gc = (total_work_items + 255) / 256;
+                        if (allowed_size > 0) {
+                            uint32_t total_work_items = allowed_size;
+                            uint32_t gc = (total_work_items + 255) / 256;
 
-                        PushConstantsGpu pcs{};
-                        pcs.start_prefix_low = static_cast<uint64_t>(end_prefix);
-                        pcs.start_prefix_high = static_cast<uint64_t>(end_prefix >> 64);
-                        pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
-                        pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
-                        pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
-                        pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
-                        pcs.allowed_suffixes_size = allowed_size;
-                        pcs.cutoff_width = cutoff_width;
-                        pcs.total_work_items = total_work_items;
-                        pcs.allowed_offset = allowed_offset;
-                        pcs.prefix_stride = 1;
-                        pcs.check_start = 0;
-                        pcs.check_end = 1;
-                        pcs.init_max_val_low = masterPeaks.max_val.low;
-                        pcs.init_max_val_high = masterPeaks.max_val.high;
-                        pcs.init_max_steps = masterPeaks.max_steps;
-                        pcs.init_max_sigma = masterPeaks.max_sigma;
+                            PushConstantsGpu pcs{};
+                            pcs.start_prefix_low = static_cast<uint64_t>(end_prefix);
+                            pcs.start_prefix_high = static_cast<uint64_t>(end_prefix >> 64);
+                            pcs.start_val_low = static_cast<uint64_t>(chunk_start_val);
+                            pcs.start_val_high = static_cast<uint64_t>(chunk_start_val >> 64);
+                            pcs.end_val_low = static_cast<uint64_t>(chunk_end_val);
+                            pcs.end_val_high = static_cast<uint64_t>(chunk_end_val >> 64);
+                            pcs.allowed_suffixes_size = allowed_size;
+                            pcs.cutoff_width = cutoff_width;
+                            pcs.total_work_items = total_work_items;
+                            pcs.allowed_offset = allowed_offset;
+                            pcs.prefix_stride = 1;
+                            pcs.check_start = 0;
+                            pcs.check_end = 1;
+                            pcs.init_max_val_low = masterPeaks.max_val.low;
+                            pcs.init_max_val_high = masterPeaks.max_val.high;
+                            pcs.init_max_steps = masterPeaks.max_steps;
+                            pcs.init_max_sigma = masterPeaks.max_sigma;
 
-                        VkMemoryBarrier barrier{};
-                        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-                        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-                        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+                            VkMemoryBarrier barrier{};
+                            barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
 
-                        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
-                        vkCmdDispatch(commandBuffer, gc, 1, 1);
-                    }
+                            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantsGpu), &pcs);
+                            vkCmdDispatch(commandBuffer, gc, 1, 1);
+                        }
 
                         if (use_64bit) {
                             accumulate_boundary_metrics_vulkan(static_cast<uint64_t>(end_prefix), static_cast<uint64_t>(end_prefix << cutoff_width), static_cast<uint64_t>(chunk_end_val), cutoff_width, base_suffixes, masterMetrics);
@@ -787,34 +786,34 @@ void vulkan_search_range_internal(
                         }
                     }
 
-                    // Intermediate prefixes mod 3 groups
+                    // Intermediate prefixes mod 9 groups
                     unsigned __int128 mid_start_prefix = start_prefix + (start_is_boundary ? 1 : 0);
                     unsigned __int128 mid_end_prefix = end_prefix - (end_is_boundary ? 1 : 0);
 
                     if (mid_start_prefix <= mid_end_prefix) {
-                        uint64_t mult = (1ULL << cutoff_width) % 3;
-                        for (int rem_mod3 = 0; rem_mod3 < 3; ++rem_mod3) {
+                        uint64_t mult = (1ULL << cutoff_width) % 9;
+                        for (int rem_mod9 = 0; rem_mod9 < 9; ++rem_mod9) {
                             unsigned __int128 first_prefix = mid_start_prefix;
                             while (first_prefix <= mid_end_prefix) {
-                                uint64_t m3 = static_cast<uint64_t>(first_prefix % 3);
-                                if (m3 == rem_mod3) break;
+                                uint64_t m9 = static_cast<uint64_t>(first_prefix % 9);
+                                if (m9 == rem_mod9) break;
                                 first_prefix += 1;
                             }
 
                             unsigned __int128 last_prefix = mid_end_prefix;
                             while (last_prefix >= first_prefix) {
-                                uint64_t m3 = static_cast<uint64_t>(last_prefix % 3);
-                                if (m3 == rem_mod3) break;
+                                uint64_t m9 = static_cast<uint64_t>(last_prefix % 9);
+                                if (m9 == rem_mod9) break;
                                 last_prefix -= 1;
                             }
 
                             if (first_prefix <= last_prefix) {
                                 uint64_t diff = static_cast<uint64_t>(last_prefix - first_prefix);
-                                uint64_t num_prefixes_group = diff / 3 + 1;
+                                uint64_t num_prefixes_group = diff / 9 + 1;
 
-                                uint64_t base_mod6 = (rem_mod3 == 0) ? 0 : ((rem_mod3 == 1) ? 4 : 2);
-                                uint32_t allowed_offset = (base_mod6 == 0) ? offset_0 : ((base_mod6 == 2) ? offset_2 : offset_4);
-                                uint32_t allowed_size = (base_mod6 == 0) ? size_0 : ((base_mod6 == 2) ? size_2 : size_4);
+                                uint64_t base_mod9 = (rem_mod9 * mult) % 9;
+                                uint32_t allowed_offset = offsets[base_mod9];
+                                uint32_t allowed_size = sizes[base_mod9];
 
                                 if (allowed_size > 0 && num_prefixes_group > 0) {
                                     uint32_t total_work_items = static_cast<uint32_t>(num_prefixes_group * allowed_size);
@@ -831,7 +830,7 @@ void vulkan_search_range_internal(
                                     pcs.cutoff_width = cutoff_width;
                                     pcs.total_work_items = total_work_items;
                                     pcs.allowed_offset = allowed_offset;
-                                    pcs.prefix_stride = 3;
+                                    pcs.prefix_stride = 9;
                                     pcs.check_start = 0;
                                     pcs.check_end = 0;
                                     pcs.init_max_val_low = masterPeaks.max_val.low;
@@ -850,9 +849,7 @@ void vulkan_search_range_internal(
                                 }
 
                                 // Accumulate host metrics
-                                uint64_t base_mod3 = (rem_mod3 * mult) % 3;
-                                uint32_t std_skipped = (base_mod3 == 0) ? base_suffixes.std_skipped_0 :
-                                                       ((base_mod3 == 2) ? base_suffixes.std_skipped_2 : base_suffixes.std_skipped_1);
+                                uint32_t std_skipped = base_suffixes.std_skipped[base_mod9];
                                 masterMetrics.total_checked += num_prefixes_group * std_allowed_size;
                                 masterMetrics.skipped_mod6 += num_prefixes_group * std_skipped;
                             }
@@ -1053,9 +1050,7 @@ unsigned __int128 start_val,
 unsigned __int128 end_val,
 int cutoff_width,
 const BaseDependentSuffixes& base_suffixes,
-uint32_t offset_0, uint32_t size_0,
-uint32_t offset_2, uint32_t size_2,
-uint32_t offset_4, uint32_t size_4,
+const uint32_t* offsets, const uint32_t* sizes,
 VkDevice device,
 VkQueue computeQueue,
 VkCommandBuffer commandBuffer,
@@ -1078,7 +1073,7 @@ if (end_val >= (unsigned __int128)0x100000000ULL) {
 }
 vulkan_search_range_internal(
     start_val, end_val, cutoff_width, base_suffixes,
-    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+    offsets, sizes,
     device, computeQueue, commandBuffer,
     pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1091,9 +1086,7 @@ unsigned __int128 start_val,
 unsigned __int128 end_val,
 int cutoff_width,
 const BaseDependentSuffixes& base_suffixes,
-uint32_t offset_0, uint32_t size_0,
-uint32_t offset_2, uint32_t size_2,
-uint32_t offset_4, uint32_t size_4,
+const uint32_t* offsets, const uint32_t* sizes,
 VkDevice device,
 VkQueue computeQueue,
 VkCommandBuffer commandBuffer,
@@ -1116,7 +1109,7 @@ if (start_val < (unsigned __int128)0x100000000ULL) {
 }
 vulkan_search_range_internal(
     start_val, end_val, cutoff_width, base_suffixes,
-    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+    offsets, sizes,
     device, computeQueue, commandBuffer,
     pipelineLayout, pipeline, descriptorSet, buffers, bufferMemories, bufferSizes,
     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1471,9 +1464,8 @@ int main(int argc, char* argv[]) {
     // Binding 7: StepsTable (1024 bytes)
     BaseDependentSuffixes base_suffixes;
     std::vector<uint32_t> allowed_suffixes_packed;
-    uint32_t offset_0 = 0, size_0 = 0;
-    uint32_t offset_2 = 0, size_2 = 0;
-    uint32_t offset_4 = 0, size_4 = 0;
+    uint32_t offsets[9] = {0};
+    uint32_t sizes[9] = {0};
 
     if (cutoff_width > 0) {
         std::cout << "Using Suffix-First Search with width: " << cutoff_width << std::endl;
@@ -1485,29 +1477,17 @@ int main(int argc, char* argv[]) {
             base_suffixes = generate_base_dependent_suffixes(cutoff_width);
         }
         
-        offset_0 = 0;
-        size_0 = static_cast<uint32_t>(base_suffixes.allowed_0.size());
-        allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_0.begin(), base_suffixes.allowed_0.end());
-
-        offset_2 = static_cast<uint32_t>(allowed_suffixes_packed.size());
-        size_2 = static_cast<uint32_t>(base_suffixes.allowed_2.size());
-        allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_2.begin(), base_suffixes.allowed_2.end());
-
-        offset_4 = static_cast<uint32_t>(allowed_suffixes_packed.size());
-        size_4 = static_cast<uint32_t>(base_suffixes.allowed_4.size());
-        allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_4.begin(), base_suffixes.allowed_4.end());
-
-        if (cutoff_width == 24) {
-            std::cout << base_suffixes.std_allowed.size() << " std, " 
-                      << size_0 << " mod0, " 
-                      << size_2 << " mod2, " 
-                      << size_4 << " mod4 allowed suffixes loaded." << std::endl;
-        } else {
-            std::cout << base_suffixes.std_allowed.size() << " std, " 
-                      << size_0 << " mod0, " 
-                      << size_2 << " mod2, " 
-                      << size_4 << " mod4 allowed suffixes generated." << std::endl;
+        for (int B = 0; B < 9; ++B) {
+            offsets[B] = static_cast<uint32_t>(allowed_suffixes_packed.size());
+            sizes[B] = static_cast<uint32_t>(base_suffixes.allowed_tables[B].size());
+            allowed_suffixes_packed.insert(allowed_suffixes_packed.end(), base_suffixes.allowed_tables[B].begin(), base_suffixes.allowed_tables[B].end());
         }
+
+        std::cout << base_suffixes.std_allowed.size() << " std, [";
+        for (int B = 0; B < 9; ++B) {
+            std::cout << sizes[B] << (B == 8 ? "" : ", ");
+        }
+        std::cout << "] allowed suffixes " << (cutoff_width == 24 ? "loaded." : "generated.") << std::endl;
     } else {
         allowed_suffixes_packed = { 0 };
     }
@@ -1746,7 +1726,7 @@ int main(int argc, char* argv[]) {
                       << "]" << std::endl;
             vulkan_search_block_0(
                 start_val, standard_end, 0, base_suffixes,
-                0, 0, 0, 0, 0, 0,
+                offsets, sizes,
                 device, computeQueue, commandBuffer,
                 pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1763,7 +1743,7 @@ int main(int argc, char* argv[]) {
                 }
                 vulkan_search_block_0(
                     start_val, block_0_end, cutoff_width, base_suffixes,
-                    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+                    offsets, sizes,
                     device, computeQueue, commandBuffer,
                     pipelineLayout, pipeline_block0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1772,7 +1752,7 @@ int main(int argc, char* argv[]) {
                 if (end_val >= block_boundary) {
                     vulkan_search_blocks_gt_0(
                         block_boundary, end_val, cutoff_width, base_suffixes,
-                        offset_0, size_0, offset_2, size_2, offset_4, size_4,
+                        offsets, sizes,
                         device, computeQueue, commandBuffer,
                         pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                         masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1782,7 +1762,7 @@ int main(int argc, char* argv[]) {
             } else {
                 vulkan_search_blocks_gt_0(
                     start_val, end_val, cutoff_width, base_suffixes,
-                    offset_0, size_0, offset_2, size_2, offset_4, size_4,
+                    offsets, sizes,
                     device, computeQueue, commandBuffer,
                     pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1799,7 +1779,7 @@ int main(int argc, char* argv[]) {
             }
             vulkan_search_block_0(
                 start_val, block_0_end, 0, base_suffixes,
-                0, 0, 0, 0, 0, 0,
+                offsets, sizes,
                 device, computeQueue, commandBuffer,
                 pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1808,7 +1788,7 @@ int main(int argc, char* argv[]) {
             if (end_val >= block_boundary) {
                 vulkan_search_blocks_gt_0(
                     block_boundary, end_val, 0, base_suffixes,
-                    0, 0, 0, 0, 0, 0,
+                    offsets, sizes,
                     device, computeQueue, commandBuffer,
                     pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
@@ -1818,7 +1798,7 @@ int main(int argc, char* argv[]) {
         } else {
             vulkan_search_blocks_gt_0(
                 start_val, end_val, 0, base_suffixes,
-                0, 0, 0, 0, 0, 0,
+                offsets, sizes,
                 device, computeQueue, commandBuffer,
                 pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,

@@ -8,12 +8,8 @@
 
 struct BaseDependentSuffixes {
     std::vector<uint32_t> std_allowed;
-    std::vector<uint32_t> allowed_0;
-    std::vector<uint32_t> allowed_2;
-    std::vector<uint32_t> allowed_4;
-    uint32_t std_skipped_0 = 0;
-    uint32_t std_skipped_1 = 0;
-    uint32_t std_skipped_2 = 0;
+    std::vector<uint32_t> allowed_tables[9];
+    uint32_t std_skipped[9] = {0};
 };
 
 BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
@@ -78,10 +74,14 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
         }
     }
 
+    // Precompute skipped counts for std_allowed boundary checking
     for (uint32_t s : res.std_allowed) {
-        if (s % 3 == 2) res.std_skipped_0++;
-        if ((1 + s) % 3 == 2) res.std_skipped_1++;
-        if ((2 + s) % 3 == 2) res.std_skipped_2++;
+        for (int B = 0; B < 9; ++B) {
+            uint32_t rem = (B + s) % 9;
+            if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                res.std_skipped[B]++;
+            }
+        }
     }
 
     for (const auto& pair : classes) {
@@ -89,19 +89,21 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
         if (info.has_even) continue;
         
         uint32_t r1 = info.first_suffix;
-        bool has_1 = false;
-        bool has_3 = false;
-        bool has_5 = false;
-        for (uint32_t m : info.members) {
-            uint32_t rem = m % 6;
-            if (rem == 1) has_1 = true;
-            else if (rem == 3) has_3 = true;
-            else if (rem == 5) has_5 = true;
-        }
         
-        if (!has_5) res.allowed_0.push_back(r1);
-        if (!has_3) res.allowed_2.push_back(r1);
-        if (!has_1) res.allowed_4.push_back(r1);
+        // For each base B % 9, check if any member of the class lands on a skipped residue
+        for (int B = 0; B < 9; ++B) {
+            bool has_skipped = false;
+            for (uint32_t m : info.members) {
+                uint32_t rem = (B + m) % 9;
+                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                    has_skipped = true;
+                    break;
+                }
+            }
+            if (!has_skipped) {
+                res.allowed_tables[B].push_back(r1);
+            }
+        }
     }
     
     return res;
@@ -130,33 +132,42 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    uint32_t header[7];
+    // Header format: [std_count, count_B0..B8, std_skipped_B0..B8] -> total 19 uint32_t
+    uint32_t header[19];
     header[0] = static_cast<uint32_t>(res.std_allowed.size());
-    header[1] = static_cast<uint32_t>(res.allowed_0.size());
-    header[2] = static_cast<uint32_t>(res.allowed_2.size());
-    header[3] = static_cast<uint32_t>(res.allowed_4.size());
-    header[4] = res.std_skipped_0;
-    header[5] = res.std_skipped_1;
-    header[6] = res.std_skipped_2;
+    for (int i = 0; i < 9; ++i) {
+        header[1 + i] = static_cast<uint32_t>(res.allowed_tables[i].size());
+        header[10 + i] = res.std_skipped[i];
+    }
     
-    if (fwrite(header, sizeof(uint32_t), 7, fp) != 7) {
+    if (fwrite(header, sizeof(uint32_t), 19, fp) != 19) {
         std::cerr << "Error: Failed to write header to " << out_path << "\n";
         fclose(fp);
         return 1;
     }
     
-    if (fwrite(res.std_allowed.data(), sizeof(uint32_t), res.std_allowed.size(), fp) != res.std_allowed.size() ||
-        fwrite(res.allowed_0.data(), sizeof(uint32_t), res.allowed_0.size(), fp) != res.allowed_0.size() ||
-        fwrite(res.allowed_2.data(), sizeof(uint32_t), res.allowed_2.size(), fp) != res.allowed_2.size() ||
-        fwrite(res.allowed_4.data(), sizeof(uint32_t), res.allowed_4.size(), fp) != res.allowed_4.size()) {
-        std::cerr << "Error: Failed to write suffix data arrays to " << out_path << "\n";
+    if (fwrite(res.std_allowed.data(), sizeof(uint32_t), res.std_allowed.size(), fp) != res.std_allowed.size()) {
+        std::cerr << "Error: Failed to write std_allowed array to " << out_path << "\n";
         fclose(fp);
         return 1;
     }
     
+    uint64_t total_written = 19 + res.std_allowed.size();
+    for (int i = 0; i < 9; ++i) {
+        size_t size = res.allowed_tables[i].size();
+        if (size > 0) {
+            if (fwrite(res.allowed_tables[i].data(), sizeof(uint32_t), size, fp) != size) {
+                std::cerr << "Error: Failed to write allowed_tables[" << i << "] array to " << out_path << "\n";
+                fclose(fp);
+                return 1;
+            }
+            total_written += size;
+        }
+    }
+    
     fclose(fp);
     std::cout << "Successfully wrote " << out_path << " (" 
-              << (7 + res.std_allowed.size() + res.allowed_0.size() + res.allowed_2.size() + res.allowed_4.size()) * sizeof(uint32_t) 
+              << total_written * sizeof(uint32_t) 
               << " bytes)." << std::endl;
               
     return 0;

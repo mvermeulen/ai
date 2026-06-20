@@ -447,9 +447,9 @@ int main(int argc, char *argv[]) {
         v.erase(std::remove_if(v.begin(), v.end(), remove_01), v.end());
         skipped_count += (old_size - v.size());
     };
-    update_vector(base_suffixes.allowed_0, base_suffixes.std_skipped_0);
-    update_vector(base_suffixes.allowed_2, base_suffixes.std_skipped_2);
-    update_vector(base_suffixes.allowed_4, base_suffixes.std_skipped_1); // allowed_4 uses std_skipped_1
+    for (int B = 0; B < 9; ++B) {
+        update_vector(base_suffixes.allowed_tables[B], base_suffixes.std_skipped[B]);
+    }
 
     size_t old_std_size = base_suffixes.std_allowed.size();
     base_suffixes.std_allowed.erase(std::remove_if(base_suffixes.std_allowed.begin(), base_suffixes.std_allowed.end(), remove_01), base_suffixes.std_allowed.end());

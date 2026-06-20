@@ -833,9 +833,12 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     
     // Precompute skipped counts for std_allowed
     for (uint32_t s : res.std_allowed) {
-        if (s % 3 == 2) res.std_skipped_0++;
-        if ((1 + s) % 3 == 2) res.std_skipped_1++;
-        if ((2 + s) % 3 == 2) res.std_skipped_2++;
+        for (int B = 0; B < 9; ++B) {
+            uint32_t rem = (B + s) % 9;
+            if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                res.std_skipped[B]++;
+            }
+        }
     }
 
     // Build base-dependent allowed lists
@@ -844,24 +847,25 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
         if (info.has_even) continue;
         
         uint32_t r1 = info.first_suffix;
-        bool has_1 = false;
-        bool has_3 = false;
-        bool has_5 = false;
-        for (uint32_t m : info.members) {
-            uint32_t rem = m % 6;
-            if (rem == 1) has_1 = true;
-            else if (rem == 3) has_3 = true;
-            else if (rem == 5) has_5 = true;
+        // For each base B % 9, check if any member of the class lands on a skipped residue
+        for (int B = 0; B < 9; ++B) {
+            bool has_skipped = false;
+            for (uint32_t m : info.members) {
+                uint32_t rem = (B + m) % 9;
+                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                    has_skipped = true;
+                    break;
+                }
+            }
+            if (!has_skipped) {
+                res.allowed_tables[B].push_back(r1);
+            }
         }
-        
-        if (!has_5) res.allowed_0.push_back(r1);
-        if (!has_3) res.allowed_2.push_back(r1);
-        if (!has_1) res.allowed_4.push_back(r1);
     }
     
-    std::sort(res.allowed_0.begin(), res.allowed_0.end());
-    std::sort(res.allowed_2.begin(), res.allowed_2.end());
-    std::sort(res.allowed_4.begin(), res.allowed_4.end());
+    for (int B = 0; B < 9; ++B) {
+        std::sort(res.allowed_tables[B].begin(), res.allowed_tables[B].end());
+    }
     
     return res;
 }
@@ -870,31 +874,32 @@ bool load_allowed_suffixes_binary(const std::string& filepath, BaseDependentSuff
     FILE* fp = fopen(filepath.c_str(), "rb");
     if (!fp) return false;
 
-    uint32_t header[7];
-    if (fread(header, sizeof(uint32_t), 7, fp) != 7) {
+    uint32_t header[19];
+    if (fread(header, sizeof(uint32_t), 19, fp) != 19) {
         fclose(fp);
         return false;
     }
 
     uint32_t std_count = header[0];
-    uint32_t count_0 = header[1];
-    uint32_t count_2 = header[2];
-    uint32_t count_4 = header[3];
-    suffixes.std_skipped_0 = header[4];
-    suffixes.std_skipped_1 = header[5];
-    suffixes.std_skipped_2 = header[6];
-
     suffixes.std_allowed.resize(std_count);
-    suffixes.allowed_0.resize(count_0);
-    suffixes.allowed_2.resize(count_2);
-    suffixes.allowed_4.resize(count_4);
+    for (int i = 0; i < 9; ++i) {
+        suffixes.allowed_tables[i].resize(header[1 + i]);
+        suffixes.std_skipped[i] = header[10 + i];
+    }
 
-    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count ||
-        fread(suffixes.allowed_0.data(), sizeof(uint32_t), count_0, fp) != count_0 ||
-        fread(suffixes.allowed_2.data(), sizeof(uint32_t), count_2, fp) != count_2 ||
-        fread(suffixes.allowed_4.data(), sizeof(uint32_t), count_4, fp) != count_4) {
+    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count) {
         fclose(fp);
         return false;
+    }
+
+    for (int i = 0; i < 9; ++i) {
+        size_t size = suffixes.allowed_tables[i].size();
+        if (size > 0) {
+            if (fread(suffixes.allowed_tables[i].data(), sizeof(uint32_t), size, fp) != size) {
+                fclose(fp);
+                return false;
+            }
+        }
     }
 
     fclose(fp);
@@ -1357,8 +1362,7 @@ __global__ void collatz_search_kernel_suffix_first(
 void accumulate_boundary_metrics(uint64_t prefix, uint64_t start_64, uint64_t end_64, int width, 
                                  const BaseDependentSuffixes& base_suffixes, SearchMetrics& metrics) {
     uint64_t base = prefix << width;
-    uint64_t mult = (1ULL << width) % 3;
-    uint64_t base_mod3 = ((prefix % 3) * mult) % 3;
+    uint64_t base_mod9 = base % 9;
     
     for (uint32_t suffix : base_suffixes.std_allowed) {
         uint64_t curr = base | suffix;
@@ -1366,7 +1370,8 @@ void accumulate_boundary_metrics(uint64_t prefix, uint64_t start_64, uint64_t en
         if (curr > end_64) break;
         
         metrics.total_numbers_checked++;
-        if ((base_mod3 + suffix) % 3 == 2) {
+        uint32_t rem = (base_mod9 + suffix) % 9;
+        if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
             metrics.numbers_skipped_mod6++;
         }
     }
@@ -1375,9 +1380,7 @@ void accumulate_boundary_metrics(uint64_t prefix, uint64_t start_64, uint64_t en
 void accumulate_boundary_metrics_128(uint128 prefix, uint128 start, uint128 end, int width, 
                                      const BaseDependentSuffixes& base_suffixes, SearchMetrics& metrics) {
     uint128 base = shift_left(prefix, width);
-    uint64_t mult = (1ULL << width) % 3;
-    uint64_t prefix_mod3 = (prefix.high % 3 + prefix.low % 3) % 3;
-    uint64_t base_mod3 = (prefix_mod3 * mult) % 3;
+    uint64_t base_mod9 = ((base.high % 9) * 7 + (base.low % 9)) % 9;
     
     for (uint32_t suffix : base_suffixes.std_allowed) {
         uint128 curr = base + uint128(suffix);
@@ -1385,7 +1388,8 @@ void accumulate_boundary_metrics_128(uint128 prefix, uint128 start, uint128 end,
         if (curr > end) break;
         
         metrics.total_numbers_checked++;
-        if ((base_mod3 + suffix) % 3 == 2) {
+        uint32_t rem = (base_mod9 + suffix) % 9;
+        if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
             metrics.numbers_skipped_mod6++;
         }
     }
@@ -1422,21 +1426,12 @@ void hip_search_range_suffix_first(
         steps_copied = true;
     }
 
-    uint32_t* d_allowed_0 = nullptr;
-    uint32_t* d_allowed_2 = nullptr;
-    uint32_t* d_allowed_4 = nullptr;
-
-    if (!base_suffixes.allowed_0.empty()) {
-        HIP_CHECK(hipMalloc(&d_allowed_0, base_suffixes.allowed_0.size() * sizeof(uint32_t)));
-        HIP_CHECK(hipMemcpy(d_allowed_0, base_suffixes.allowed_0.data(), base_suffixes.allowed_0.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
-    }
-    if (!base_suffixes.allowed_2.empty()) {
-        HIP_CHECK(hipMalloc(&d_allowed_2, base_suffixes.allowed_2.size() * sizeof(uint32_t)));
-        HIP_CHECK(hipMemcpy(d_allowed_2, base_suffixes.allowed_2.data(), base_suffixes.allowed_2.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
-    }
-    if (!base_suffixes.allowed_4.empty()) {
-        HIP_CHECK(hipMalloc(&d_allowed_4, base_suffixes.allowed_4.size() * sizeof(uint32_t)));
-        HIP_CHECK(hipMemcpy(d_allowed_4, base_suffixes.allowed_4.data(), base_suffixes.allowed_4.size() * sizeof(uint32_t), hipMemcpyHostToDevice));
+    uint32_t* d_allowed_tables[9] = {nullptr};
+    for (int B = 0; B < 9; ++B) {
+        if (!base_suffixes.allowed_tables[B].empty()) {
+            HIP_CHECK(hipMalloc(&d_allowed_tables[B], base_suffixes.allowed_tables[B].size() * sizeof(uint32_t)));
+            HIP_CHECK(hipMemcpy(d_allowed_tables[B], base_suffixes.allowed_tables[B].data(), base_suffixes.allowed_tables[B].size() * sizeof(uint32_t), hipMemcpyHostToDevice));
+        }
     }
 
     PeakRecord* d_max_val_peaks;
@@ -1507,11 +1502,10 @@ void hip_search_range_suffix_first(
 
         if (start_prefix == end_prefix) {
             // Case 1: Start and end in the same prefix (single boundary)
-            uint64_t m3 = (start_prefix.high % 3 + start_prefix.low % 3) % 3;
-            uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
-            uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
-            uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
-                                    ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+            uint128 base = shift_left(start_prefix, width);
+            uint64_t base_mod9 = ((base.high % 9) * 7 + (base.low % 9)) % 9;
+            uint32_t* d_allowed = d_allowed_tables[base_mod9];
+            uint32_t allowed_size = base_suffixes.allowed_tables[base_mod9].size();
             if (allowed_size > 0) {
                 uint64_t total_work_items = allowed_size;
                 int threads_per_block = 256;
@@ -1542,11 +1536,10 @@ void hip_search_range_suffix_first(
             // Case 2: Start and end prefixes are different
             bool start_is_boundary = (current_chunk_start > shift_left(start_prefix, width));
             if (start_is_boundary) {
-                uint64_t m3 = (start_prefix.high % 3 + start_prefix.low % 3) % 3;
-                uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
-                uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
-                uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
-                                        ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+                uint128 base = shift_left(start_prefix, width);
+                uint64_t base_mod9 = ((base.high % 9) * 7 + (base.low % 9)) % 9;
+                uint32_t* d_allowed = d_allowed_tables[base_mod9];
+                uint32_t allowed_size = base_suffixes.allowed_tables[base_mod9].size();
                 if (allowed_size > 0) {
                     uint64_t total_work_items = allowed_size;
                     int threads_per_block = 256;
@@ -1577,11 +1570,10 @@ void hip_search_range_suffix_first(
 
             bool end_is_boundary = (current_chunk_end < (shift_left(end_prefix + uint128(1), width) - uint128(1)));
             if (end_is_boundary) {
-                uint64_t m3 = (end_prefix.high % 3 + end_prefix.low % 3) % 3;
-                uint64_t base_mod6 = (m3 == 0) ? 0 : ((m3 == 1) ? 4 : 2);
-                uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
-                uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
-                                        ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+                uint128 base = shift_left(end_prefix, width);
+                uint64_t base_mod9 = ((base.high % 9) * 7 + (base.low % 9)) % 9;
+                uint32_t* d_allowed = d_allowed_tables[base_mod9];
+                uint32_t allowed_size = base_suffixes.allowed_tables[base_mod9].size();
                 if (allowed_size > 0) {
                     uint64_t total_work_items = allowed_size;
                     int threads_per_block = 256;
@@ -1610,35 +1602,34 @@ void hip_search_range_suffix_first(
                 }
             }
 
-            // Intermediate prefixes mod 3 groups
+            // Intermediate prefixes mod 9 groups
             uint128 mid_start_prefix = start_prefix + (start_is_boundary ? uint128(1) : uint128(0));
             uint128 mid_end_prefix = end_prefix - (end_is_boundary ? uint128(1) : uint128(0));
 
             if (mid_start_prefix <= mid_end_prefix) {
-                uint64_t mult = (1ULL << width) % 3;
-                for (int rem_mod3 = 0; rem_mod3 < 3; ++rem_mod3) {
+                uint64_t mult = (1ULL << width) % 9;
+                for (int rem_mod9 = 0; rem_mod9 < 9; ++rem_mod9) {
                     uint128 first_prefix = mid_start_prefix;
                     while (first_prefix <= mid_end_prefix) {
-                        uint64_t m3 = (first_prefix.high % 3 + first_prefix.low % 3) % 3;
-                        if (m3 == rem_mod3) break;
+                        uint64_t m9 = ((first_prefix.high % 9) * 7 + first_prefix.low % 9) % 9;
+                        if (m9 == rem_mod9) break;
                         first_prefix = first_prefix + uint128(1);
                     }
 
                     uint128 last_prefix = mid_end_prefix;
                     while (last_prefix >= first_prefix) {
-                        uint64_t m3 = (last_prefix.high % 3 + last_prefix.low % 3) % 3;
-                        if (m3 == rem_mod3) break;
+                        uint64_t m9 = ((last_prefix.high % 9) * 7 + last_prefix.low % 9) % 9;
+                        if (m9 == rem_mod9) break;
                         last_prefix = last_prefix - uint128(1);
                     }
 
                     if (first_prefix <= last_prefix) {
                         uint64_t diff = (last_prefix - first_prefix).low;
-                        uint64_t num_prefixes_group = diff / 3 + 1;
+                        uint64_t num_prefixes_group = diff / 9 + 1;
 
-                        uint64_t base_mod6 = (rem_mod3 == 0) ? 0 : ((rem_mod3 == 1) ? 4 : 2);
-                        uint32_t* d_allowed = (base_mod6 == 0) ? d_allowed_0 : ((base_mod6 == 2) ? d_allowed_2 : d_allowed_4);
-                        uint32_t allowed_size = (base_mod6 == 0) ? base_suffixes.allowed_0.size() :
-                                                ((base_mod6 == 2) ? base_suffixes.allowed_2.size() : base_suffixes.allowed_4.size());
+                        uint64_t base_mod9 = (rem_mod9 * mult) % 9;
+                        uint32_t* d_allowed = d_allowed_tables[base_mod9];
+                        uint32_t allowed_size = base_suffixes.allowed_tables[base_mod9].size();
                         if (allowed_size > 0 && num_prefixes_group > 0) {
                             uint64_t total_work_items = num_prefixes_group * allowed_size;
                             int threads_per_block = 256;
@@ -1648,23 +1639,21 @@ void hip_search_range_suffix_first(
                                 hipLaunchKernelGGL((collatz_search_kernel_suffix_first<true, false, false>), dim3(blocks), dim3(threads_per_block), 0, 0,
                                     first_prefix, current_chunk_start, current_chunk_end,
                                     masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
-                                    allowed_size, d_allowed, width, total_work_items, 3,
+                                    allowed_size, d_allowed, width, total_work_items, 9,
                                     d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
                                 );
                             } else {
                                 hipLaunchKernelGGL((collatz_search_kernel_suffix_first<false, false, false>), dim3(blocks), dim3(threads_per_block), 0, 0,
                                     first_prefix, current_chunk_start, current_chunk_end,
                                     masterPeaks.current_max_value, masterPeaks.current_max_steps, masterPeaks.current_max_sigma,
-                                    allowed_size, d_allowed, width, total_work_items, 3,
+                                    allowed_size, d_allowed, width, total_work_items, 9,
                                     d_max_val_peaks, d_max_val_count, d_steps_peaks, d_steps_count, d_sigma_peaks, d_sigma_count, d_global_peaks, d_metrics
                                 );
                             }
                         }
                         
                         // Accumulate host metrics
-                        uint64_t base_mod3 = (rem_mod3 * mult) % 3;
-                        uint32_t std_skipped = (base_mod3 == 0) ? base_suffixes.std_skipped_0 :
-                                               ((base_mod3 == 2) ? base_suffixes.std_skipped_2 : base_suffixes.std_skipped_1);
+                        uint32_t std_skipped = base_suffixes.std_skipped[base_mod9];
                         masterMetrics.total_numbers_checked += num_prefixes_group * std_allowed_size;
                         masterMetrics.numbers_skipped_mod6 += num_prefixes_group * std_skipped;
                     }
@@ -1769,9 +1758,9 @@ void hip_search_range_suffix_first(
     metrics.numbers_overflowed += masterMetrics.numbers_overflowed;
     metrics.elapsed_seconds += total_kernel_time;
 
-    if (d_allowed_0) HIP_CHECK(hipFree(d_allowed_0));
-    if (d_allowed_2) HIP_CHECK(hipFree(d_allowed_2));
-    if (d_allowed_4) HIP_CHECK(hipFree(d_allowed_4));
+    for (int B = 0; B < 9; ++B) {
+        if (d_allowed_tables[B]) HIP_CHECK(hipFree(d_allowed_tables[B]));
+    }
     HIP_CHECK(hipFree(d_max_val_peaks));
     HIP_CHECK(hipFree(d_steps_peaks));
     HIP_CHECK(hipFree(d_sigma_peaks));

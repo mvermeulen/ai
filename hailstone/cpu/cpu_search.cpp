@@ -1169,9 +1169,12 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     
     // Precompute skipped counts for std_allowed
     for (uint32_t s : res.std_allowed) {
-        if (s % 3 == 2) res.std_skipped_0++;
-        if ((1 + s) % 3 == 2) res.std_skipped_1++;
-        if ((2 + s) % 3 == 2) res.std_skipped_2++;
+        for (int B = 0; B < 9; ++B) {
+            uint32_t rem = (B + s) % 9;
+            if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                res.std_skipped[B]++;
+            }
+        }
     }
 
     // Build base-dependent allowed lists
@@ -1180,24 +1183,25 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
         if (info.has_even) continue;
         
         uint32_t r1 = info.first_suffix;
-        bool has_1 = false;
-        bool has_3 = false;
-        bool has_5 = false;
-        for (uint32_t m : info.members) {
-            uint32_t rem = m % 6;
-            if (rem == 1) has_1 = true;
-            else if (rem == 3) has_3 = true;
-            else if (rem == 5) has_5 = true;
+        // For each base B % 9, check if any member of the class lands on a skipped residue
+        for (int B = 0; B < 9; ++B) {
+            bool has_skipped = false;
+            for (uint32_t m : info.members) {
+                uint32_t rem = (B + m) % 9;
+                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+                    has_skipped = true;
+                    break;
+                }
+            }
+            if (!has_skipped) {
+                res.allowed_tables[B].push_back(r1);
+            }
         }
-        
-        if (!has_5) res.allowed_0.push_back(r1);
-        if (!has_3) res.allowed_2.push_back(r1);
-        if (!has_1) res.allowed_4.push_back(r1);
     }
     
-    std::sort(res.allowed_0.begin(), res.allowed_0.end());
-    std::sort(res.allowed_2.begin(), res.allowed_2.end());
-    std::sort(res.allowed_4.begin(), res.allowed_4.end());
+    for (int B = 0; B < 9; ++B) {
+        std::sort(res.allowed_tables[B].begin(), res.allowed_tables[B].end());
+    }
     
     return res;
 }
@@ -1206,31 +1210,32 @@ bool load_allowed_suffixes_binary(const std::string& filepath, BaseDependentSuff
     FILE* fp = fopen(filepath.c_str(), "rb");
     if (!fp) return false;
 
-    uint32_t header[7];
-    if (fread(header, sizeof(uint32_t), 7, fp) != 7) {
+    uint32_t header[19];
+    if (fread(header, sizeof(uint32_t), 19, fp) != 19) {
         fclose(fp);
         return false;
     }
 
     uint32_t std_count = header[0];
-    uint32_t count_0 = header[1];
-    uint32_t count_2 = header[2];
-    uint32_t count_4 = header[3];
-    suffixes.std_skipped_0 = header[4];
-    suffixes.std_skipped_1 = header[5];
-    suffixes.std_skipped_2 = header[6];
-
     suffixes.std_allowed.resize(std_count);
-    suffixes.allowed_0.resize(count_0);
-    suffixes.allowed_2.resize(count_2);
-    suffixes.allowed_4.resize(count_4);
+    for (int i = 0; i < 9; ++i) {
+        suffixes.allowed_tables[i].resize(header[1 + i]);
+        suffixes.std_skipped[i] = header[10 + i];
+    }
 
-    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count ||
-        fread(suffixes.allowed_0.data(), sizeof(uint32_t), count_0, fp) != count_0 ||
-        fread(suffixes.allowed_2.data(), sizeof(uint32_t), count_2, fp) != count_2 ||
-        fread(suffixes.allowed_4.data(), sizeof(uint32_t), count_4, fp) != count_4) {
+    if (fread(suffixes.std_allowed.data(), sizeof(uint32_t), std_count, fp) != std_count) {
         fclose(fp);
         return false;
+    }
+
+    for (int i = 0; i < 9; ++i) {
+        size_t size = suffixes.allowed_tables[i].size();
+        if (size > 0) {
+            if (fread(suffixes.allowed_tables[i].data(), sizeof(uint32_t), size, fp) != size) {
+                fclose(fp);
+                return false;
+            }
+        }
     }
 
     fclose(fp);
@@ -1293,20 +1298,14 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
     // Loop through prefixes
     for (uint64_t x = start_prefix; x <= end_prefix; ++x) {
         uint64_t base = x << width;
-        uint64_t x_mod3 = x % 3;
+        uint64_t base_mod9 = base % 9;
         
-        uint64_t base_mod6 = (x_mod3 == 0) ? 0 : ((x_mod3 == 1) ? 4 : 2);
-        
-        const std::vector<uint32_t>& allowed = (base_mod6 == 0) ? base_suffixes.allowed_0 :
-                                               ((base_mod6 == 2) ? base_suffixes.allowed_2 :
-                                                                   base_suffixes.allowed_4);
+        const std::vector<uint32_t>& allowed = base_suffixes.allowed_tables[base_mod9];
 
         bool is_fully_in_bounds = (x > start_prefix && x < end_prefix);
 
         if (is_fully_in_bounds) {
-            uint32_t std_skipped = (base_mod6 == 0) ? base_suffixes.std_skipped_0 :
-                                   ((base_mod6 == 2) ? base_suffixes.std_skipped_2 :
-                                                       base_suffixes.std_skipped_1);
+            uint32_t std_skipped = base_suffixes.std_skipped[base_mod9];
             metrics.total_numbers_checked += std_allowed_size;
             metrics.numbers_skipped_mod6 += std_skipped;
 
@@ -1443,16 +1442,14 @@ void cpu_search_block_0_suffix_first(uint128 start_num, uint128 end_num,
             }
         } else {
             // Boundary block: perform individual prefix bounds checking and exact metrics tracking
-            uint64_t mult = (1ULL << width) % 3;
-            uint64_t base_mod3 = (x_mod3 * mult) % 3;
-
             for (uint32_t suffix : base_suffixes.std_allowed) {
                 uint64_t curr = base | suffix;
                 
                 if (curr < start_64) continue;
                 if (curr > end_64) break;
 
-                if ((base_mod3 + suffix) % 3 == 2) {
+                uint32_t rem = (base_mod9 + suffix) % 9;
+                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
                     metrics.numbers_skipped_mod6++;
                     metrics.total_numbers_checked++;
                     continue;
@@ -1633,26 +1630,18 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
     uint128 start_prefix = shift_right(start, width);
     uint128 end_prefix = shift_right(end, width);
 
-    uint64_t mult = (1ULL << width) % 3;
     uint32_t std_allowed_size = (uint32_t)base_suffixes.std_allowed.size();
 
     for (uint128 x = start_prefix; x <= end_prefix; x = x + uint128(1)) {
         uint128 base = shift_left(x, width);
-        uint64_t x_mod3 = (x.high % 3 + x.low % 3) % 3;
-        uint64_t base_mod3 = (x_mod3 * mult) % 3;
+        uint64_t base_mod9 = ((base.high % 9) * 7 + (base.low % 9)) % 9;
         
-        uint64_t base_mod6 = (x_mod3 == 0) ? 0 : ((x_mod3 == 1) ? 4 : 2);
-        
-        const std::vector<uint32_t>& allowed = (base_mod6 == 0) ? base_suffixes.allowed_0 :
-                                               ((base_mod6 == 2) ? base_suffixes.allowed_2 :
-                                                                   base_suffixes.allowed_4);
+        const std::vector<uint32_t>& allowed = base_suffixes.allowed_tables[base_mod9];
 
         bool is_fully_in_bounds = (x > start_prefix && x < end_prefix);
 
         if (is_fully_in_bounds) {
-            uint32_t std_skipped = (base_mod3 == 0) ? base_suffixes.std_skipped_0 :
-                                   ((base_mod3 == 2) ? base_suffixes.std_skipped_2 :
-                                                       base_suffixes.std_skipped_1);
+            uint32_t std_skipped = base_suffixes.std_skipped[base_mod9];
             metrics.total_numbers_checked += std_allowed_size;
             metrics.numbers_skipped_mod6 += std_skipped;
 
@@ -1810,7 +1799,8 @@ void cpu_search_range_suffix_first(uint128 start, uint128 end,
                 if (curr < start) continue;
                 if (curr > end) break;
 
-                if ((base_mod3 + suffix) % 3 == 2) {
+                uint32_t rem = (base_mod9 + suffix) % 9;
+                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
                     metrics.numbers_skipped_mod6++;
                     metrics.total_numbers_checked++;
                     continue;

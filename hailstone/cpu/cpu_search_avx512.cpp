@@ -44,7 +44,6 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
     uint128 start_prefix = shift_right(start, width);
     uint128 end_prefix = shift_right(end, width);
 
-    uint64_t mult = (1ULL << width) % 3;
     uint32_t std_allowed_size = (uint32_t)base_suffixes.std_allowed.size();
 
     // Stack-allocated lane data aligned to 64-byte boundaries for AVX-512 loading/storing
@@ -56,21 +55,14 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
 
     for (uint128 x = start_prefix; x <= end_prefix; x = x + uint128(1)) {
         uint128 base = shift_left(x, width);
-        uint64_t x_mod3 = (x.high % 3 + x.low % 3) % 3;
-        uint64_t base_mod3 = (x_mod3 * mult) % 3;
+        uint64_t base_mod9 = ((base.high % 9) * 7 + (base.low % 9)) % 9;
         
-        uint64_t base_mod6 = (x_mod3 == 0) ? 0 : ((x_mod3 == 1) ? 4 : 2);
-        
-        const std::vector<uint32_t>& allowed = (base_mod6 == 0) ? base_suffixes.allowed_0 :
-                                               ((base_mod6 == 2) ? base_suffixes.allowed_2 :
-                                                                   base_suffixes.allowed_4);
+        const std::vector<uint32_t>& allowed = base_suffixes.allowed_tables[base_mod9];
 
         bool is_fully_in_bounds = (x > start_prefix && x < end_prefix);
 
         if (is_fully_in_bounds) {
-            uint32_t std_skipped = (base_mod3 == 0) ? base_suffixes.std_skipped_0 :
-                                   ((base_mod3 == 2) ? base_suffixes.std_skipped_2 :
-                                                       base_suffixes.std_skipped_1);
+            uint32_t std_skipped = base_suffixes.std_skipped[base_mod9];
             metrics.total_numbers_checked += std_allowed_size;
             metrics.numbers_skipped_mod6 += std_skipped;
 
@@ -340,7 +332,8 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
                 if (curr < start) continue;
                 if (curr > end) break;
 
-                if ((base_mod3 + suffix) % 3 == 2) {
+                uint32_t rem = (base_mod9 + suffix) % 9;
+                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
                     metrics.numbers_skipped_mod6++;
                     metrics.total_numbers_checked++;
                     continue;

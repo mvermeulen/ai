@@ -49,13 +49,9 @@ struct SearchMetrics {
 
 struct BaseDependentSuffixes {
     std::vector<uint32_t> std_allowed;
-    std::vector<uint32_t> allowed_0; // Suffixes allowed when base % 6 == 0
-    std::vector<uint32_t> allowed_2; // Suffixes allowed when base % 6 == 2
-    std::vector<uint32_t> allowed_4; // Suffixes allowed when base % 6 == 4
+    std::vector<uint32_t> allowed_tables[9]; // 9 base-dependent lists (base % 9)
 
-    uint32_t std_skipped_0 = 0;
-    uint32_t std_skipped_1 = 0;
-    uint32_t std_skipped_2 = 0;
+    uint32_t std_skipped[9] = {0};           // Skipped count for each mod 9 base
 };
 
 #endif // HAILSTONE_COMMON_H
