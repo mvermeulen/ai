@@ -575,7 +575,7 @@ void vulkan_search_range_internal(
     }
     predictor.prune_predictions_less_than(uint128(static_cast<uint64_t>(start_val), static_cast<uint64_t>(start_val >> 64)));
 
-    const unsigned __int128 CHUNK_SIZE = 2000000;
+    const unsigned __int128 CHUNK_SIZE = 1000000000;
     unsigned __int128 current_chunk_start = start_val;
 
     auto last_report_time = std::chrono::steady_clock::now();

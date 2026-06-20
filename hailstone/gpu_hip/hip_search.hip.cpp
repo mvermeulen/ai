@@ -548,7 +548,7 @@ void hip_search_range(
     std::vector<PeakRecord> masterStepsPeaks = steps_peaks;
     std::vector<PeakRecord> masterSigmaPeaks = sigma_peaks;
 
-    const uint64_t CHUNK_SIZE = 2000000;
+    const uint64_t CHUNK_SIZE = 1000000000;
     uint128 current_chunk_start = start;
 
     double total_kernel_time = 0.0;
@@ -1458,7 +1458,7 @@ void hip_search_range_suffix_first(
     std::vector<PeakRecord> masterStepsPeaks = steps_peaks;
     std::vector<PeakRecord> masterSigmaPeaks = sigma_peaks;
 
-    const uint64_t CHUNK_SIZE = 2000000;
+    const uint64_t CHUNK_SIZE = 1000000000;
     uint128 current_chunk_start = start;
 
     double total_kernel_time = 0.0;

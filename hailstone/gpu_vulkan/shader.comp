@@ -296,6 +296,8 @@ shared uint64_t shared_max_val_low[256];
 shared uint64_t shared_max_val_high[256];
 shared uint shared_steps[256];
 shared uint shared_sigma[256];
+shared bool workgroup_has_candidate;
+
 
 void main() {
     // Read initial global peaks at start of invocation from push constants to avoid dynamic thread blocking and race conditions
@@ -664,6 +666,30 @@ void main() {
         n.high = 0UL;
     }
 
+    // Check if any thread has a peak candidate
+    bool has_candidate = false;
+    if (active_thread) {
+        if (USE_64BIT) {
+            has_candidate = (max_val_64 > init_max_val.low) || (steps > init_max_steps) || (stopping_time > init_max_sigma);
+        } else {
+            has_candidate = greater_than(max_val, init_max_val) || (steps > init_max_steps) || (stopping_time > init_max_sigma);
+        }
+    }
+
+    if (l_id == 0) {
+        workgroup_has_candidate = false;
+    }
+    barrier();
+
+    if (has_candidate) {
+        workgroup_has_candidate = true;
+    }
+    barrier();
+
+    if (!workgroup_has_candidate) {
+        return;
+    }
+
     // Workgroup reduction & prefix scan to log local peaks
     shared_max_val_low[l_id] = active_thread ? max_val.low : 0UL;
     shared_max_val_high[l_id] = active_thread ? max_val.high : 0UL;
@@ -926,9 +952,7 @@ void main() {
                     steps_peaks[idx].val_high = 0UL;
                 }
 
-                if (steps > global_peaks.max_steps) {
-                    global_peaks.max_steps = steps;
-                }
+                atomicMax(global_peaks.max_steps, steps);
             }
         }
 
@@ -944,9 +968,7 @@ void main() {
                     sigma_peaks[idx].val_high = 0UL;
                 }
 
-                if (stopping_time > global_peaks.max_sigma) {
-                    global_peaks.max_sigma = stopping_time;
-                }
+                atomicMax(global_peaks.max_sigma, stopping_time);
             }
         }
     }
