@@ -212,7 +212,7 @@ python3 benchmarks/benchmark.py --mode full
 Benchmark results and peak counts will automatically append to the optimization history in [benchmarks/README.md](file:///home/mev/source/ai/hailstone/benchmarks/README.md) and [benchmarks/history.json](file:///home/mev/source/ai/hailstone/benchmarks/history.json).
 
 ### 3. CPU Profiling
-The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/profiling.md).
+The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/2026-06-15-profiling.md).
 
 ---
 

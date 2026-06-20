@@ -63,7 +63,7 @@ curr = curr - 1; // Exit back to original domain
 ### Recommendation 2: Incrementing by 4 & $(3x+1)/4$ Study
 David Barina's verification loop skips checking starting values $n \equiv 1 \pmod 4$ by incrementing by 4 (`curr += 4`), which restricts checks to $n \equiv 3 \pmod 4$.
 
-* **Correspondence to our Codebase:** This optimization is functionally identical to the prefix exclusion studied in our [Path Patterns of the Form $(3x+1)/4$](file:///home/mev/source/ai/hailstone/doc/3x_plus_1_over_4_path_investigation.md) report, where we benchmarked the `EXCLUDE_01_SUFFIX` flag. 
+* **Correspondence to our Codebase:** This optimization is functionally identical to the prefix exclusion studied in our [Path Patterns of the Form $(3x+1)/4$](file:///home/mev/source/ai/hailstone/doc/2026-06-14-3x_plus_1_over_4_path_investigation.md) report, where we benchmarked the `EXCLUDE_01_SUFFIX` flag. 
 * **Conclusion:** Our study demonstrated a **29% to 35% search speedup** by pruning the `01` suffix. Barina's sequential loop enforces this a priori by only checking the $4k+3$ residue class.
 
 ---

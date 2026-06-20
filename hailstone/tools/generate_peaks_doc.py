@@ -211,7 +211,7 @@ def generate_markdown(chk_path, md_path):
                 md_content.append(f"| {format_number(start)} | {format_number(metric)} | ? | ? | {rel} |")
                 
     md_content.append("")
-    md_content.append("\\* Note: The successor value $Q$ is not itself a historical steps peak (a counter-example to direct peak-to-peak prediction). See [3x_plus_1_over_4_path_investigation.md](file:///home/mev/source/ai/hailstone/doc/3x_plus_1_over_4_path_investigation.md) for the mathematical analysis.")
+    md_content.append("\\* Note: The successor value $Q$ is not itself a historical steps peak (a counter-example to direct peak-to-peak prediction). See [3x_plus_1_over_4_path_investigation.md](file:///home/mev/source/ai/hailstone/doc/2026-06-14-3x_plus_1_over_4_path_investigation.md) for the mathematical analysis.")
     md_content.append("")
     md_content.append("---")
     md_content.append("")

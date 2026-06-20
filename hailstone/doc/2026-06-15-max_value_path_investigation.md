@@ -1,6 +1,6 @@
 # Investigation: Paths Taken by Peaks in Maximum Values
 
-This document details the trajectory path properties of record-breaking maximum value peaks (frequently called max value peaks) in the Collatz search. Building on [Trajectory Path Representation and Optimization Opportunities](file:///home/mev/source/ai/hailstone/doc/path_investigation_and_opportunities.md), we explore the structural patterns of their paths before and after reaching the global peak, analyzing mathematical constraints, run behaviors, and substring containment relations with steps peaks and stopping time ($\sigma$) peaks.
+This document details the trajectory path properties of record-breaking maximum value peaks (frequently called max value peaks) in the Collatz search. Building on [Trajectory Path Representation and Optimization Opportunities](file:///home/mev/source/ai/hailstone/doc/2026-06-14-path_investigation_and_opportunities.md), we explore the structural patterns of their paths before and after reaching the global peak, analyzing mathematical constraints, run behaviors, and substring containment relations with steps peaks and stopping time ($\sigma$) peaks.
 
 ---
 
