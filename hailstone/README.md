@@ -220,7 +220,7 @@ Benchmark results and peak counts will automatically append to the optimization 
 ### 3. Extended Configuration Sweep (Block 100,000)
 To evaluate trade-offs in the 128-bit search space, we run the extended sweep driver (`extended_sweep.py`) at Block 100,000 (checking 1,000,000,000 starting numbers). Since search ranges smaller than a full block ($2^{32}$ values) run sequentially on a single thread on the CPU, the CPU configurations are benchmarked with 1 thread. Below is the performance matrix of backends, thread counts, SIMD instruction sets, domain-switching, and suffix-first cutoff widths:
 
-| Backend | Threads | AVX-512 | Domain Switch | Cutoff Width | Time (s) | Computational Throughput (M/s) | Comp. Speedup | Search Coverage Speed (M/s) | Coverage Speedup |
+| Backend | Threads | [AVX-512](doc/optimizations_illustrated.md#parallelization--vectorization) | [Domain Switch](doc/optimizations_illustrated.md#domain-switching-arithmetic) | [Cutoff Width](doc/optimizations_illustrated.md#cutoffs--suffix-first-search) | Time (s) | Computational Throughput (M/s) | Comp. Speedup | Search Coverage Speed (M/s) | Coverage Speedup |
 |---|---|---|---|---|---|---|---|---|---|
 | CPU | 1 | ON | ON | 20 | 7.419 | 14.99 | 1.46x | 134.80 | 6.57x |
 | CPU | 1 | ON | ON | 24 | 5.949 | 15.27 | 1.49x | 168.10 | 8.19x |
