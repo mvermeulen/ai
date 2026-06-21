@@ -124,6 +124,7 @@ function toggleInputs(disabled) {
     document.getElementById('backend').disabled = disabled;
     document.getElementById('cutoff-width').disabled = disabled;
     document.getElementById('target-duration').disabled = disabled;
+    document.getElementById('omit-steps').disabled = disabled;
 }
 
 // Render cluster worker list
@@ -290,7 +291,8 @@ document.getElementById('config-form').addEventListener('submit', async (e) => {
     const payload = {
         backend: document.getElementById('backend').value,
         cutoff_width: parseInt(document.getElementById('cutoff-width').value),
-        target_duration: parseFloat(document.getElementById('target-duration').value)
+        target_duration: parseFloat(document.getElementById('target-duration').value),
+        omit_steps: document.getElementById('omit-steps').checked
     };
     if (startNum) payload.start_num = startNum;
     if (endNum) payload.end_num = endNum;

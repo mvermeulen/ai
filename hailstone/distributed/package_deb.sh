@@ -41,7 +41,7 @@ PKG_DIR="${BUILD_DIR}/hailstoned_${VERSION}_amd64"
 echo "Building binaries..."
 mkdir -p build && cd build
 cmake ..
-make -j$(nproc) hailstoned hailstone_cpu
+make -j$(nproc) hailstoned hailstone_cpu hailstone_cpu_nosteps
 cd ..
 
 echo "Preparing package structure..."
@@ -53,9 +53,12 @@ mkdir -p ${PKG_DIR}/usr/share/doc/hailstoned
 
 cp build/hailstoned ${PKG_DIR}/usr/bin/
 cp build/hailstone_cpu ${PKG_DIR}/usr/bin/
+cp build/hailstone_cpu_nosteps ${PKG_DIR}/usr/bin/
 # Optional binaries
 [ -f build/hailstone_vulkan ] && cp build/hailstone_vulkan ${PKG_DIR}/usr/bin/
+[ -f build/hailstone_vulkan_nosteps ] && cp build/hailstone_vulkan_nosteps ${PKG_DIR}/usr/bin/
 [ -f build/hailstone_hip ] && cp build/hailstone_hip ${PKG_DIR}/usr/bin/
+[ -f build/hailstone_hip_nosteps ] && cp build/hailstone_hip_nosteps ${PKG_DIR}/usr/bin/
 
 cp distributed/hailstoned.xinetd ${PKG_DIR}/etc/xinetd.d/hailstoned
 

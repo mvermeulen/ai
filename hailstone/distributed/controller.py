@@ -16,10 +16,16 @@ DEFAULT_CHECKPOINT = "hailstone_distributed.chk"
 DEFAULT_THROUGHPUT = {
     "cpu": 10.0,
     "cpu_domain": 12.0,
+    "cpu_nosteps": 40.0,
+    "cpu_domain_nosteps": 45.0,
     "vulkan": 200.0,
     "vulkan_domain": 220.0,
+    "vulkan_nosteps": 25.0,
+    "vulkan_domain_nosteps": 28.0,
     "hip": 300.0,
-    "hip_domain": 330.0
+    "hip_domain": 330.0,
+    "hip_nosteps": 35.0,
+    "hip_domain_nosteps": 38.0
 }
 
 # Logging settings
@@ -82,7 +88,7 @@ def run_range_benchmark(address, backend, start, end, cutoff):
         return float(data.get("throughput", 0.0)), None
     return 0.0, data.get("error", "Unknown benchmark error")
 
-def benchmark_worker_thread(worker_addr, task_start_time, task_start_num, global_backend, global_cutoff):
+def benchmark_worker_thread(worker_addr, task_start_time, task_start_num, global_backend, global_omit_steps, global_cutoff):
     log(f"Starting initial range-specific benchmarking for worker {worker_addr}...")
     try:
         with state.lock:
@@ -91,24 +97,26 @@ def benchmark_worker_thread(worker_addr, task_start_time, task_start_num, global
                 return
             backends = dict(worker.get("backends", {}))
             
+        def apply_omit(b): return f"{b}_nosteps" if global_omit_steps else b
+
         candidates = []
         if global_backend == "best_gpu":
             has_gpu = False
-            if "hip" in backends:
-                candidates.append(("hip", 20))
-                candidates.append(("hip", 24))
+            if apply_omit("hip") in backends or "hip" in backends:
+                candidates.append((apply_omit("hip"), 20))
+                candidates.append((apply_omit("hip"), 24))
                 has_gpu = True
-            if "vulkan" in backends:
-                candidates.append(("vulkan", 20))
-                candidates.append(("vulkan", 24))
+            if apply_omit("vulkan") in backends or "vulkan" in backends:
+                candidates.append((apply_omit("vulkan"), 20))
+                candidates.append((apply_omit("vulkan"), 24))
                 has_gpu = True
             
             if not has_gpu:
                 log(f"Worker {worker_addr} has no GPU backend available. Falling back to CPU for benchmarking.")
-                candidates.append(("cpu", 20))
-                candidates.append(("cpu", 24))
+                candidates.append((apply_omit("cpu"), 20))
+                candidates.append((apply_omit("cpu"), 24))
         else:
-            candidates.append((global_backend, global_cutoff))
+            candidates.append((apply_omit(global_backend), global_cutoff))
             
         results = {}
         for b, c in candidates:
@@ -146,14 +154,14 @@ def benchmark_worker_thread(worker_addr, task_start_time, task_start_num, global
         if best_cfg is None or best_throughput <= 0.0:
             log(f"[Warning] All benchmarks failed on {worker_addr}. Using fallback default.")
             if global_backend == "best_gpu":
-                if "hip" in backends:
-                    best_cfg = ("hip", 20)
-                elif "vulkan" in backends:
-                    best_cfg = ("vulkan", 20)
+                if apply_omit("hip") in backends or "hip" in backends:
+                    best_cfg = (apply_omit("hip"), 20)
+                elif apply_omit("vulkan") in backends or "vulkan" in backends:
+                    best_cfg = (apply_omit("vulkan"), 20)
                 else:
-                    best_cfg = ("cpu", 20)
+                    best_cfg = (apply_omit("cpu"), 20)
             else:
-                best_cfg = (global_backend, global_cutoff)
+                best_cfg = (apply_omit(global_backend), global_cutoff)
             best_throughput = backends.get(best_cfg[0], DEFAULT_THROUGHPUT.get(best_cfg[0], 10.0))
             if best_throughput is None or best_throughput == 0:
                 best_throughput = 10.0
@@ -309,6 +317,7 @@ class ControllerState:
         self.task_start_num = 3
         self.task_end_num = 100000
         self.task_backend = "cpu"
+        self.task_omit_steps = False
         self.task_cutoff_width = 20
         self.task_target_duration = 1.0  # minutes
 
@@ -691,6 +700,7 @@ def background_scheduler():
             with state.lock:
                 run_scheduler = state.is_running
                 backend = state.task_backend
+                omit_steps = state.task_omit_steps
                 cutoff_width = state.task_cutoff_width
                 target_duration = state.task_target_duration
                 task_end = state.task_end_num
@@ -707,7 +717,7 @@ def background_scheduler():
                                 worker["status"] = "benchmarking"
                             t = threading.Thread(target=benchmark_worker_thread, args=(
                                 worker_addr, task_start_time, task_start_num,
-                                backend, cutoff_width
+                                backend, omit_steps, cutoff_width
                             ))
                             t.daemon = True
                             t.start()
@@ -715,6 +725,8 @@ def background_scheduler():
 
                         # Use worker-specific tuned configurations
                         worker_backend = worker.get("selected_backend", backend)
+                        if "selected_backend" not in worker:
+                            worker_backend = f"{backend}_nosteps" if omit_steps else backend
                         worker_cutoff = worker.get("selected_cutoff", cutoff_width)
 
                         throughput = worker["backends"].get(worker_backend)
@@ -913,6 +925,7 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                     return
                 
                 backend = body.get("backend", "cpu")
+                omit_steps = body.get("omit_steps", False)
                 cutoff_width = int(body.get("cutoff_width", 20))
                 target_duration = float(body.get("target_duration", 1.0))
 
@@ -944,6 +957,7 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                 state.task_start_num = start_num
                 state.task_end_num = end_num
                 state.task_backend = backend
+                state.task_omit_steps = omit_steps
                 state.task_cutoff_width = cutoff_width
                 state.task_target_duration = target_duration
                 

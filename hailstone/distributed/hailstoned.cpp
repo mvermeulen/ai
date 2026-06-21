@@ -61,10 +61,16 @@ std::string get_capabilities_json() {
     std::vector<BackendConfig> backends = {
         {"cpu", "hailstone_cpu", " --no-domain-switching"},
         {"cpu_domain", "hailstone_cpu", " --domain-switching"},
+        {"cpu_nosteps", "hailstone_cpu_nosteps", " --no-domain-switching"},
+        {"cpu_domain_nosteps", "hailstone_cpu_nosteps", " --domain-switching"},
         {"vulkan", "hailstone_vulkan", " --no-domain-switching"},
         {"vulkan_domain", "hailstone_vulkan", " --domain-switching"},
+        {"vulkan_nosteps", "hailstone_vulkan_nosteps", " --no-domain-switching"},
+        {"vulkan_domain_nosteps", "hailstone_vulkan_nosteps", " --domain-switching"},
         {"hip", "hailstone_hip", " --no-domain-switching"},
-        {"hip_domain", "hailstone_hip", " --domain-switching"}
+        {"hip_domain", "hailstone_hip", " --domain-switching"},
+        {"hip_nosteps", "hailstone_hip_nosteps", " --no-domain-switching"},
+        {"hip_domain_nosteps", "hailstone_hip_nosteps", " --domain-switching"}
     };
     std::string json = "{";
     bool first = true;
@@ -168,11 +174,29 @@ void handle_client(int client_fd) {
         if (backend == "cpu_domain") {
             actual_backend = "cpu";
             domain_switching = true;
+        } else if (backend == "cpu_nosteps") {
+            actual_backend = "cpu_nosteps";
+            domain_switching = false;
+        } else if (backend == "cpu_domain_nosteps") {
+            actual_backend = "cpu_nosteps";
+            domain_switching = true;
         } else if (backend == "vulkan_domain") {
             actual_backend = "vulkan";
             domain_switching = true;
+        } else if (backend == "vulkan_nosteps") {
+            actual_backend = "vulkan_nosteps";
+            domain_switching = false;
+        } else if (backend == "vulkan_domain_nosteps") {
+            actual_backend = "vulkan_nosteps";
+            domain_switching = true;
         } else if (backend == "hip_domain") {
             actual_backend = "hip";
+            domain_switching = true;
+        } else if (backend == "hip_nosteps") {
+            actual_backend = "hip_nosteps";
+            domain_switching = false;
+        } else if (backend == "hip_domain_nosteps") {
+            actual_backend = "hip_nosteps";
             domain_switching = true;
         }
 
@@ -263,11 +287,29 @@ void handle_client(int client_fd) {
         if (backend == "cpu_domain") {
             actual_backend = "cpu";
             domain_switching = true;
+        } else if (backend == "cpu_nosteps") {
+            actual_backend = "cpu_nosteps";
+            domain_switching = false;
+        } else if (backend == "cpu_domain_nosteps") {
+            actual_backend = "cpu_nosteps";
+            domain_switching = true;
         } else if (backend == "vulkan_domain") {
             actual_backend = "vulkan";
             domain_switching = true;
+        } else if (backend == "vulkan_nosteps") {
+            actual_backend = "vulkan_nosteps";
+            domain_switching = false;
+        } else if (backend == "vulkan_domain_nosteps") {
+            actual_backend = "vulkan_nosteps";
+            domain_switching = true;
         } else if (backend == "hip_domain") {
             actual_backend = "hip";
+            domain_switching = true;
+        } else if (backend == "hip_nosteps") {
+            actual_backend = "hip_nosteps";
+            domain_switching = false;
+        } else if (backend == "hip_domain_nosteps") {
+            actual_backend = "hip_nosteps";
             domain_switching = true;
         }
 

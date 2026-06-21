@@ -33,8 +33,12 @@ struct PeakState {
     
     std::vector<PeakRecord> almost_steps_peaks;
 
-    HD_ATTR PeakState() 
+    HD_ATTR PeakState()
+#ifdef OMIT_STEPS_COMPUTATION
+        : current_max_value(0), current_max_steps(0xFFFFFFFF), current_max_sigma(0) {}
+#else
         : current_max_value(0), current_max_steps(0), current_max_sigma(0) {}
+#endif
 };
 
 // Metrics collected during a search range

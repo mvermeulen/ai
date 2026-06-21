@@ -195,6 +195,9 @@ CollatzStats compute_collatz_std(uint128 n) {
         if (curr < n) {
             dropped_below_start = true;
         }
+#ifdef OMIT_STEPS_COMPUTATION
+        if (dropped_below_start && has_stopped_sigma) break;
+#endif
     }
 
     return stats;
@@ -290,6 +293,9 @@ CollatzStats compute_collatz_domain(uint128 n) {
         if (curr < stats.start_val) {
             dropped_below_start = true;
         }
+#ifdef OMIT_STEPS_COMPUTATION
+        if (dropped_below_start && has_stopped_sigma) break;
+#endif
     }
 
     return stats;
@@ -388,10 +394,13 @@ CollatzStats compute_collatz_poly_std(uint128 n, uint32_t current_max_steps) {
         if (curr < n) {
             dropped_below_start = true;
         }
+#ifdef OMIT_STEPS_COMPUTATION
+        if (dropped_below_start && has_stopped_sigma) break;
+#endif
     }
 
     // Once the value drops below 2^N, look up the remaining steps in the steps table
-    if (curr > uint128(1)) {
+    if (curr > uint128(1) && curr.high == 0 && curr.low < (1ULL << POLY_WIDTH)) {
         stats.steps += steps_table[curr.low];
     }
 
@@ -493,10 +502,13 @@ CollatzStats compute_collatz_poly_domain(uint128 n, uint32_t current_max_steps) 
         if (curr < stats.start_val) {
             dropped_below_start = true;
         }
+#ifdef OMIT_STEPS_COMPUTATION
+        if (dropped_below_start && has_stopped_sigma) break;
+#endif
     }
 
     // Once the value drops below 2^N, look up the remaining steps in the steps table
-    if (curr > uint128(1)) {
+    if (curr > uint128(1) && curr.high == 0 && curr.low < (1ULL << POLY_WIDTH)) {
         stats.steps += steps_table[curr.low];
     }
 
@@ -1405,6 +1417,35 @@ std::vector<uint32_t> generate_allowed_suffixes(int width) {
     }
 
     std::vector<uint32_t> allowed;
+#ifdef OMIT_STEPS_COMPUTATION
+    for (int i = 0; i < total_suffixes; ++i) {
+        if (i % 2 == 0) continue; // we only care about odd suffixes
+        uint64_t bits = i;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        bool drops_below = false;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+            uint64_t p3_val = 1; for(int j=0; j<pow3; ++j) p3_val *= 3;
+            uint64_t p2_val = 1ULL << pow2;
+            if (p3_val < p2_val) {
+                drops_below = true;
+                break;
+            }
+        }
+        if (!drops_below) {
+            allowed.push_back(i);
+        }
+    }
+#else
     for (int i = 0; i < total_suffixes; ++i) {
         const auto& key = suffix_polys[i];
         const auto& info = classes[key];
@@ -1412,6 +1453,7 @@ std::vector<uint32_t> generate_allowed_suffixes(int width) {
             allowed.push_back(i);
         }
     }
+#endif
     return allowed;
 }
 
@@ -1470,9 +1512,38 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     for (int i = 0; i < total_suffixes; ++i) {
         const auto& key = suffix_polys[i];
         const auto& info = classes[key];
+#ifdef OMIT_STEPS_COMPUTATION
+        if (info.first_suffix != i) continue;
+        if (i % 2 == 0) continue;
+        uint64_t bits = i;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        bool drops_below = false;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+            uint64_t p3_val = 1; for(int j=0; j<pow3; ++j) p3_val *= 3;
+            uint64_t p2_val = 1ULL << pow2;
+            if (p3_val < p2_val) {
+                drops_below = true;
+                break;
+            }
+        }
+        if (!drops_below) {
+            res.std_allowed.push_back(i);
+        }
+#else
         if (info.first_suffix == i && !info.has_even) {
             res.std_allowed.push_back(i);
         }
+#endif
     }
     
     // Precompute skipped counts for std_allowed
@@ -1488,7 +1559,33 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     // Build base-dependent allowed lists
     for (const auto& pair : classes) {
         const auto& info = pair.second;
+#ifdef OMIT_STEPS_COMPUTATION
+        uint64_t bits = info.first_suffix;
+        if (bits % 2 == 0) continue;
+        int w = width;
+        uint32_t pow2 = 0;
+        uint32_t pow3 = 0;
+        bool drops_below = false;
+        while (w > 0) {
+            if (bits & 1) {
+                bits = bits * 3 + 1;
+                pow3++;
+            } else {
+                bits >>= 1;
+                pow2++;
+                w--;
+            }
+            uint64_t p3_val = 1; for(int j=0; j<pow3; ++j) p3_val *= 3;
+            uint64_t p2_val = 1ULL << pow2;
+            if (p3_val < p2_val) {
+                drops_below = true;
+                break;
+            }
+        }
+        if (drops_below) continue;
+#else
         if (info.has_even) continue;
+#endif
         
         uint32_t r1 = info.first_suffix;
         // For each base B % 9, check if any member of the class lands on a skipped residue

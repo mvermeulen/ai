@@ -1437,14 +1437,20 @@ int main(int argc, char* argv[]) {
 
     // 4. Load SPIR-V Shader Module
     std::vector<char> shaderCode;
+#ifdef OMIT_STEPS_COMPUTATION
+    const std::string shader_filename = "shader_nosteps.spv";
+#else
+    const std::string shader_filename = "shader.spv";
+#endif
+
     try {
-        shaderCode = read_file("build/shader.spv");
+        shaderCode = read_file("build/" + shader_filename);
     } catch (...) {
         try {
-            shaderCode = read_file("shader.spv");
+            shaderCode = read_file(shader_filename);
         } catch (...) {
             try {
-                shaderCode = read_file("gpu_vulkan/shader.spv");
+                shaderCode = read_file("gpu_vulkan/" + shader_filename);
             } catch (...) {
                 std::cerr << "Error: shader.spv not found!" << std::endl;
                 return 1;

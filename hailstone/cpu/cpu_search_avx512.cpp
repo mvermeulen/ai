@@ -698,6 +698,11 @@ void cpu_search_range_suffix_first_avx512_domain(uint128 start, uint128 end,
                 __m512i v_steps_offset = _mm512_add_epi64(v_steps, v_1050);
                 __mmask8 pruned_bits = _mm512_mask_cmp_epu64_mask(active_mask & dropped_bits & in_block_0_mask, v_steps_offset, v_init_max_steps, _MM_CMPINT_LT);
 
+#ifdef OMIT_STEPS_COMPUTATION
+                __mmask8 has_stopped_sigma_mask = _mm512_mask_cmp_epi64_mask(active_mask, v_has_stopped_sigma, v_zero, _MM_CMPINT_NE);
+                pruned_bits |= (dropped_bits & has_stopped_sigma_mask);
+#endif
+
                 __mmask8 completed_mask = escape_mask | pruned_bits;
 
                 if (completed_mask != 0) {

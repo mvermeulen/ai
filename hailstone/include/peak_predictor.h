@@ -20,7 +20,11 @@ public:
     std::vector<PeakRecord> confirmed_peaks;
     std::vector<PredictedPeak> active_predictions;
 
+#ifdef OMIT_STEPS_COMPUTATION
+    PeakPredictor() : current_max_steps(0xFFFFFFFF) {}
+#else
     PeakPredictor() : current_max_steps(0) {}
+#endif
 
     static inline uint128 divide_by_3(uint128 a) {
         unsigned __int128 val = a.high;
@@ -92,6 +96,9 @@ public:
     }
 
     void add_confirmed_peak(uint128 n, uint32_t steps) {
+#ifdef OMIT_STEPS_COMPUTATION
+        return;
+#endif
         // 1. Update max steps
         if (steps > current_max_steps) {
             current_max_steps = steps;
@@ -193,6 +200,9 @@ public:
 
     template <typename T, typename Create>
     void process_up_to_generic(uint128 curr_n, std::vector<T>& steps_peaks, Create create) {
+#ifdef OMIT_STEPS_COMPUTATION
+        return;
+#endif
         bool updated = true;
         while (updated) {
             updated = false;
@@ -233,6 +243,9 @@ public:
     }
 
     void print_future_predictions_by_block() const {
+#ifdef OMIT_STEPS_COMPUTATION
+        return;
+#endif
         if (active_predictions.empty()) return;
 
         std::vector<PredictedPeak> sorted_preds = active_predictions;

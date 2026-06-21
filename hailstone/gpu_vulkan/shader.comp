@@ -613,7 +613,7 @@ void main() {
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > 1UL) {
+                        if (!overflowed && curr > 1UL && curr < 256UL) {
                             steps += steps_table.steps[uint(curr)];
                         }
                     }
@@ -680,7 +680,7 @@ void main() {
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > 1UL) {
+                        if (!overflowed && curr > 1UL && curr < 256UL) {
                             steps += steps_table.steps[uint(curr)];
                         }
                     }
@@ -814,7 +814,7 @@ void main() {
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && greater_than(curr, one)) {
+                        if (!overflowed && greater_than(curr, one) && curr.high == 0UL && curr.low < 256UL) {
                             steps += steps_table.steps[uint(curr.low)];
                         }
                     }
@@ -955,7 +955,7 @@ void main() {
                                 steps += p.steps + extra_div;
                             }
                         }
-                        if (!overflowed && greater_than(curr, one)) {
+                        if (!overflowed && greater_than(curr, one) && curr.high == 0UL && curr.low < 256UL) {
                             steps += steps_table.steps[uint(curr.low)];
                         }
                     }

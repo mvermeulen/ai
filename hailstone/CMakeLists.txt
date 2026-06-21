@@ -23,6 +23,14 @@ if(EXCLUDE_01_SUFFIX)
     add_compile_definitions(EXCLUDE_01_SUFFIX)
 endif()
 
+option(OMIT_STEPS_COMPUTATION "Omit steps computation for performance" OFF)
+if(OMIT_STEPS_COMPUTATION)
+    add_compile_definitions(OMIT_STEPS_COMPUTATION)
+    set(GLSLC_EXTRA_ARGS "-DOMIT_STEPS_COMPUTATION")
+else()
+    set(GLSLC_EXTRA_ARGS "")
+endif()
+
 # Build allowed suffixes generator target
 add_executable(hailstone_gen_allowed_24 tools/gen_allowed_suffixes.cpp)
 add_executable(hailstone_predictor_study tools/predictor_study.cpp)
@@ -48,6 +56,10 @@ if(COMPILER_SUPPORTS_AVX512)
     add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
     set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-O3 -mavx512f -mavx512cd -mavx512dq")
     target_compile_definitions(hailstone_cpu PRIVATE HAS_AVX512_COMPILER_SUPPORT)
+
+    add_executable(hailstone_cpu_nosteps cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
+    target_compile_definitions(hailstone_cpu_nosteps PRIVATE HAS_AVX512_COMPILER_SUPPORT OMIT_STEPS_COMPUTATION)
+
     
     # Profile CPU target
     add_executable(hailstone_cpu_profile cpu/main.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
@@ -56,12 +68,17 @@ if(COMPILER_SUPPORTS_AVX512)
 else()
     message(WARNING "Compiler does not support AVX-512 flags. Vectorized search will be disabled.")
     add_executable(hailstone_cpu cpu/main.cpp cpu/cpu_search.cpp)
+    add_executable(hailstone_cpu_nosteps cpu/main.cpp cpu/cpu_search.cpp)
+    target_compile_definitions(hailstone_cpu_nosteps PRIVATE OMIT_STEPS_COMPUTATION)
+
     
     # Profile CPU target
     add_executable(hailstone_cpu_profile cpu/main.cpp cpu/cpu_search.cpp)
 endif()
 
 target_link_libraries(hailstone_cpu PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(hailstone_cpu_nosteps PRIVATE OpenMP::OpenMP_CXX)
+
 target_link_libraries(hailstone_cpu_profile PRIVATE OpenMP::OpenMP_CXX)
 target_compile_options(hailstone_cpu_profile PRIVATE -g -fno-omit-frame-pointer)
 target_link_options(hailstone_cpu_profile PRIVATE -g -fno-omit-frame-pointer)
@@ -108,6 +125,11 @@ if(Vulkan_FOUND AND (GLSLC_EXECUTABLE OR EXISTS ${PRECOMPILED_SHADER}))
     message(STATUS "Vulkan compute support enabled.")
     add_executable(hailstone_vulkan gpu_vulkan/main.cpp)
     target_link_libraries(hailstone_vulkan PRIVATE Vulkan::Vulkan)
+
+    add_executable(hailstone_vulkan_nosteps gpu_vulkan/main.cpp)
+    target_compile_definitions(hailstone_vulkan_nosteps PRIVATE OMIT_STEPS_COMPUTATION)
+    target_link_libraries(hailstone_vulkan_nosteps PRIVATE Vulkan::Vulkan)
+
     
     # Profile Vulkan target
     add_executable(hailstone_vulkan_profile gpu_vulkan/main.cpp)
@@ -119,13 +141,22 @@ if(Vulkan_FOUND AND (GLSLC_EXECUTABLE OR EXISTS ${PRECOMPILED_SHADER}))
     if(GLSLC_EXECUTABLE)
         add_custom_command(
             OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
-            COMMAND ${GLSLC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/gpu_vulkan/shader.comp -o ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
+            COMMAND ${GLSLC_EXECUTABLE} ${GLSLC_EXTRA_ARGS} ${CMAKE_CURRENT_SOURCE_DIR}/gpu_vulkan/shader.comp -o ${CMAKE_CURRENT_BINARY_DIR}/shader.spv
             DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gpu_vulkan/shader.comp
             COMMENT "Compiling shader.comp to SPIR-V in build directory"
         )
         # Add dependency on the compiled spv file
         target_sources(hailstone_vulkan PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shader.spv)
         target_sources(hailstone_vulkan_profile PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shader.spv)
+
+        add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shader_nosteps.spv
+            COMMAND ${GLSLC_EXECUTABLE} -DOMIT_STEPS_COMPUTATION ${CMAKE_CURRENT_SOURCE_DIR}/gpu_vulkan/shader.comp -o ${CMAKE_CURRENT_BINARY_DIR}/shader_nosteps.spv
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gpu_vulkan/shader.comp
+            COMMENT "Compiling shader.comp to SPIR-V (nosteps)"
+        )
+        target_sources(hailstone_vulkan_nosteps PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/shader_nosteps.spv)
+
     else()
         message(STATUS "glslc not found; using precompiled shader at ${PRECOMPILED_SHADER}")
         add_custom_command(TARGET hailstone_vulkan POST_BUILD
@@ -155,6 +186,12 @@ if(CMAKE_HIP_COMPILER)
     add_executable(hailstone_hip gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp)
     set_source_files_properties(gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp PROPERTIES LANGUAGE HIP)
     target_include_directories(hailstone_hip PRIVATE include)
+
+    add_executable(hailstone_hip_nosteps gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp)
+    set_source_files_properties(gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp PROPERTIES LANGUAGE HIP)
+    target_compile_definitions(hailstone_hip_nosteps PRIVATE OMIT_STEPS_COMPUTATION)
+    target_include_directories(hailstone_hip_nosteps PRIVATE include)
+
     
     # Profile HIP target
     add_executable(hailstone_hip_profile gpu_hip/main.hip.cpp gpu_hip/hip_search.hip.cpp)
@@ -171,15 +208,18 @@ target_link_libraries(hailstoned PRIVATE Threads::Threads)
 
 # Dependencies on build-time precomputed allowed suffixes
 add_dependencies(hailstone_cpu generate_suffixes_24)
+add_dependencies(hailstone_cpu_nosteps generate_suffixes_24)
 add_dependencies(hailstone_cpu_profile generate_suffixes_24)
 add_dependencies(hailstone_verify generate_suffixes_24)
 add_dependencies(hailstone_verify_profile generate_suffixes_24)
 if(TARGET hailstone_vulkan)
     add_dependencies(hailstone_vulkan generate_suffixes_24)
     add_dependencies(hailstone_vulkan_profile generate_suffixes_24)
+    add_dependencies(hailstone_vulkan_nosteps generate_suffixes_24)
 endif()
 if(TARGET hailstone_hip)
     add_dependencies(hailstone_hip generate_suffixes_24)
     add_dependencies(hailstone_hip_profile generate_suffixes_24)
+    add_dependencies(hailstone_hip_nosteps generate_suffixes_24)
 endif()
 

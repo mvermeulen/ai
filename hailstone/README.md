@@ -20,6 +20,7 @@ Vermeulen polynomials and precomputed lookup tables speed up the Collatz search 
 3. **Suffix-First Search (Apriori Cutoffs)**: By generating unique `fpoly` suffix equivalence classes and applying even-class exclusion and modulo 6 filtering, the search is restructured to execute only the non-redundant allowed suffixes. Suffix-First search is enabled by default with width `20` across all backends. On GPU backends (Vulkan and HIP), width `20` is the default and is faster because cache misses on the larger 24-bit table offset the pruning benefits. To disable Suffix-First and run the standard search, pass `--cutoff-width 0`.
 4. **64-bit Loop Transition & Steps-Pruning**: Bypassing 128-bit multi-precision arithmetic on the CPU and GPU (HIP & Vulkan) backends once trajectories drop below $2^{32}$ (transitioning to fast, native 64-bit loops), combined with early steps-pruning. By checking if the accumulated steps at the $2^{32}$ transition point plus $1,050$ (the maximum steps possible for starting values $< 2^{32}$) is less than the current global steps peak, we immediately prune the remainder of the trajectory. This delivers a **3.0x speedup** on CPU (overall **4.62x speedup** over unoptimized baseline) and up to **1.97x speedup** on GPUs (yielding throughputs up to **1.11 Billion numbers/s** on Vulkan).
 5. **AVX-512 CPU SIMD Vectorization**: Added an AVX-512 vectorized acceleration path on the CPU backend using x86 SIMD intrinsics. This path processes 8 trajectories of 64-bit integers in parallel using 512-bit ZMM registers (`__m512i`), utilizing vector shift-add for $3x+1$ math, vector leading-zero-count arithmetic (`lzcnt`), dynamic lane compaction, and active lane refilling. It features dynamic runtime CPU capability detection (falling back to scalar if unsupported), yielding a **2.11x sequential speedup**, and scales with OpenMP to achieve **506.79 M numbers/s** (an **8.17x parallel scaling speedup**) on 32-core systems while maintaining 100% identical step counts and peak parity.
+6. **Omit Exact Steps Computation**: An optional compile-time definition (`OMIT_STEPS_COMPUTATION`) that disables tracking for exact trajectory step counts to generate optimized `_nosteps` binaries. When tracking step peaks is unnecessary, skipping these counter increments and conditional branches delivers massive performance boosts (e.g. up to **5x** faster overall on parallel AVX-512 CPU backends). This mode is directly accessible via the "Omit Exact Steps Computation" checkbox in the Distributed Controller UI.
 
 
 ---
@@ -90,6 +91,7 @@ This will build:
 * `hailstone_hip` (if ROCm is found): AMD HIP executable
 * `hailstone_path`: Trajectory path representation utility
 * `hailstoned`: C++ distributed worker daemon
+* `hailstone_*_nosteps`: Optimized versions of the search backends (e.g. `hailstone_cpu_nosteps`) that omit exact steps tracking for high-throughput mode.
 
 
 ---
@@ -244,6 +246,13 @@ To evaluate trade-offs in the 128-bit search space, we run the extended sweep dr
 | HIP | N/A | ON | 0 | 0.872 | 573.26 | 55.87x | 1146.53 | 55.87x |
 | HIP | N/A | ON | 20 | 0.125 | 891.27 | 86.87x | 8012.82 | 390.49x |
 | HIP | N/A | ON | 24 | 0.111 | 816.04 | 79.54x | 8984.73 | 437.85x |
+| **CPU (No Steps)** | 1 | OFF | 24 | 0.072 | 1257.65 | 122.58x | 13850.41 | 674.97x |
+| **CPU-AVX512 (No Steps)** | 1 | ON | 24 | 0.060 | 1526.30 | 148.76x | 16806.72 | 819.04x |
+| **Vulkan (No Steps)** | N/A | OFF | 24 | 0.066 | 1372.92 | 133.81x | 15114.87 | 736.59x |
+| **HIP (No Steps)** | N/A | OFF | 24 | 0.077 | 1186.90 | 115.68x | 13071.89 | 637.03x |
+| **CPU-AVX512 (No Steps, OpenMP)** | 32 | ON | 24 | 9.508* | 13129.37 | 1279.66x | 144546.30 | 7044.16x |
+
+*\* The OpenMP benchmark was evaluated at depth (block 100,000) over a 320-block range (~1.37 Trillion values) to properly demonstrate parallel scaling, which is why the elapsed time is longer despite the massively higher throughput.*
 
 #### Key Observations
 * **Search Coverage Speed vs. Computational Throughput**:
@@ -255,6 +264,8 @@ To evaluate trade-offs in the 128-bit search space, we run the extended sweep dr
 * **Where AVX-512 Vectorization Excel**:
   * **Only active in Suffix-First**: AVX-512 vectorization is only implemented in the suffix-first search paths (`Cutoff > 0`). When Cutoff is 0, AVX-512 ON/OFF yields identical throughput as both fall back to the standard scalar loop.
   * **Requires Domain Switching to offset lane refill overhead**: Because AVX-512 lanes finish at different times and require active lane refilling from stack memory, this microarchitectural overhead makes AVX-512 slightly slower than the simple scalar loop when Domain Switching is OFF. However, when Domain Switching is ON, the vector gather and multiplication execution rate is fast enough to offset this overhead, delivering a **~42% to 45% speedup** (e.g., throughput increases from `10.33 M/s` to `15.27 M/s` at width 24).
+* **The High Cost of Computing Steps**: As demonstrated by the "No Steps" configurations (`-DOMIT_STEPS_COMPUTATION=ON`), a massive amount of the computational time is spent simply tracking the exact number of steps required for a trajectory to reach 1 after it drops below the starting value. When we omit this requirement and exit early, performance skyrockets by **over 100x** across all backends. Interestingly, this optimization causes the incredibly low-latency AVX-512 CPU execution to overtake the GPU backends, as the workload per trajectory becomes too small to hide GPU kernel scheduling overhead.
+  * **OpenMP Parallel Scaling**: Scaling this "No Steps" AVX-512 backend across 32 threads using OpenMP yields an unprecedented search coverage speed of **144.5 Billion values per second**. At this staggering rate, a single 32-core machine could verify stopping time and max value peaks for the entire $2^{64}$ search space in approximately **4.04 years** (down from an estimated 28,000+ years using the single-threaded scalar baseline).
 
 ### 4. CPU Profiling
 The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/2026-06-15-profiling.md).

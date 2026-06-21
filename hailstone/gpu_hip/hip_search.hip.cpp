@@ -306,7 +306,7 @@ __global__ void collatz_search_kernel(
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > 1) {
+                        if (!overflowed && curr > 1 && curr < 256) {
                             steps += d_steps_table[curr];
                         }
                     }
@@ -373,7 +373,7 @@ __global__ void collatz_search_kernel(
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > 1) {
+                        if (!overflowed && curr > 1 && curr < 256) {
                             steps += d_steps_table[curr];
                         }
                     }
@@ -501,7 +501,7 @@ __global__ void collatz_search_kernel(
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > one) {
+                        if (!overflowed && curr > one && curr.high == 0 && curr.low < 256) {
                             steps += d_steps_table[curr.low];
                         }
                     }
@@ -641,7 +641,7 @@ __global__ void collatz_search_kernel(
                                 steps += p.steps + extra_div;
                             }
                         }
-                        if (!overflowed && curr > one) {
+                        if (!overflowed && curr > one && curr.high == 0 && curr.low < 256) {
                             steps += d_steps_table[curr.low];
                         }
                     }
@@ -1437,7 +1437,7 @@ __global__ void collatz_search_kernel_suffix_first(
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > 1) {
+                        if (!overflowed && curr > 1 && curr < 256) {
                             steps += d_steps_table[curr];
                         }
                     }
@@ -1504,7 +1504,7 @@ __global__ void collatz_search_kernel_suffix_first(
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > 1) {
+                        if (!overflowed && curr > 1 && curr < 256) {
                             steps += d_steps_table[curr];
                         }
                     }
@@ -1632,7 +1632,7 @@ __global__ void collatz_search_kernel_suffix_first(
                                 dropped_below_start = true;
                             }
                         }
-                        if (!overflowed && curr > one) {
+                        if (!overflowed && curr > one && curr.high == 0 && curr.low < 256) {
                             steps += d_steps_table[curr.low];
                         }
                     }
@@ -1772,7 +1772,7 @@ __global__ void collatz_search_kernel_suffix_first(
                                 steps += p.steps + extra_div;
                             }
                         }
-                        if (!overflowed && curr > one) {
+                        if (!overflowed && curr > one && curr.high == 0 && curr.low < 256) {
                             steps += d_steps_table[curr.low];
                         }
                     }
