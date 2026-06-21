@@ -104,3 +104,26 @@ This directory contains execution times and performance measurements for differe
 | 2026-06-10 03:44:37 | Vulkan | [3, 100000000] | 49,999,999 | 494.75 M/s | 101.06 ms | 35.99 ms | 32/50/12 |
 | 2026-06-10 03:42:04 | CPU | [3, 100000000] | 49,999,999 | 11.73 M/s | 4261.90 ms | N/A | 39/57/18 |
 | 2026-06-10 03:41:57 | Vulkan | [3, 100000000] | 49,999,999 | 564.01 M/s | 88.65 ms | 34.72 ms | 32/50/12 |
+
+## Domain-Switching Arithmetic Study (June 2026)
+
+David Bařina's domain-switching arithmetic was implemented and evaluated on the CPU reference backend. This algorithm maps trajectories into the $n+1$ domain when $n$ is odd, skipping $\alpha = \text{ctz}(n+1)$ odd-even step pairs at once.
+
+### Key Conclusions & Crossover Analysis
+
+1. **Iteration Reduction vs. Arithmetic Overhead:**
+   * Entering and exiting the $n+1$ domain, checking bounds for 128-bit overflow safety (`max_safe_k`), and executing 128-bit multiplications introduce some instruction overhead per loop iteration.
+   * At lower ranges (Block 0), trajectories drop to 64-bit native Collatz loops within a few steps. Therefore, the overhead of domain switching slightly outweighs the step-skipping benefits, leading to a **$-2.6\%$ throughput reduction**.
+   * At Block 1024 (starting at $2^{42}$), the two algorithms reach performance parity.
+   * At Block 1,000,000 (starting at $2^{52}$), the trajectories spend a large number of steps in the 128-bit search space. The ability to skip $\alpha$ step-pairs at once drastically reduces the 128-bit loop iteration count, producing a **$+17.5\%$ performance speedup**.
+   * Domain-switching becomes increasingly optimal as search ranges scale deeper into the 128-bit space.
+
+### Comparative Benchmark Table
+
+The following benchmarks were conducted on a 32-core CPU reference platform (checking 10,000,000 starting numbers per configuration):
+
+| Range | Start Block | Standard CPU Throughput | Domain-Switching Throughput | Performance Delta |
+| :--- | :--- | :--- | :--- | :--- |
+| **Low Range** ($[3, 10^7]$) | Block 0 | **15.68 M/s** | **15.27 M/s** | $-2.6\%$ |
+| **High Range** ($[2^{42}, 2^{42} + 10^7]$) | Block 1024 | **10.54 M/s** | **10.36 M/s** | $-1.7\%$ (Parity) |
+| **Very High Range** ($[2^{52}, 2^{52} + 10^7]$) | Block 1,000,000 | **5.73 M/s** | **6.73 M/s** | **$+17.5\%$ (Optimal)** |

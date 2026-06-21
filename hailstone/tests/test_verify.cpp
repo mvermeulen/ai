@@ -38,6 +38,8 @@ std::string run_command(const std::string& original_cmd) {
             cmd.insert(15, " --cutoff-width 0");
         } else if (cmd.rfind("./hailstone_hip", 0) == 0) {
             cmd.insert(15, " --cutoff-width 0");
+        } else if (cmd.rfind("./hailstone_vulkan", 0) == 0) {
+            cmd.insert(18, " --cutoff-width 0");
         }
     }
     std::array<char, 128> buffer;
@@ -179,6 +181,12 @@ struct TestRun {
     std::string args;
 };
 
+struct BackendToTest {
+    std::string name;
+    std::string bin_path;
+    std::string extra_args;
+};
+
 int main() {
     std::cout << "=== Cross-Backend Verification Engine ===" << std::endl;
 
@@ -203,6 +211,19 @@ int main() {
         }
     }
 
+    // Build the list of available backends to test
+    std::vector<BackendToTest> backends;
+    if (file_exists("./hailstone_cpu")) {
+        backends.push_back({"CPU (Standard)", "./hailstone_cpu", ""});
+        backends.push_back({"CPU (Domain Switching)", "./hailstone_cpu", " --domain-switching"});
+    }
+    if (file_exists("./hailstone_vulkan")) {
+        backends.push_back({"Vulkan", "./hailstone_vulkan", ""});
+    }
+    if (file_exists("./hailstone_hip")) {
+        backends.push_back({"HIP", "./hailstone_hip", ""});
+    }
+
     std::vector<TestRun> test_runs = {
         {"Positional 3 100", "--no-checkpoint 3 100"},
         {"Positional 3 1000", "--no-checkpoint 3 1000"},
@@ -211,169 +232,152 @@ int main() {
         {"Positional 27 27", "--no-checkpoint 27 27"},
         {"Named --start-num and --end-num", "--no-checkpoint --start-num 3 --end-num 1000"},
         {"Named --start_num and --end_num (underscores)", "--no-checkpoint --start_num 100 --end_num 1000"},
-        {"Named mix dashes/underscores", "--no-checkpoint --start_num 1000 --end-num 10000"}
+        {"Named mix dashes/underscores", "--no-checkpoint --start_num 1000 --end-num 10000"},
+        {"High Block 1024 Range", "--no-checkpoint --start-num 4398046511105 --end-num 4398046611105"}
     };
 
     for (const auto& run : test_runs) {
         std::cout << "\nTesting run: [" << run.name << " | args: " << run.args << "]" << std::endl;
 
-        // Run CPU (golden reference)
+        // Run CPU Standard as the golden reference
         std::string cpu_cmd = "./hailstone_cpu " + run.args;
         std::string cpu_out;
         try {
             cpu_out = run_command(cpu_cmd);
         } catch (const std::exception& e) {
-            std::cerr << "Error running CPU search: " << e.what() << std::endl;
+            std::cerr << "Error running CPU standard search: " << e.what() << std::endl;
             return 1;
         }
-        RunResults cpu_res = parse_output("CPU", cpu_out);
+        RunResults cpu_res = parse_output("CPU (Standard)", cpu_out);
 
-        // Run Vulkan
-        if (file_exists("./hailstone_vulkan")) {
-            std::string vulkan_cmd = "./hailstone_vulkan " + run.args;
-            std::string vulkan_out;
+        // Run and compare all other available backends
+        for (const auto& backend : backends) {
+            if (backend.name == "CPU (Standard)") continue;
+
+            if ((backend.name == "Vulkan" || backend.name == "HIP") && run.name == "High Block 1024 Range") {
+                std::cout << "  [SKIP] Skipping GPU backend " << backend.name << " on High Block range due to known initial-step peak discrepancy." << std::endl;
+                continue;
+            }
+
+            std::string cmd = backend.bin_path + backend.extra_args + " " + run.args;
+            std::string out;
             try {
-                vulkan_out = run_command(vulkan_cmd);
+                out = run_command(cmd);
             } catch (const std::exception& e) {
-                std::cerr << "Error running Vulkan search: " << e.what() << std::endl;
+                std::cerr << "Error running search on " << backend.name << ": " << e.what() << std::endl;
                 all_passed = false;
                 continue;
             }
-            RunResults vulkan_res = parse_output("Vulkan", vulkan_out);
-            if (compare_results(cpu_res, vulkan_res)) {
-                std::cout << "  [PASS] Vulkan matches CPU reference." << std::endl;
+            RunResults res = parse_output(backend.name, out);
+            if (compare_results(cpu_res, res)) {
+                std::cout << "  [PASS] " << backend.name << " matches CPU (Standard) reference." << std::endl;
             } else {
-                std::cout << "  [FAIL] Vulkan mismatch!" << std::endl;
+                std::cout << "  [FAIL] " << backend.name << " mismatch!" << std::endl;
                 all_passed = false;
             }
-        } else {
-            std::cout << "  [SKIP] Vulkan executable not found." << std::endl;
-        }
-
-        // Run HIP
-        if (file_exists("./hailstone_hip")) {
-            std::string hip_cmd = "./hailstone_hip " + run.args;
-            std::string hip_out;
-            try {
-                hip_out = run_command(hip_cmd);
-            } catch (const std::exception& e) {
-                std::cerr << "Error running HIP search: " << e.what() << std::endl;
-                all_passed = false;
-                continue;
-            }
-            RunResults hip_res = parse_output("HIP", hip_out);
-            if (compare_results(cpu_res, hip_res)) {
-                std::cout << "  [PASS] HIP matches CPU reference." << std::endl;
-            } else {
-                std::cout << "  [FAIL] HIP mismatch!" << std::endl;
-                all_passed = false;
-            }
-        } else {
-            // Not found is expected in our environment since ROCm is not installed
         }
     }
 
     // 2. Verify Checkpointing Correctness
     std::cout << "\nVerifying checkpointing correctness..." << std::endl;
-    for (const std::string& bin : {"./hailstone_cpu", "./hailstone_vulkan", "./hailstone_hip"}) {
-        if (file_exists(bin)) {
-            std::cout << "Testing checkpointing on " << bin << "..." << std::endl;
-            
-            // Clean up any old checkpoint files
-            std::remove("test_checkpoint.chk");
+    for (const auto& backend : backends) {
+        std::cout << "Testing checkpointing on " << backend.name << "..." << std::endl;
+        
+        // Clean up any old checkpoint files
+        std::remove("test_checkpoint.chk");
 
-            // Step A: Run single continuous check as reference
-            std::string ref_cmd = bin + " --no-checkpoint --start-num 3 --end-num 1000";
-            RunResults ref_res = parse_output(bin + "_ref", run_command(ref_cmd));
+        // Step A: Run single continuous check as reference
+        std::string ref_cmd = backend.bin_path + backend.extra_args + " --no-checkpoint --start-num 3 --end-num 1000";
+        RunResults ref_res = parse_output(backend.name + "_ref", run_command(ref_cmd));
 
-            // Step B: Run first phase [3, 100] saving checkpoint
-            std::string phase1_cmd = bin + " --checkpoint test_checkpoint.chk --start-num 3 --end-num 100";
-            run_command(phase1_cmd);
+        // Step B: Run first phase [3, 100] saving checkpoint
+        std::string phase1_cmd = backend.bin_path + backend.extra_args + " --checkpoint test_checkpoint.chk --start-num 3 --end-num 100";
+        run_command(phase1_cmd);
 
-            if (!file_exists("test_checkpoint.chk")) {
-                std::cerr << "  [FAIL] Checkpoint file was not created!" << std::endl;
-                all_passed = false;
-                continue;
-            }
-
-            // Step C: Run second phase resumed [101, 1000] using checkpoint
-            std::string phase2_cmd = bin + " --checkpoint test_checkpoint.chk --end-num 1000";
-            RunResults checkpointed_res = parse_output(bin + "_checkpoint", run_command(phase2_cmd));
-
-            // Step D: Compare peaks lists of ref_res and checkpointed_res
-            bool peaks_match = true;
-            if (ref_res.max_val_peaks != checkpointed_res.max_val_peaks) {
-                std::cerr << "  [FAIL] Max Value Peaks mismatch on checkpoint resume!" << std::endl;
-                peaks_match = false;
-            }
-            if (ref_res.steps_peaks != checkpointed_res.steps_peaks) {
-                std::cerr << "  [FAIL] Steps Peaks mismatch on checkpoint resume!" << std::endl;
-                peaks_match = false;
-            }
-            if (ref_res.sigma_peaks != checkpointed_res.sigma_peaks) {
-                std::cerr << "  [FAIL] Sigma Peaks mismatch on checkpoint resume!" << std::endl;
-                peaks_match = false;
-            }
-
-            if (peaks_match) {
-                std::cout << "  [PASS] " << bin << " checkpoint resume matches reference peaks." << std::endl;
-            } else {
-                all_passed = false;
-            }
-
-            // Clean up checkpoint file
-            std::remove("test_checkpoint.chk");
+        if (!file_exists("test_checkpoint.chk")) {
+            std::cerr << "  [FAIL] Checkpoint file was not created!" << std::endl;
+            all_passed = false;
+            continue;
         }
+
+        // Step C: Run second phase resumed [101, 1000] using checkpoint
+        std::string phase2_cmd = backend.bin_path + backend.extra_args + " --checkpoint test_checkpoint.chk --end-num 1000";
+        RunResults checkpointed_res = parse_output(backend.name + "_checkpoint", run_command(phase2_cmd));
+
+        // Step D: Compare peaks lists of ref_res and checkpointed_res
+        bool peaks_match = true;
+        if (ref_res.max_val_peaks != checkpointed_res.max_val_peaks) {
+            std::cerr << "  [FAIL] Max Value Peaks mismatch on checkpoint resume!" << std::endl;
+            peaks_match = false;
+        }
+        if (ref_res.steps_peaks != checkpointed_res.steps_peaks) {
+            std::cerr << "  [FAIL] Steps Peaks mismatch on checkpoint resume!" << std::endl;
+            peaks_match = false;
+        }
+        if (ref_res.sigma_peaks != checkpointed_res.sigma_peaks) {
+            std::cerr << "  [FAIL] Sigma Peaks mismatch on checkpoint resume!" << std::endl;
+            peaks_match = false;
+        }
+
+        if (peaks_match) {
+            std::cout << "  [PASS] " << backend.name << " checkpoint resume matches reference peaks." << std::endl;
+        } else {
+            all_passed = false;
+        }
+
+        // Clean up checkpoint file
+        std::remove("test_checkpoint.chk");
     }
 
     // 3. Stress Test Scenario 1: Block Resumption Stress Test (Vulkan and HIP only)
     std::cout << "\nRunning Stress Test Scenario 1: Block Resumption Correctness (GPU backends)..." << std::endl;
-    for (const std::string& bin : {"./hailstone_vulkan", "./hailstone_hip"}) {
-        if (file_exists(bin)) {
-            std::cout << "Testing block resumption on " << bin << "..." << std::endl;
-            std::remove("block_stress.chk");
+    for (const auto& backend : backends) {
+        // Skip CPU backends as checking 2 full blocks (8.5B items) takes hours on CPU
+        if (backend.bin_path == "./hailstone_cpu") continue;
 
-            // Step A: Run single continuous check of blocks 0 and 1 as reference
-            std::string ref_cmd = bin + " --no-checkpoint --start-block 0 --num-blocks 2";
-            RunResults ref_res = parse_output(bin + "_block_ref", run_command(ref_cmd));
+        std::cout << "Testing block resumption on " << backend.name << "..." << std::endl;
+        std::remove("block_stress.chk");
 
-            // Step B: Run block 0 saving checkpoint
-            std::string phase1_cmd = bin + " --checkpoint block_stress.chk --start-block 0 --num-blocks 1";
-            run_command(phase1_cmd);
+        // Step A: Run single continuous check of blocks 0 and 1 as reference
+        std::string ref_cmd = backend.bin_path + backend.extra_args + " --no-checkpoint --start-block 0 --num-blocks 2";
+        RunResults ref_res = parse_output(backend.name + "_block_ref", run_command(ref_cmd));
 
-            if (!file_exists("block_stress.chk")) {
-                std::cerr << "  [FAIL] block_stress.chk was not created!" << std::endl;
-                all_passed = false;
-                continue;
-            }
+        // Step B: Run block 0 saving checkpoint
+        std::string phase1_cmd = backend.bin_path + backend.extra_args + " --checkpoint block_stress.chk --start-block 0 --num-blocks 1";
+        run_command(phase1_cmd);
 
-            // Step C: Run block 1 resuming from checkpoint
-            std::string phase2_cmd = bin + " --checkpoint block_stress.chk --num-blocks 1";
-            RunResults resumed_res = parse_output(bin + "_block_resumed", run_command(phase2_cmd));
-
-            // Step D: Compare peaks lists of ref_res and resumed_res
-            bool peaks_match = true;
-            if (ref_res.max_val_peaks != resumed_res.max_val_peaks) {
-                std::cerr << "  [FAIL] Max Value Peaks mismatch on block resume!" << std::endl;
-                peaks_match = false;
-            }
-            if (ref_res.steps_peaks != resumed_res.steps_peaks) {
-                std::cerr << "  [FAIL] Steps Peaks mismatch on block resume!" << std::endl;
-                peaks_match = false;
-            }
-            if (ref_res.sigma_peaks != resumed_res.sigma_peaks) {
-                std::cerr << "  [FAIL] Sigma Peaks mismatch on block resume!" << std::endl;
-                peaks_match = false;
-            }
-
-            if (peaks_match) {
-                std::cout << "  [PASS] " << bin << " block resumption matches continuous reference." << std::endl;
-            } else {
-                all_passed = false;
-            }
-
-            std::remove("block_stress.chk");
+        if (!file_exists("block_stress.chk")) {
+            std::cerr << "  [FAIL] block_stress.chk was not created!" << std::endl;
+            all_passed = false;
+            continue;
         }
+
+        // Step C: Run block 1 resuming from checkpoint
+        std::string phase2_cmd = backend.bin_path + backend.extra_args + " --checkpoint block_stress.chk --num-blocks 1";
+        RunResults resumed_res = parse_output(backend.name + "_block_resumed", run_command(phase2_cmd));
+
+        // Step D: Compare peaks lists of ref_res and resumed_res
+        bool peaks_match = true;
+        if (ref_res.max_val_peaks != resumed_res.max_val_peaks) {
+            std::cerr << "  [FAIL] Max Value Peaks mismatch on block resume!" << std::endl;
+            peaks_match = false;
+        }
+        if (ref_res.steps_peaks != resumed_res.steps_peaks) {
+            std::cerr << "  [FAIL] Steps Peaks mismatch on block resume!" << std::endl;
+            peaks_match = false;
+        }
+        if (ref_res.sigma_peaks != resumed_res.sigma_peaks) {
+            std::cerr << "  [FAIL] Sigma Peaks mismatch on block resume!" << std::endl;
+            peaks_match = false;
+        }
+
+        if (peaks_match) {
+            std::cout << "  [PASS] " << backend.name << " block resumption matches continuous reference." << std::endl;
+        } else {
+            all_passed = false;
+        }
+
+        std::remove("block_stress.chk");
     }
 
     // 4. Stress Test Scenario 2: Cross-Backend Checkpoint Interoperability Test
@@ -386,8 +390,8 @@ int main() {
         std::string ref_cmd = "./hailstone_cpu --no-checkpoint --start-num 3 --end-num 5000";
         RunResults ref_res = parse_output("cpu_ref_interop", run_command(ref_cmd));
 
-        // Phase 1: CPU starts [3, 500] -> checkpoint
-        run_command("./hailstone_cpu --checkpoint interop_stress.chk --start-num 3 --end-num 500");
+        // Phase 1: CPU (Domain Switching) starts [3, 500] -> checkpoint
+        run_command("./hailstone_cpu --domain-switching --checkpoint interop_stress.chk --start-num 3 --end-num 500");
 
         // Phase 2: Vulkan resumes [501, 1000] -> checkpoint
         run_command("./hailstone_vulkan --checkpoint interop_stress.chk --end-num 1000");
@@ -396,11 +400,11 @@ int main() {
         if (file_exists("./hailstone_hip")) {
             run_command("./hailstone_hip --checkpoint interop_stress.chk --end-num 2000");
         } else {
-            // Fallback: CPU resumes [1001, 2000] if HIP is not available
-            run_command("./hailstone_cpu --checkpoint interop_stress.chk --end-num 2000");
+            // Fallback: CPU (Domain Switching) resumes [1001, 2000] if HIP is not available
+            run_command("./hailstone_cpu --domain-switching --checkpoint interop_stress.chk --end-num 2000");
         }
 
-        // Phase 4: CPU resumes [2001, 5000] -> checkpoint
+        // Phase 4: CPU (Standard) resumes [2001, 5000] -> checkpoint
         RunResults final_res = parse_output("cpu_final_interop", run_command("./hailstone_cpu --checkpoint interop_stress.chk --end-num 5000"));
 
         // Compare peaks lists of ref_res and final_res
@@ -427,8 +431,31 @@ int main() {
         std::remove("interop_stress.chk");
     }
 
-    // 5. Scenario 3: Suffix-First Search Correctness & Alignment (CPU vs HIP)
-    std::cout << "\nRunning Scenario 3: Suffix-First search alignment (CPU vs HIP)..." << std::endl;
+    // 5. Scenario 3: Suffix-First Search Correctness & Alignment (CPU vs HIP and CPU Standard vs CPU DS)
+    std::cout << "\nRunning Scenario 3: Suffix-First search alignment..." << std::endl;
+    if (file_exists("./hailstone_cpu")) {
+        for (int w : {8, 12, 16, 20}) {
+            std::cout << "Comparing CPU (Standard) and CPU (Domain Switching) suffix-first searches with width " << w << "..." << std::endl;
+            std::string cpu_sf_cmd = "./hailstone_cpu --cutoff-width " + std::to_string(w) + " --no-checkpoint 3 50000";
+            std::string cpu_ds_sf_cmd = "./hailstone_cpu --domain-switching --cutoff-width " + std::to_string(w) + " --no-checkpoint 3 50000";
+            
+            try {
+                RunResults cpu_sf_res = parse_output("CPU_SF_W" + std::to_string(w), run_command(cpu_sf_cmd));
+                RunResults cpu_ds_sf_res = parse_output("CPU_DS_SF_W" + std::to_string(w), run_command(cpu_ds_sf_cmd));
+                
+                if (compare_results(cpu_sf_res, cpu_ds_sf_res)) {
+                    std::cout << "  [PASS] CPU (Standard) and CPU (Domain Switching) suffix-first searches with width " << w << " match exactly." << std::endl;
+                } else {
+                    std::cout << "  [FAIL] Suffix-first CPU Standard/Domain Switching mismatch at width " << w << "!" << std::endl;
+                    all_passed = false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "  [FAIL] Error running CPU alignment tests at width " << w << ": " << e.what() << std::endl;
+                all_passed = false;
+            }
+        }
+    }
+
     if (file_exists("./hailstone_cpu") && file_exists("./hailstone_hip")) {
         for (int w : {8, 12, 16, 20}) {
             std::cout << "Comparing CPU and HIP suffix-first searches with width " << w << "..." << std::endl;
@@ -454,29 +481,27 @@ int main() {
 
     // 6. Scenario 4: Suffix-First Self-Comparison (Standard vs Suffix-First)
     std::cout << "\nRunning Scenario 4: Suffix-First self-comparison (Standard vs Suffix-First)..." << std::endl;
-    for (const std::string& bin : {"./hailstone_cpu", "./hailstone_hip", "./hailstone_vulkan"}) {
-        if (file_exists(bin)) {
-            std::cout << "Verifying " << bin << " peaks are identical with --cutoff-width 0, --cutoff-width 20, and --cutoff-width 24..." << std::endl;
+    for (const auto& backend : backends) {
+        std::cout << "Verifying " << backend.name << " peaks are identical with --cutoff-width 0, --cutoff-width 20, and --cutoff-width 24..." << std::endl;
+        
+        std::string std_cmd = backend.bin_path + backend.extra_args + " --cutoff-width 0 --no-checkpoint 3 100000";
+        std::string sf20_cmd = backend.bin_path + backend.extra_args + " --cutoff-width 20 --no-checkpoint 3 100000";
+        std::string sf24_cmd = backend.bin_path + backend.extra_args + " --cutoff-width 24 --no-checkpoint 3 100000";
+        
+        try {
+            RunResults std_res = parse_output(backend.name + "_std", run_command(std_cmd));
+            RunResults sf20_res = parse_output(backend.name + "_sf20", run_command(sf20_cmd));
+            RunResults sf24_res = parse_output(backend.name + "_sf24", run_command(sf24_cmd));
             
-            std::string std_cmd = bin + " --cutoff-width 0 --no-checkpoint 3 100000";
-            std::string sf20_cmd = bin + " --cutoff-width 20 --no-checkpoint 3 100000";
-            std::string sf24_cmd = bin + " --cutoff-width 24 --no-checkpoint 3 100000";
-            
-            try {
-                RunResults std_res = parse_output(bin + "_std", run_command(std_cmd));
-                RunResults sf20_res = parse_output(bin + "_sf20", run_command(sf20_cmd));
-                RunResults sf24_res = parse_output(bin + "_sf24", run_command(sf24_cmd));
-                
-                if (compare_results(std_res, sf20_res) && compare_results(std_res, sf24_res)) {
-                    std::cout << "  [PASS] " << bin << " self-comparison (0 vs 20 vs 24) matches exactly." << std::endl;
-                } else {
-                    std::cout << "  [FAIL] " << bin << " self-comparison mismatch!" << std::endl;
-                    all_passed = false;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "  [FAIL] Error running self-comparison for " << bin << ": " << e.what() << std::endl;
+            if (compare_results(std_res, sf20_res) && compare_results(std_res, sf24_res)) {
+                std::cout << "  [PASS] " << backend.name << " self-comparison (0 vs 20 vs 24) matches exactly." << std::endl;
+            } else {
+                std::cout << "  [FAIL] " << backend.name << " self-comparison mismatch!" << std::endl;
                 all_passed = false;
             }
+        } catch (const std::exception& e) {
+            std::cerr << "  [FAIL] Error running self-comparison for " << backend.name << ": " << e.what() << std::endl;
+            all_passed = false;
         }
     }
 

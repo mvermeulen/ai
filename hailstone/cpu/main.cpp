@@ -5,7 +5,9 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#ifdef EXCLUDE_01_SUFFIX
 #include <algorithm>
+#endif
 #ifdef _OPENMP
 #include <omp.h>
 #else
@@ -222,7 +224,9 @@ void print_help() {
                "checkpoints at the end of search\n"
             << "  --use-avx512, --use_avx512           Force enable AVX-512 vectorized search\n"
             << "  --no-avx512, --no_avx512             Force disable AVX-512 vectorized search\n"
-            << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, 20, or 24)\n\n"
+            << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, 20, or 24)\n"
+            << "  --domain-switching, --domain_switching Force enable domain-switching arithmetic\n"
+            << "  --no-domain-switching, --no_domain_switching Force disable domain-switching arithmetic (default)\n\n"
             << "Note: Positional parameters can still be used as a fallback if "
                "no named options are provided.\n";
 }
@@ -326,6 +330,10 @@ int main(int argc, char *argv[]) {
       avx512_enabled = true;
     } else if (arg == "--no-avx512" || arg == "--no_avx512") {
       avx512_enabled = false;
+    } else if (arg == "--domain-switching" || arg == "--domain_switching") {
+      use_domain_switching = true;
+    } else if (arg == "--no-domain-switching" || arg == "--no_domain_switching") {
+      use_domain_switching = false;
     } else if (arg == "--cutoff-width" || arg == "--cutoff_width") {
       if (i + 1 < argc) {
         cutoff_width = std::stoi(argv[++i]);

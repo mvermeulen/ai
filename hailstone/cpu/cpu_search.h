@@ -6,9 +6,13 @@
 
 // Computes Collatz statistics for a single starting value.
 CollatzStats compute_collatz(uint128 n);
+CollatzStats compute_collatz_std(uint128 n);
+CollatzStats compute_collatz_domain(uint128 n);
 
 // Computes Collatz statistics using polynomial precomputed tables once value is below 2^N.
 CollatzStats compute_collatz_poly(uint128 n, uint32_t current_max_steps);
+CollatzStats compute_collatz_poly_std(uint128 n, uint32_t current_max_steps);
+CollatzStats compute_collatz_poly_domain(uint128 n, uint32_t current_max_steps);
 
 // Searches a range of odd numbers [start, end] for peaks.
 // Appends newly found peaks to the respective vectors and updates the global_peaks state.
@@ -86,6 +90,10 @@ void cpu_search_range_suffix_first_avx512(uint128 start, uint128 end,
                                           PeakState& global_peaks,
                                           SearchMetrics& metrics);
 #endif
+
+extern bool use_domain_switching;
+extern const uint128 lut3[];
+extern const uint128 max_safe_k[];
 
 #endif // HAILSTONE_CPU_SEARCH_H
 

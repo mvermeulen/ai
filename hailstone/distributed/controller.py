@@ -15,6 +15,7 @@ DEFAULT_CHECKPOINT = "hailstone_distributed.chk"
 
 DEFAULT_THROUGHPUT = {
     "cpu": 10.0,
+    "cpu_domain": 12.0,
     "vulkan": 200.0,
     "hip": 300.0
 }

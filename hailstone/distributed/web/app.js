@@ -167,7 +167,9 @@ function renderWorkers(workers, activeBackend) {
                 
                 if (speed !== null) {
                     const activeClass = b === activeBackend && w.status === 'busy' ? 'active' : '';
-                    benchmarkHtml += `<span class="bench-tag ${activeClass}">${b.toUpperCase()}: ${speed.toFixed(1)} M/s</span>`;
+                    let label = b.toUpperCase();
+                    if (b === 'cpu_domain') label = 'CPU (DS)';
+                    benchmarkHtml += `<span class="bench-tag ${activeClass}">${label}: ${speed.toFixed(1)} M/s</span>`;
                 }
             });
         }

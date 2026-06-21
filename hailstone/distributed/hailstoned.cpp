@@ -53,19 +53,29 @@ std::string get_capabilities_json() {
     }
 
     std::string bin_dir = get_project_dir();
-    std::vector<std::string> backends = {"cpu", "vulkan", "hip"};
+    struct BackendConfig {
+        std::string name;
+        std::string binary;
+        std::string extra_args;
+    };
+    std::vector<BackendConfig> backends = {
+        {"cpu", "hailstone_cpu", " --no-domain-switching"},
+        {"cpu_domain", "hailstone_cpu", " --domain-switching"},
+        {"vulkan", "hailstone_vulkan", ""},
+        {"hip", "hailstone_hip", ""}
+    };
     std::string json = "{";
     bool first = true;
     for (const auto& b : backends) {
-        std::string path = bin_dir + "hailstone_" + b;
+        std::string path = bin_dir + b.binary;
         if (access(path.c_str(), X_OK) == 0) {
-            std::string cmd = path + " --no-checkpoint --start-num 3 --end-num 5000003 --cutoff-width 20";
+            std::string cmd = path + " --no-checkpoint --start-num 3 --end-num 5000003 --cutoff-width 20" + b.extra_args;
             std::string out = exec_and_get_output(cmd);
             std::smatch match;
             std::regex rgx("Throughput:\\s+([\\d\\.]+)\\s+M numbers/s");
             if (std::regex_search(out, match, rgx) && match.size() > 1) {
                 if (!first) json += ", ";
-                json += "\"" + b + "\": " + match.str(1);
+                json += "\"" + b.name + "\": " + match.str(1);
                 first = false;
             }
         }
@@ -174,7 +184,14 @@ void handle_client(int client_fd) {
         chk_out << chk_data;
         chk_out.close();
         
-        std::string bin_path = get_project_dir() + "hailstone_" + backend;
+        std::string actual_backend = backend;
+        bool domain_switching = false;
+        if (backend == "cpu_domain") {
+            actual_backend = "cpu";
+            domain_switching = true;
+        }
+
+        std::string bin_path = get_project_dir() + "hailstone_" + actual_backend;
         
         int pipe_fd[2];
         if (pipe(pipe_fd) == -1) {
@@ -190,9 +207,17 @@ void handle_client(int client_fd) {
             dup2(pipe_fd[1], STDERR_FILENO);
             close(pipe_fd[1]);
             
-            execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
-                  "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
-                  "--cutoff-width", cutoff.c_str(), (char*)NULL);
+            if (actual_backend == "cpu") {
+                execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
+                      "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
+                      "--cutoff-width", cutoff.c_str(), 
+                      (domain_switching ? "--domain-switching" : "--no-domain-switching"), 
+                      (char*)NULL);
+            } else {
+                execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
+                      "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
+                      "--cutoff-width", cutoff.c_str(), (char*)NULL);
+            }
             exit(1);
         } 
         else if (child_pid > 0) {
