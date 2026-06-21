@@ -245,6 +245,17 @@ To evaluate trade-offs in the 128-bit search space, we run the extended sweep dr
 | HIP | N/A | N/A | OFF | 20 | 0.114 | 972.28 | 94.76x | 8741.26 | 425.99x |
 | HIP | N/A | N/A | OFF | 24 | 0.086 | 1056.01 | 102.93x | 11627.91 | 566.66x |
 
+#### Key Observations
+* **Search Coverage Speed vs. Computational Throughput**:
+  * For standard search (`Cutoff Width = 0`), the search coverage speed is exactly $2\times$ the computational throughput since the search only skips even numbers (50% pruning).
+  * For suffix-first search (`Cutoff Width = 20` or `24`), apriori cutoffs prune away approximately **88.5%** of the trajectories. As a result, the search coverage speed (logical scan rate) scales up by **~8.7x** relative to computational throughput. For instance, the **HIP (DS: OFF, Cutoff: 24)** config achieves `1056.01 M/s` of computational throughput but sweeps the range at a staggering **11,627.91 M/s** (a **566.66x speedup** over the CPU baseline).
+* **Domain Switching Trade-offs (CPU vs. GPU)**:
+  * **Helps CPU**: Domain switching reduces trajectory step counts. In the CPU backend, this translates to instruction savings, boosting throughput by **+31% to +33%** when combined with AVX-512 ON and suffix-first search (e.g., from `11.52 M/s` to `15.27 M/s` at width 24).
+  * **Hurts GPU**: GPU threads are highly sensitive to branch divergence and the math emulation overhead of executing 128-bit domain-switching trajectories. Enabling domain-switching on GPUs results in a performance hit (e.g., HIP's coverage speed drops from `11,627.91 M/s` to `8,984.73 M/s` at width 24).
+* **Where AVX-512 Vectorization Excel**:
+  * **Only active in Suffix-First**: AVX-512 vectorization is only implemented in the suffix-first search paths (`Cutoff > 0`). When Cutoff is 0, AVX-512 ON/OFF yields identical throughput as both fall back to the standard scalar loop.
+  * **Requires Domain Switching to offset lane refill overhead**: Because AVX-512 lanes finish at different times and require active lane refilling from stack memory, this microarchitectural overhead makes AVX-512 slightly slower than the simple scalar loop when Domain Switching is OFF. However, when Domain Switching is ON, the vector gather and multiplication execution rate is fast enough to offset this overhead, delivering a **~42% to 45% speedup** (e.g., throughput increases from `10.33 M/s` to `15.27 M/s` at width 24).
+
 ### 4. CPU Profiling
 The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/2026-06-15-profiling.md).
 
