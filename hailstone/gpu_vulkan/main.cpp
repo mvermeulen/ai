@@ -1129,7 +1129,9 @@ void print_help() {
               << "  --checkpoint, --checkpoint_file FILE Checkpoint file path (default: hailstone.chk)\n"
               << "  --no-checkpoint, --no_checkpoint     Disable saving and restoring checkpoints\n"
               << "  --no-save-checkpoint, --no_save_checkpoint Disable saving checkpoints at the end of search\n"
-              << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, 20, or 24)\n\n"
+              << "  --cutoff-width, --cutoff_width VALUE Enable suffix-first search with given bit-width (8, 12, 16, 20, or 24)\n"
+              << "  --domain-switching, --domain_switching Force enable domain-switching arithmetic\n"
+              << "  --no-domain-switching, --no_domain_switching Force disable domain-switching arithmetic (default)\n\n"
               << "Note: Positional parameters can still be used as a fallback if no named options are provided.\n";
 }
 
@@ -1160,6 +1162,7 @@ int main(int argc, char* argv[]) {
     bool save_checkpoint_enabled = true;
     std::string checkpoint_file = "hailstone.chk";
     int cutoff_width = 20;
+    bool use_domain_switching = false;
 
     std::vector<std::string> positional_args;
 
@@ -1227,6 +1230,10 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: " << arg << " requires an argument." << std::endl;
                 return 1;
             }
+        } else if (arg == "--domain-switching" || arg == "--domain_switching") {
+            use_domain_switching = true;
+        } else if (arg == "--no-domain-switching" || arg == "--no_domain_switching") {
+            use_domain_switching = false;
         } else if (arg[0] == '-') {
             std::cerr << "Unknown option: " << arg << std::endl;
             print_help();
@@ -1645,9 +1652,10 @@ int main(int argc, char* argv[]) {
     struct SpecializationData {
         VkBool32 use_64bit;
         VkBool32 use_suffix_first;
+        VkBool32 use_domain_switching;
     };
 
-    std::vector<VkSpecializationMapEntry> specEntries(2);
+    std::vector<VkSpecializationMapEntry> specEntries(3);
     specEntries[0].constantID = 0;
     specEntries[0].offset = offsetof(SpecializationData, use_64bit);
     specEntries[0].size = sizeof(VkBool32);
@@ -1656,10 +1664,14 @@ int main(int argc, char* argv[]) {
     specEntries[1].offset = offsetof(SpecializationData, use_suffix_first);
     specEntries[1].size = sizeof(VkBool32);
 
+    specEntries[2].constantID = 2;
+    specEntries[2].offset = offsetof(SpecializationData, use_domain_switching);
+    specEntries[2].size = sizeof(VkBool32);
+
     SpecializationData specData;
 
     VkSpecializationInfo specInfo{};
-    specInfo.mapEntryCount = 2;
+    specInfo.mapEntryCount = 3;
     specInfo.pMapEntries = specEntries.data();
     specInfo.dataSize = sizeof(SpecializationData);
     specInfo.pData = &specData;
@@ -1673,30 +1685,62 @@ int main(int argc, char* argv[]) {
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.stage.pSpecializationInfo = &specInfo;
 
-    // Create 4 pipelines:
-    // 1) Block 0 Standard: use_64bit = VK_TRUE, use_suffix_first = VK_FALSE
+    // Create 8 pipelines:
+    // 1) Block 0 Standard: use_64bit = VK_TRUE, use_suffix_first = VK_FALSE, use_domain_switching = VK_FALSE
     specData.use_64bit = VK_TRUE;
     specData.use_suffix_first = VK_FALSE;
+    specData.use_domain_switching = VK_FALSE;
     VkPipeline pipeline_block0_std;
     VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0_std));
 
-    // 2) Blocks > 0 Standard: use_64bit = VK_FALSE, use_suffix_first = VK_FALSE
+    // 2) Blocks > 0 Standard: use_64bit = VK_FALSE, use_suffix_first = VK_FALSE, use_domain_switching = VK_FALSE
     specData.use_64bit = VK_FALSE;
     specData.use_suffix_first = VK_FALSE;
+    specData.use_domain_switching = VK_FALSE;
     VkPipeline pipeline_blocks_gt_0_std;
     VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0_std));
 
-    // 3) Block 0 Suffix-First: use_64bit = VK_TRUE, use_suffix_first = VK_TRUE
+    // 3) Block 0 Suffix-First: use_64bit = VK_TRUE, use_suffix_first = VK_TRUE, use_domain_switching = VK_FALSE
     specData.use_64bit = VK_TRUE;
     specData.use_suffix_first = VK_TRUE;
+    specData.use_domain_switching = VK_FALSE;
     VkPipeline pipeline_block0_sf;
     VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0_sf));
 
-    // 4) Blocks > 0 Suffix-First: use_64bit = VK_FALSE, use_suffix_first = VK_TRUE
+    // 4) Blocks > 0 Suffix-First: use_64bit = VK_FALSE, use_suffix_first = VK_TRUE, use_domain_switching = VK_FALSE
     specData.use_64bit = VK_FALSE;
     specData.use_suffix_first = VK_TRUE;
+    specData.use_domain_switching = VK_FALSE;
     VkPipeline pipeline_blocks_gt_0_sf;
     VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0_sf));
+
+    // 5) Block 0 Standard DS: use_64bit = VK_TRUE, use_suffix_first = VK_FALSE, use_domain_switching = VK_TRUE
+    specData.use_64bit = VK_TRUE;
+    specData.use_suffix_first = VK_FALSE;
+    specData.use_domain_switching = VK_TRUE;
+    VkPipeline pipeline_block0_std_ds;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0_std_ds));
+
+    // 6) Blocks > 0 Standard DS: use_64bit = VK_FALSE, use_suffix_first = VK_FALSE, use_domain_switching = VK_TRUE
+    specData.use_64bit = VK_FALSE;
+    specData.use_suffix_first = VK_FALSE;
+    specData.use_domain_switching = VK_TRUE;
+    VkPipeline pipeline_blocks_gt_0_std_ds;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0_std_ds));
+
+    // 7) Block 0 Suffix-First DS: use_64bit = VK_TRUE, use_suffix_first = VK_TRUE, use_domain_switching = VK_TRUE
+    specData.use_64bit = VK_TRUE;
+    specData.use_suffix_first = VK_TRUE;
+    specData.use_domain_switching = VK_TRUE;
+    VkPipeline pipeline_block0_sf_ds;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_block0_sf_ds));
+
+    // 8) Blocks > 0 Suffix-First DS: use_64bit = VK_FALSE, use_suffix_first = VK_TRUE, use_domain_switching = VK_TRUE
+    specData.use_64bit = VK_FALSE;
+    specData.use_suffix_first = VK_TRUE;
+    specData.use_domain_switching = VK_TRUE;
+    VkPipeline pipeline_blocks_gt_0_sf_ds;
+    VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_blocks_gt_0_sf_ds));
 
     // 9. Command Pool & Command Buffer
     VkCommandPoolCreateInfo commandPoolInfo{};
@@ -1715,6 +1759,11 @@ int main(int argc, char* argv[]) {
 
     unsigned __int128 block_boundary = 0x100000000ULL;
 
+    VkPipeline p_block0_std = use_domain_switching ? pipeline_block0_std_ds : pipeline_block0_std;
+    VkPipeline p_block0_sf = use_domain_switching ? pipeline_block0_sf_ds : pipeline_block0_sf;
+    VkPipeline p_blocks_gt_0_std = use_domain_switching ? pipeline_blocks_gt_0_std_ds : pipeline_blocks_gt_0_std;
+    VkPipeline p_blocks_gt_0_sf = use_domain_switching ? pipeline_blocks_gt_0_sf_ds : pipeline_blocks_gt_0_sf;
+
     if (cutoff_width > 0) {
         unsigned __int128 threshold_val = (unsigned __int128)1 << cutoff_width;
         if (start_val < threshold_val) {
@@ -1728,7 +1777,7 @@ int main(int argc, char* argv[]) {
                 start_val, standard_end, 0, base_suffixes,
                 offsets, sizes,
                 device, computeQueue, commandBuffer,
-                pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
+                pipelineLayout, p_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
             );
@@ -1745,7 +1794,7 @@ int main(int argc, char* argv[]) {
                     start_val, block_0_end, cutoff_width, base_suffixes,
                     offsets, sizes,
                     device, computeQueue, commandBuffer,
-                    pipelineLayout, pipeline_block0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
+                    pipelineLayout, p_block0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                     masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
                 );
@@ -1754,7 +1803,7 @@ int main(int argc, char* argv[]) {
                         block_boundary, end_val, cutoff_width, base_suffixes,
                         offsets, sizes,
                         device, computeQueue, commandBuffer,
-                        pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
+                        pipelineLayout, p_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                         masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                         masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
                     );
@@ -1764,7 +1813,7 @@ int main(int argc, char* argv[]) {
                     start_val, end_val, cutoff_width, base_suffixes,
                     offsets, sizes,
                     device, computeQueue, commandBuffer,
-                    pipelineLayout, pipeline_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
+                    pipelineLayout, p_blocks_gt_0_sf, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                     masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
                 );
@@ -1781,7 +1830,7 @@ int main(int argc, char* argv[]) {
                 start_val, block_0_end, 0, base_suffixes,
                 offsets, sizes,
                 device, computeQueue, commandBuffer,
-                pipelineLayout, pipeline_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
+                pipelineLayout, p_block0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
             );
@@ -1790,7 +1839,7 @@ int main(int argc, char* argv[]) {
                     block_boundary, end_val, 0, base_suffixes,
                     offsets, sizes,
                     device, computeQueue, commandBuffer,
-                    pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
+                    pipelineLayout, p_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                     masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                     masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
                 );
@@ -1800,7 +1849,7 @@ int main(int argc, char* argv[]) {
                 start_val, end_val, 0, base_suffixes,
                 offsets, sizes,
                 device, computeQueue, commandBuffer,
-                pipelineLayout, pipeline_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
+                pipelineLayout, p_blocks_gt_0_std, descriptorSet, buffers, bufferMemories, bufferSizes,
                 masterPeaks, masterMaxValPeaks, masterStepsPeaks, masterSigmaPeaks,
                 masterMetrics, mem_transfer_time_ms, total_kernel_time_ms
             );
@@ -1842,6 +1891,11 @@ int main(int argc, char* argv[]) {
     vkDestroyPipeline(device, pipeline_blocks_gt_0_std, nullptr);
     vkDestroyPipeline(device, pipeline_block0_sf, nullptr);
     vkDestroyPipeline(device, pipeline_blocks_gt_0_sf, nullptr);
+    vkDestroyPipeline(device, pipeline_block0_std_ds, nullptr);
+    vkDestroyPipeline(device, pipeline_blocks_gt_0_std_ds, nullptr);
+    vkDestroyPipeline(device, pipeline_block0_sf_ds, nullptr);
+    vkDestroyPipeline(device, pipeline_blocks_gt_0_sf_ds, nullptr);
+
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyShaderModule(device, shaderModule, nullptr);
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);

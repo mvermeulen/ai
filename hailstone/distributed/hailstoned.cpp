@@ -61,8 +61,10 @@ std::string get_capabilities_json() {
     std::vector<BackendConfig> backends = {
         {"cpu", "hailstone_cpu", " --no-domain-switching"},
         {"cpu_domain", "hailstone_cpu", " --domain-switching"},
-        {"vulkan", "hailstone_vulkan", ""},
-        {"hip", "hailstone_hip", ""}
+        {"vulkan", "hailstone_vulkan", " --no-domain-switching"},
+        {"vulkan_domain", "hailstone_vulkan", " --domain-switching"},
+        {"hip", "hailstone_hip", " --no-domain-switching"},
+        {"hip_domain", "hailstone_hip", " --domain-switching"}
     };
     std::string json = "{";
     bool first = true;
@@ -189,6 +191,12 @@ void handle_client(int client_fd) {
         if (backend == "cpu_domain") {
             actual_backend = "cpu";
             domain_switching = true;
+        } else if (backend == "vulkan_domain") {
+            actual_backend = "vulkan";
+            domain_switching = true;
+        } else if (backend == "hip_domain") {
+            actual_backend = "hip";
+            domain_switching = true;
         }
 
         std::string bin_path = get_project_dir() + "hailstone_" + actual_backend;
@@ -207,17 +215,11 @@ void handle_client(int client_fd) {
             dup2(pipe_fd[1], STDERR_FILENO);
             close(pipe_fd[1]);
             
-            if (actual_backend == "cpu") {
-                execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
-                      "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
-                      "--cutoff-width", cutoff.c_str(), 
-                      (domain_switching ? "--domain-switching" : "--no-domain-switching"), 
-                      (char*)NULL);
-            } else {
-                execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
-                      "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
-                      "--cutoff-width", cutoff.c_str(), (char*)NULL);
-            }
+            execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
+                  "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
+                  "--cutoff-width", cutoff.c_str(), 
+                  (domain_switching ? "--domain-switching" : "--no-domain-switching"), 
+                  (char*)NULL);
             exit(1);
         } 
         else if (child_pid > 0) {

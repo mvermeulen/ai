@@ -214,14 +214,16 @@ int main() {
     // Build the list of available backends to test
     std::vector<BackendToTest> backends;
     if (file_exists("./hailstone_cpu")) {
-        backends.push_back({"CPU (Standard)", "./hailstone_cpu", ""});
+        backends.push_back({"CPU (Standard)", "./hailstone_cpu", " --no-domain-switching"});
         backends.push_back({"CPU (Domain Switching)", "./hailstone_cpu", " --domain-switching"});
     }
     if (file_exists("./hailstone_vulkan")) {
-        backends.push_back({"Vulkan", "./hailstone_vulkan", ""});
+        backends.push_back({"Vulkan", "./hailstone_vulkan", " --no-domain-switching"});
+        backends.push_back({"Vulkan (Domain Switching)", "./hailstone_vulkan", " --domain-switching"});
     }
     if (file_exists("./hailstone_hip")) {
-        backends.push_back({"HIP", "./hailstone_hip", ""});
+        backends.push_back({"HIP", "./hailstone_hip", " --no-domain-switching"});
+        backends.push_back({"HIP (Domain Switching)", "./hailstone_hip", " --domain-switching"});
     }
 
     std::vector<TestRun> test_runs = {
@@ -254,7 +256,7 @@ int main() {
         for (const auto& backend : backends) {
             if (backend.name == "CPU (Standard)") continue;
 
-            if ((backend.name == "Vulkan" || backend.name == "HIP") && run.name == "High Block 1024 Range") {
+            if ((backend.name.find("Vulkan") != std::string::npos || backend.name.find("HIP") != std::string::npos) && run.name == "High Block 1024 Range") {
                 std::cout << "  [SKIP] Skipping GPU backend " << backend.name << " on High Block range due to known initial-step peak discrepancy." << std::endl;
                 continue;
             }

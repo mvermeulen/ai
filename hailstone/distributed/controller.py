@@ -17,7 +17,9 @@ DEFAULT_THROUGHPUT = {
     "cpu": 10.0,
     "cpu_domain": 12.0,
     "vulkan": 200.0,
-    "hip": 300.0
+    "vulkan_domain": 220.0,
+    "hip": 300.0,
+    "hip_domain": 330.0
 }
 
 # Logging settings

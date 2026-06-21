@@ -169,6 +169,8 @@ function renderWorkers(workers, activeBackend) {
                     const activeClass = b === activeBackend && w.status === 'busy' ? 'active' : '';
                     let label = b.toUpperCase();
                     if (b === 'cpu_domain') label = 'CPU (DS)';
+                    else if (b === 'vulkan_domain') label = 'VULKAN (DS)';
+                    else if (b === 'hip_domain') label = 'HIP (DS)';
                     benchmarkHtml += `<span class="bench-tag ${activeClass}">${label}: ${speed.toFixed(1)} M/s</span>`;
                 }
             });

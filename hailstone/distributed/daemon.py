@@ -33,8 +33,10 @@ class DaemonState:
         backends_to_test = [
             {"name": "cpu", "binary": "hailstone_cpu", "extra_args": ["--no-domain-switching"]},
             {"name": "cpu_domain", "binary": "hailstone_cpu", "extra_args": ["--domain-switching"]},
-            {"name": "vulkan", "binary": "hailstone_vulkan", "extra_args": []},
-            {"name": "hip", "binary": "hailstone_hip", "extra_args": []}
+            {"name": "vulkan", "binary": "hailstone_vulkan", "extra_args": ["--no-domain-switching"]},
+            {"name": "vulkan_domain", "binary": "hailstone_vulkan", "extra_args": ["--domain-switching"]},
+            {"name": "hip", "binary": "hailstone_hip", "extra_args": ["--no-domain-switching"]},
+            {"name": "hip_domain", "binary": "hailstone_hip", "extra_args": ["--domain-switching"]}
         ]
         
         for config in backends_to_test:
@@ -252,6 +254,16 @@ class DaemonHTTPHandler(BaseHTTPRequestHandler):
             actual_backend = "cpu"
             extra_args = ["--domain-switching"]
         elif backend == "cpu":
+            extra_args = ["--no-domain-switching"]
+        elif backend == "vulkan_domain":
+            actual_backend = "vulkan"
+            extra_args = ["--domain-switching"]
+        elif backend == "vulkan":
+            extra_args = ["--no-domain-switching"]
+        elif backend == "hip_domain":
+            actual_backend = "hip"
+            extra_args = ["--domain-switching"]
+        elif backend == "hip":
             extra_args = ["--no-domain-switching"]
 
         binary_name = f"hailstone_{actual_backend}"

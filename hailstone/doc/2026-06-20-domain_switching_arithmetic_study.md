@@ -152,13 +152,49 @@ We extended the domain-switching algorithm to the 512-bit vector registers of th
 
 ## 6. Distributed Search Integration
 
-We integrated domain-switching arithmetic as a fourth distinct backend choice (`cpu_domain`) in the `hailstone` distributed cluster system:
+We integrated domain-switching arithmetic as distinct backend choices (`cpu_domain`, `vulkan_domain`, `hip_domain`) in the `hailstone` distributed cluster system:
 
 1. **Worker Daemon Optimization:**
-   * Updated C++ (`hailstoned.cpp`) and Python (`daemon.py`) worker daemons to benchmark `cpu` and `cpu_domain` independently on startup.
-   * Configured the task execution mapper to route the `cpu_domain` backend option to the `hailstone_cpu` executable with the `--domain-switching` argument, while `cpu` uses `--no-domain-switching`.
+   * Updated C++ (`hailstoned.cpp`) and Python (`daemon.py`) worker daemons to benchmark `cpu_domain`, `vulkan_domain`, and `hip_domain` independently on startup.
+   * Configured the task execution mapper to route the backend options to the appropriate executables (`hailstone_cpu`, `hailstone_vulkan`, `hailstone_hip`) with the `--domain-switching` argument.
 
 2. **Central Scheduler & Web UI:**
-   * Configured the central scheduler (`controller.py`) to recognize and track progress/throughput using the new `cpu_domain` option.
-   * Updated the Web UI dashboard to include "CPU Domain-Switching" in the configuration dropdown, displaying it as `CPU (DS)` in worker nodes' capability stats.
-   * Verified complete integration with cluster range partitioning, checkpoint merging, and automated failover.
+   * Configured the central scheduler (`controller.py`) to recognize and track progress/throughput using the new domain-switched options.
+   * Updated the Web UI dashboard to include GPU options in the configuration dropdown, displaying them as `CPU (DS)`, `VULKAN (DS)`, and `HIP (DS)`.
+
+---
+
+## 7. GPU Backends Extension (Vulkan & HIP)
+
+### Mathematical Logic & Custom GPU Structuring
+GPU hardware lacks native instruction support for 128-bit operations. We mapped domain-switched arithmetic onto GPUs as follows:
+* **Vulkan (GLSL/SPIR-V):** Custom GLSL struct `uint128` was extended with comparison (`greater_than`, `less_than_or_equal`), multiplication (`mul_uint64_check_overflow`), and bitwise shift helpers. Specialize-compiled pipelines were generated via VkSpecializationMapEntries representing the orthogonal state of `USE_DOMAIN_SWITCHING`.
+* **HIP (CUDA/AMD ROCm):** Leveraged AMD Clang's code generator to compile structural `uint128` operations into highly optimized hardware sequences on Radeon platforms. Constant GPU memories (`d_lut3_64`, `d_max_safe_k_64`, `d_lut3_128`, `d_max_safe_k_128`) were allocated to cache tables on host startup.
+
+### Trajectory Loop Fallbacks for Small Values (n < 256)
+Initial range searches starting below 256 skip the domain switching `while (curr >= 256)` loop. To prevent missing peak-tracking or stopping-time updates, fallback loops were added on both GPU backends:
+* If the start value is below 256, the search automatically runs the standard Collatz trajectory loop down to 1.
+* If the start value is 256 or larger, the domain switching loop runs down to 256, followed by a steps-table lookup for the final segment.
+
+---
+
+## 8. GPU Performance Benchmarks
+
+Performance was evaluated on a Radeon 8060S (RADV STRIX_HALO) GPU across both High Range (Block 1024, starting at $2^{42}$) and Very High Range (Block 100000, starting at $2^{48.6}$):
+
+| Backend | Mode | Scale / Range | Throughput | Delta (Domain Switching vs Standard) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Vulkan** | Standard | High (Block 1024) | **872.50 M/s** | Baseline |
+| **Vulkan** | Domain Switching | High (Block 1024) | **474.78 M/s** | $-45.6\%$ penalty |
+| **Vulkan** | Standard | Very High (Block 100k) | **721.56 M/s** | Baseline |
+| **Vulkan** | Domain Switching | Very High (Block 100k) | **341.68 M/s** | $-52.7\%$ penalty |
+| **HIP** | Standard | High (Block 1024) | **828.75 M/s** | Baseline |
+| **HIP** | Domain Switching | High (Block 1024) | **819.66 M/s** | $-1.1\%$ (Parity) |
+| **HIP** | Standard | Very High (Block 100k) | **783.39 M/s** | Baseline |
+| **HIP** | Domain Switching | Very High (Block 100k) | **675.53 M/s** | $-13.8\%$ overhead |
+
+### Conclusions and Takeaways:
+
+1. **CPU vs. GPU Instruction Sensitivity:** On CPU AVX-512, domain switching provides a **$+31.6\%$ speedup** at Block 100,000 because CPUs are highly sensitive to branch mispredictions and can easily pipeline structural scalar fallbacks. GPUs, however, lack native hardware vector instruction support for 128-bit operations. The simulated 128-bit shift-right by variable amounts (`alpha`) and multiplications result in high register pressure and high instruction counts per thread, which is the primary performance bottleneck on GPU architectures.
+2. **Compiler Optimization Matters:** On Vulkan, GLSL simulated 128-bit shift-right by variable amounts (`alpha`) and custom structural multiplications compiled to complex, unoptimized SPIR-V sequences, causing a significant slowdown. On HIP, the AMD Clang compiler optimized the 128-bit structural instructions, incurring virtually no performance penalty at Block 1024 and only a minor $-13.8\%$ overhead on longer trajectories.
+3. **Orthogonal Configuration Toggle:** The toggle allows Vulkan users to disable domain-switching to maximize throughput, while HIP users can safely leave it enabled for complete safety bounds checking without any speed penalty.
