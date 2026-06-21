@@ -195,6 +195,9 @@ def collatz_domain_switching(n):
     return steps, max_val
 ```
 
+> [!TIP]
+> **Performance Reality Check:** While Domain-Switching reduces the trajectory step iteration counts, it incurs a fixed execution overhead (entering/exiting the domain, 128-bit safe threshold bounds checking, and multiplication). At Block 100,000, this overhead actually causes a **~10% slowdown** on the vanilla scalar CPU compared to the standard loop, because trajectories quickly drop below $2^{32}$ into native 64-bit loops. Domain-switching only becomes a net speedup for scalar CPU at even higher blocks (like Block 1,000,000), whereas it is immediately beneficial for the `CPU-AVX512` vectorized backend.
+
 For the full analysis of safety limits (128-bit overflow bounds) and CPU/GPU performance trade-offs of this technique, see the [Domain-Switching Arithmetic Technical Study](file:///home/mev/source/ai/hailstone/doc/2026-06-20-domain_switching_arithmetic_study.md).
 
 ---
