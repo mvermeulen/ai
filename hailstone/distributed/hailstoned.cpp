@@ -159,6 +159,78 @@ void handle_client(int client_fd) {
         send(client_fd, resp.c_str(), resp.length(), 0);
         close(client_fd);
     }
+    else if (cmd == "BENCHMARK") {
+        std::string backend, start_n, end_n, cutoff;
+        iss >> backend >> start_n >> end_n >> cutoff;
+        
+        std::string actual_backend = backend;
+        bool domain_switching = false;
+        if (backend == "cpu_domain") {
+            actual_backend = "cpu";
+            domain_switching = true;
+        } else if (backend == "vulkan_domain") {
+            actual_backend = "vulkan";
+            domain_switching = true;
+        } else if (backend == "hip_domain") {
+            actual_backend = "hip";
+            domain_switching = true;
+        }
+
+        std::string bin_path = get_project_dir() + "hailstone_" + actual_backend;
+        
+        int pipe_fd[2];
+        if (pipe(pipe_fd) == -1) {
+            std::string resp = "{\"status\": \"failed\", \"error\": \"pipe failed\"}\n";
+            send(client_fd, resp.c_str(), resp.length(), MSG_NOSIGNAL);
+            close(client_fd);
+            return;
+        }
+        
+        pid_t child_pid = fork();
+        if (child_pid == 0) {
+            // Child
+            close(pipe_fd[0]);
+            dup2(pipe_fd[1], STDOUT_FILENO);
+            dup2(pipe_fd[1], STDERR_FILENO);
+            close(pipe_fd[1]);
+            
+            execl(bin_path.c_str(), bin_path.c_str(), "--no-checkpoint", 
+                  "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
+                  "--cutoff-width", cutoff.c_str(), 
+                  (domain_switching ? "--domain-switching" : "--no-domain-switching"), 
+                  (char*)NULL);
+            exit(1);
+        } 
+        else if (child_pid > 0) {
+            // Parent
+            close(pipe_fd[1]);
+            
+            std::string out_data;
+            while (true) {
+                ssize_t bytes = read(pipe_fd[0], buffer, sizeof(buffer)-1);
+                if (bytes <= 0) break;
+                buffer[bytes] = '\0';
+                out_data += buffer;
+            }
+            waitpid(child_pid, NULL, 0);
+            close(pipe_fd[0]);
+            
+            double throughput = 0.0;
+            std::smatch match;
+            std::regex rgx("Throughput:\\s+([\\d\\.]+)\\s+M numbers/s");
+            if (std::regex_search(out_data, match, rgx) && match.size() > 1) {
+                throughput = std::stod(match.str(1));
+            }
+            
+            std::string resp = "{\"status\": \"success\", \"throughput\": " + std::to_string(throughput) + "}\n";
+            send(client_fd, resp.c_str(), resp.length(), MSG_NOSIGNAL);
+            close(client_fd);
+        } else {
+            std::string resp = "{\"status\": \"failed\", \"error\": \"fork failed\"}\n";
+            send(client_fd, resp.c_str(), resp.length(), MSG_NOSIGNAL);
+            close(client_fd);
+        }
+    }
     else if (cmd == "COMPUTE") {
         std::string backend, start_n, end_n, cutoff;
         iss >> backend >> start_n >> end_n >> cutoff;

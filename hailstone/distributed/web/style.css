@@ -469,6 +469,7 @@ select option {
 .dot.online { background-color: var(--success); box-shadow: 0 0 8px var(--success); }
 .dot.busy { background-color: var(--accent-violet); box-shadow: 0 0 8px var(--accent-violet); animation: pulse 1.5s infinite; }
 .dot.offline { background-color: var(--danger); box-shadow: 0 0 8px var(--danger); }
+.dot.benchmarking { background-color: var(--warning); box-shadow: 0 0 8px var(--warning); animation: pulse 1.5s infinite; }
 
 .worker-body {
     display: flex;

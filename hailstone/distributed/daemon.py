@@ -207,6 +207,62 @@ class DaemonHTTPHandler(BaseHTTPRequestHandler):
             self.send_json({"status": "queued", "job_id": job_id}, 202)
             return
 
+        elif path == "/api/benchmark":
+            backend = body.get("backend", "cpu")
+            start_num = body.get("start_num")
+            end_num = body.get("end_num")
+            cutoff_width = body.get("cutoff_width", 20)
+
+            if not start_num or not end_num:
+                self.send_json({"error": "Missing parameters 'start_num' or 'end_num'"}, 400)
+                return
+
+            actual_backend = backend
+            extra_args = []
+            if backend == "cpu_domain":
+                actual_backend = "cpu"
+                extra_args = ["--domain-switching"]
+            elif backend == "cpu":
+                extra_args = ["--no-domain-switching"]
+            elif backend == "vulkan_domain":
+                actual_backend = "vulkan"
+                extra_args = ["--domain-switching"]
+            elif backend == "vulkan":
+                extra_args = ["--no-domain-switching"]
+            elif backend == "hip_domain":
+                actual_backend = "hip"
+                extra_args = ["--domain-switching"]
+            elif backend == "hip":
+                extra_args = ["--no-domain-switching"]
+
+            binary_name = f"hailstone_{actual_backend}"
+            executable_path = os.path.join(state.build_dir, binary_name)
+
+            if not os.path.exists(executable_path):
+                self.send_json({"error": f"Binary for backend '{backend}' not found"}, 404)
+                return
+
+            cmd = [
+                executable_path,
+                "--no-checkpoint",
+                "--start-num", str(start_num),
+                "--end-num", str(end_num),
+                "--cutoff-width", str(cutoff_width)
+            ] + extra_args
+
+            try:
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+                if proc.returncode == 0:
+                    metrics = state.parse_stdout(proc.stdout)
+                    self.send_json({"status": "success", "throughput": metrics["throughput_m_numbers_s"]})
+                else:
+                    self.send_json({"status": "failed", "error": f"Exit code {proc.returncode}. Stderr: {proc.stderr}"}, 500)
+            except subprocess.TimeoutExpired:
+                self.send_json({"status": "failed", "error": "Benchmark timed out"}, 500)
+            except Exception as e:
+                self.send_json({"status": "failed", "error": str(e)}, 500)
+            return
+
         elif path == "/api/cancel":
             with state.lock:
                 if state.active_job is None:
