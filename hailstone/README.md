@@ -218,32 +218,32 @@ python3 benchmarks/benchmark.py --mode full
 Benchmark results and peak counts will automatically append to the optimization history in [benchmarks/README.md](file:///home/mev/source/ai/hailstone/benchmarks/README.md) and [benchmarks/history.json](file:///home/mev/source/ai/hailstone/benchmarks/history.json).
 
 ### 3. Extended Configuration Sweep (Block 100,000)
-To evaluate trade-offs in the 128-bit search space, we run the extended sweep driver (`extended_sweep.py`) at Block 100,000 (checking 1,000,000 starting numbers). Since search ranges smaller than a full block ($2^{32}$ values) run sequentially on a single thread on the CPU, the CPU configurations are benchmarked with 1 thread. Below is the performance matrix of backends, thread counts, SIMD instruction sets, domain-switching, and suffix-first cutoff widths:
+To evaluate trade-offs in the 128-bit search space, we run the extended sweep driver (`extended_sweep.py`) at Block 100,000 (checking 10,000,000 starting numbers). Since search ranges smaller than a full block ($2^{32}$ values) run sequentially on a single thread on the CPU, the CPU configurations are benchmarked with 1 thread. Below is the performance matrix of backends, thread counts, SIMD instruction sets, domain-switching, and suffix-first cutoff widths:
 
 | Backend | Threads | AVX-512 | Domain Switch | Cutoff Width | Throughput (M/s) | Time (s) | Speedup |
 |---|---|---|---|---|---|---|---|
-| CPU | 1 | ON | ON | 20 | 14.99 | 0.742 | 1.46x |
-| CPU | 1 | ON | ON | 24 | 19.40 | 0.468 | 1.89x |
-| CPU | 1 | ON | OFF | 20 | 9.63 | 1.155 | 0.94x |
-| CPU | 1 | ON | OFF | 24 | 12.28 | 0.740 | 1.19x |
-| CPU | 1 | OFF | ON | 0 | 9.47 | 5.278 | 0.92x |
-| CPU | 1 | OFF | ON | 20 | 10.32 | 1.078 | 1.00x |
-| CPU | 1 | OFF | ON | 24 | 13.68 | 0.664 | 1.33x |
-| CPU | 1 | OFF | OFF | 0 | 10.28 | 4.862 | 1.00x (Base) |
-| CPU | 1 | OFF | OFF | 20 | 11.44 | 0.972 | 1.11x |
-| CPU | 1 | OFF | OFF | 24 | 14.91 | 0.609 | 1.45x |
-| VULKAN | N/A | N/A | ON | 0 | 224.20 | 0.223 | 21.81x |
-| VULKAN | N/A | N/A | ON | 20 | 303.39 | 0.037 | 29.51x |
-| VULKAN | N/A | N/A | ON | 24 | 303.75 | 0.030 | 29.55x |
-| VULKAN | N/A | N/A | OFF | 0 | 571.75 | 0.087 | 55.62x |
-| VULKAN | N/A | N/A | OFF | 20 | 625.72 | 0.018 | 60.87x |
-| VULKAN | N/A | N/A | OFF | 24 | 654.72 | 0.014 | 63.69x |
-| HIP | N/A | N/A | ON | 0 | 538.49 | 0.093 | 52.38x |
-| HIP | N/A | N/A | ON | 20 | 756.46 | 0.015 | 73.59x |
-| HIP | N/A | N/A | ON | 24 | 435.85 | 0.021 | 42.40x |
-| HIP | N/A | N/A | OFF | 0 | 767.53 | 0.065 | 74.66x |
-| HIP | N/A | N/A | OFF | 20 | 824.90 | 0.014 | 80.24x |
-| HIP | N/A | N/A | OFF | 24 | 467.25 | 0.019 | 45.45x |
+| CPU | 1 | ON | ON | 20 | 14.99 | 7.419 | 1.46x |
+| CPU | 1 | ON | ON | 24 | 15.27 | 5.949 | 1.49x |
+| CPU | 1 | ON | OFF | 20 | 11.37 | 9.784 | 1.11x |
+| CPU | 1 | ON | OFF | 24 | 11.12 | 8.170 | 1.08x |
+| CPU | 1 | OFF | ON | 0 | 9.38 | 53.298 | 0.91x |
+| CPU | 1 | OFF | ON | 20 | 10.31 | 10.789 | 1.00x |
+| CPU | 1 | OFF | ON | 24 | 10.33 | 8.791 | 1.01x |
+| CPU | 1 | OFF | OFF | 0 | 10.26 | 48.744 | 1.00x (Base) |
+| CPU | 1 | OFF | OFF | 20 | 11.42 | 9.738 | 1.11x |
+| CPU | 1 | OFF | OFF | 24 | 11.52 | 7.883 | 1.12x |
+| VULKAN | N/A | N/A | ON | 0 | 263.63 | 1.897 | 25.70x |
+| VULKAN | N/A | N/A | ON | 20 | 362.58 | 0.307 | 35.34x |
+| VULKAN | N/A | N/A | ON | 24 | 342.61 | 0.265 | 33.39x |
+| VULKAN | N/A | N/A | OFF | 0 | 642.62 | 0.778 | 62.63x |
+| VULKAN | N/A | N/A | OFF | 20 | 848.82 | 0.131 | 82.73x |
+| VULKAN | N/A | N/A | OFF | 24 | 849.09 | 0.107 | 82.76x |
+| HIP | N/A | N/A | ON | 0 | 573.26 | 0.872 | 55.87x |
+| HIP | N/A | N/A | ON | 20 | 891.27 | 0.125 | 86.87x |
+| HIP | N/A | N/A | ON | 24 | 816.04 | 0.111 | 79.54x |
+| HIP | N/A | N/A | OFF | 0 | 830.58 | 0.602 | 80.95x |
+| HIP | N/A | N/A | OFF | 20 | 972.28 | 0.114 | 94.76x |
+| HIP | N/A | N/A | OFF | 24 | 1056.01 | 0.086 | 102.93x |
 
 ### 4. CPU Profiling
 The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/2026-06-15-profiling.md).
