@@ -5,9 +5,9 @@ As the search proceeds, this document is updated to record the historical peaks 
 
 ## Search Status
 
-- **Current Range Searched**: `[3, 1,125,899,906,842,624]` (up to block 262144.00)
-- **Global Max Value**: 75,369,331,597,564,893,380,215,011,856 (≈ 7.537e+28)
-- **Global Max Steps**: 1,862
+- **Current Range Searched**: `[3, 4,503,599,627,370,496]` (up to block 1048576.00)
+- **Global Max Value**: 3,646,072,622,928,560,527,441,864,282,048 (≈ 3.646e+30)
+- **Global Max Steps**: 1,903
 - **Global Max Stopping Time ($\sigma$)**: 886
 
 ---
@@ -88,6 +88,7 @@ Tracked when a starting value $n$ generates a trajectory whose maximum intermedi
 | 406,738,920,960,667 (≈ 4.067e+14) | 25,601,393,410,042,456,822,885,239,364 (≈ 2.560e+28) |
 | 613,450,176,662,511 (≈ 6.135e+14) | 45,762,883,485,945,724,291,985,239,552 (≈ 4.576e+28) |
 | 737,482,236,053,119 (≈ 7.375e+14) | 75,369,331,597,564,893,380,215,011,856 (≈ 7.537e+28) |
+| 1,254,251,874,774,375 (≈ 1.254e+15) | 3,646,072,622,928,560,527,441,864,282,048 (≈ 3.646e+30) |
 
 ---
 
@@ -210,6 +211,12 @@ Tracked when a starting value $n$ takes more total steps to reach $1$ than any p
 | 530,149,921,398,649 (≈ 5.301e+14) | 1,856 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 397,612,441,048,987) |
 | 706,866,561,864,865 (≈ 7.069e+14) | 1,859 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 530,149,921,398,649) |
 | 942,488,749,153,153 (≈ 9.425e+14) | 1,862 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 706,866,561,864,865) |
+| 1,256,651,665,537,537 (≈ 1.257e+15) | 1,865 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 942,488,749,153,153) |
+| 1,675,535,554,050,049 (≈ 1.676e+15) | 1,868 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 1,256,651,665,537,537) |
+| 2,234,047,405,400,065 (≈ 2.234e+15) | 1,871 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 1,675,535,554,050,049) |
+| 2,978,729,873,866,753 (≈ 2.979e+15) | 1,874 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 2,234,047,405,400,065) |
+| 3,586,720,916,237,671 (≈ 3.587e+15) | 1,895 | 1083 | `***/****...` |  |
+| 4,320,515,538,764,287 (≈ 4.321e+15) | 1,903 | 1011 | `********...` |  |
 
 \* Note: The successor value $Q$ is not itself a historical steps peak (a counter-example to direct peak-to-peak prediction). See [3x_plus_1_over_4_path_investigation.md](file:///home/mev/source/ai/hailstone/doc/2026-06-14-3x_plus_1_over_4_path_investigation.md) for the mathematical analysis.
 
