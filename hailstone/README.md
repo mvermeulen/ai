@@ -222,10 +222,8 @@ To evaluate trade-offs in the 128-bit search space, we run the extended sweep dr
 
 | Backend | Threads | AVX-512 | Domain Switch | Cutoff Width | Throughput (M/s) | Time (s) | Speedup |
 |---|---|---|---|---|---|---|---|
-| CPU | 1 | ON | ON | 0 | 9.51 | 5.257 | 0.93x |
 | CPU | 1 | ON | ON | 20 | 14.99 | 0.742 | 1.46x |
 | CPU | 1 | ON | ON | 24 | 19.40 | 0.468 | 1.89x |
-| CPU | 1 | ON | OFF | 0 | 10.46 | 4.782 | 1.02x |
 | CPU | 1 | ON | OFF | 20 | 9.63 | 1.155 | 0.94x |
 | CPU | 1 | ON | OFF | 24 | 12.28 | 0.740 | 1.19x |
 | CPU | 1 | OFF | ON | 0 | 9.47 | 5.278 | 0.92x |
