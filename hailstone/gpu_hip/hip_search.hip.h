@@ -2,6 +2,7 @@
 #define HAILSTONE_HIP_SEARCH_H
 
 #include "common.h"
+#include <string>
 
 void hip_search_range(
     uint128 start,
