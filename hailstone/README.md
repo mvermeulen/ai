@@ -89,6 +89,8 @@ This will build:
 * `hailstone_test_uint128`: `uint128` math unit tests
 * `hailstone_hip` (if ROCm is found): AMD HIP executable
 * `hailstone_path`: Trajectory path representation utility
+* `hailstoned`: C++ distributed worker daemon
+
 
 ---
 
