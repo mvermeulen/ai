@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include_directories(include)
+include_directories(include cpu)
 
 # Add optimization flags
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -67,7 +67,15 @@ target_compile_options(hailstone_cpu_profile PRIVATE -g -fno-omit-frame-pointer)
 target_link_options(hailstone_cpu_profile PRIVATE -g -fno-omit-frame-pointer)
 
 # Unit test target
-add_executable(hailstone_test_uint128 tests/test_uint128.cpp)
+if(COMPILER_SUPPORTS_AVX512)
+    add_executable(hailstone_test_uint128 tests/test_uint128.cpp cpu/cpu_search.cpp cpu/cpu_search_avx512.cpp)
+    set_source_files_properties(cpu/cpu_search_avx512.cpp PROPERTIES COMPILE_FLAGS "-O3 -mavx512f -mavx512cd -mavx512dq")
+    target_compile_definitions(hailstone_test_uint128 PRIVATE HAS_AVX512_COMPILER_SUPPORT)
+else()
+    add_executable(hailstone_test_uint128 tests/test_uint128.cpp cpu/cpu_search.cpp)
+endif()
+target_link_libraries(hailstone_test_uint128 PRIVATE OpenMP::OpenMP_CXX)
+add_dependencies(hailstone_test_uint128 generate_suffixes_24)
 
 # Cross-backend verification suite target
 add_executable(hailstone_verify tests/test_verify.cpp)

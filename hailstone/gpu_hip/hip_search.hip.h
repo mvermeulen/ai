@@ -2,6 +2,7 @@
 #define HAILSTONE_HIP_SEARCH_H
 
 #include "common.h"
+#include <string>
 
 void hip_search_range(
     uint128 start,
@@ -10,7 +11,8 @@ void hip_search_range(
     std::vector<PeakRecord>& steps_peaks,
     std::vector<PeakRecord>& sigma_peaks,
     PeakState& global_peaks,
-    SearchMetrics& metrics
+    SearchMetrics& metrics,
+    bool use_domain_switching = false
 );
 
 void hip_search_block_0(
@@ -20,7 +22,8 @@ void hip_search_block_0(
     std::vector<PeakRecord>& steps_peaks,
     std::vector<PeakRecord>& sigma_peaks,
     PeakState& global_peaks,
-    SearchMetrics& metrics
+    SearchMetrics& metrics,
+    bool use_domain_switching = false
 );
 
 void hip_search_blocks_gt_0(
@@ -30,7 +33,8 @@ void hip_search_blocks_gt_0(
     std::vector<PeakRecord>& steps_peaks,
     std::vector<PeakRecord>& sigma_peaks,
     PeakState& global_peaks,
-    SearchMetrics& metrics
+    SearchMetrics& metrics,
+    bool use_domain_switching = false
 );
 
 BaseDependentSuffixes generate_base_dependent_suffixes(int width);
@@ -46,7 +50,8 @@ void hip_search_range_suffix_first(
     std::vector<PeakRecord>& steps_peaks,
     std::vector<PeakRecord>& sigma_peaks,
     PeakState& global_peaks,
-    SearchMetrics& metrics
+    SearchMetrics& metrics,
+    bool use_domain_switching = false
 );
 
 void hip_search_block_0_suffix_first(
@@ -58,7 +63,8 @@ void hip_search_block_0_suffix_first(
     std::vector<PeakRecord>& steps_peaks,
     std::vector<PeakRecord>& sigma_peaks,
     PeakState& global_peaks,
-    SearchMetrics& metrics
+    SearchMetrics& metrics,
+    bool use_domain_switching = false
 );
 
 #endif // HAILSTONE_HIP_SEARCH_H

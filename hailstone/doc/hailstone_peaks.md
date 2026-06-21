@@ -211,7 +211,7 @@ Tracked when a starting value $n$ takes more total steps to reach $1$ than any p
 | 706,866,561,864,865 (≈ 7.069e+14) | 1,859 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 530,149,921,398,649) |
 | 942,488,749,153,153 (≈ 9.425e+14) | 1,862 | 2 | `*/` | $(3x+1)/4$ peak (prepend `*/` to 706,866,561,864,865) |
 
-\* Note: The successor value $Q$ is not itself a historical steps peak (a counter-example to direct peak-to-peak prediction). See [3x_plus_1_over_4_path_investigation.md](file:///home/mev/source/ai/hailstone/doc/3x_plus_1_over_4_path_investigation.md) for the mathematical analysis.
+\* Note: The successor value $Q$ is not itself a historical steps peak (a counter-example to direct peak-to-peak prediction). See [3x_plus_1_over_4_path_investigation.md](file:///home/mev/source/ai/hailstone/doc/2026-06-14-3x_plus_1_over_4_path_investigation.md) for the mathematical analysis.
 
 ---
 

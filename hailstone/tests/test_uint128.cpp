@@ -1,5 +1,6 @@
 #include "uint128.h"
 #include "peak_predictor.h"
+#include "cpu_search.h"
 #include <iostream>
 #include <random>
 #include <cassert>
@@ -238,6 +239,85 @@ void test_peak_predictor_even_heuristic() {
     assert(found_73);
 }
 
+void test_clz() {
+    assert(count_leading_zeros(uint128(0, 0)) == 128);
+    assert(count_leading_zeros(uint128(0, 1)) == 127);
+    assert(count_leading_zeros(uint128(0, 0x8000000000000000ULL)) == 64);
+    assert(count_leading_zeros(uint128(1, 0)) == 63);
+    assert(count_leading_zeros(uint128(0x8000000000000000ULL, 0)) == 0);
+}
+
+void test_multiplication() {
+    uint128 a(7, 0);
+    uint128 b(6, 0);
+    assert(a * b == uint128(42, 0));
+
+    uint128 c(0x100000000ULL, 0);
+    uint128 d(0x100000000ULL, 0);
+    assert(c * d == uint128(0, 1)); // 2^32 * 2^32 = 2^64
+}
+
+extern const uint128 max_safe_k[];
+
+void test_domain_switching_differential_fuzzing() {
+    std::mt19937_64 rng(12345);
+    
+    // 1. Test standard boundary inputs
+    std::vector<uint128> boundaries;
+    for (int k = 1; k < 127; ++k) {
+        // Powers of 2
+        boundaries.push_back(shift_left(uint128(1), k));
+        boundaries.push_back(shift_left(uint128(1), k) - uint128(1));
+    }
+    
+    // Overflow boundary inputs
+    boundaries.push_back(max_safe_k[1]);
+    boundaries.push_back(max_safe_k[1] + uint128(1));
+    boundaries.push_back(max_safe_k[1] - uint128(1));
+    
+    for (uint128 n : boundaries) {
+        if (n == uint128(0)) continue;
+        CollatzStats s1 = compute_collatz_std(n);
+        CollatzStats s2 = compute_collatz_domain(n);
+        if (s1.overflow != s2.overflow || (!s1.overflow && (s1.steps != s2.steps || s1.max_value != s2.max_value || s1.stopping_time != s2.stopping_time))) {
+            std::cerr << "Mismatch on boundary value: " << n.low << " " << n.high << std::endl;
+            std::cerr << "Std   - steps: " << s1.steps << ", max: " << s1.max_value.low << ", sigma: " << s1.stopping_time << ", overflow: " << s1.overflow << std::endl;
+            std::cerr << "Domain- steps: " << s2.steps << ", max: " << s2.max_value.low << ", sigma: " << s2.stopping_time << ", overflow: " << s2.overflow << std::endl;
+            assert(false);
+        }
+    }
+
+    // 2. Fuzzing with 1,000,000 random inputs (500k 64-bit, 500k 128-bit)
+    for (int i = 0; i < 500000; ++i) {
+        uint64_t r1 = rng();
+        if (r1 == 0) r1 = 3;
+        uint128 n(r1, 0);
+        CollatzStats s1 = compute_collatz_std(n);
+        CollatzStats s2 = compute_collatz_domain(n);
+        if (s1.overflow != s2.overflow || (!s1.overflow && (s1.steps != s2.steps || s1.max_value != s2.max_value || s1.stopping_time != s2.stopping_time))) {
+            std::cerr << "Mismatch on 64-bit random value: " << r1 << std::endl;
+            std::cerr << "Std   - steps: " << s1.steps << ", max: " << s1.max_value.low << " " << s1.max_value.high << ", sigma: " << s1.stopping_time << ", overflow: " << s1.overflow << std::endl;
+            std::cerr << "Domain- steps: " << s2.steps << ", max: " << s2.max_value.low << " " << s2.max_value.high << ", sigma: " << s2.stopping_time << ", overflow: " << s2.overflow << std::endl;
+            assert(false);
+        }
+    }
+    
+    for (int i = 0; i < 500000; ++i) {
+        uint64_t low = rng();
+        uint64_t high = rng();
+        uint128 n(low, high);
+        if (n == uint128(0)) n = uint128(3);
+        CollatzStats s1 = compute_collatz_std(n);
+        CollatzStats s2 = compute_collatz_domain(n);
+        if (s1.overflow != s2.overflow || (!s1.overflow && (s1.steps != s2.steps || s1.max_value != s2.max_value || s1.stopping_time != s2.stopping_time))) {
+            std::cerr << "Mismatch on 128-bit random value: " << low << " " << high << std::endl;
+            std::cerr << "Std   - steps: " << s1.steps << ", max: " << s1.max_value.low << " " << s1.max_value.high << ", sigma: " << s1.stopping_time << ", overflow: " << s1.overflow << std::endl;
+            std::cerr << "Domain- steps: " << s2.steps << ", max: " << s2.max_value.low << " " << s2.max_value.high << ", sigma: " << s2.stopping_time << ", overflow: " << s2.overflow << std::endl;
+            assert(false);
+        }
+    }
+}
+
 int main() {
     std::cout << "Running uint128 unit tests..." << std::endl;
     test_constructors();
@@ -246,9 +326,13 @@ int main() {
     test_subtraction();
     test_shifts();
     test_ctz();
+    test_clz();
+    test_multiplication();
     test_mul3_add1();
     test_fuzz();
     test_peak_predictor_even_heuristic();
+    std::cout << "Running trajectory-level differential fuzzing (1M trajectories)..." << std::endl;
+    test_domain_switching_differential_fuzzing();
     std::cout << "All uint128 unit tests passed successfully!" << std::endl;
     return 0;
 }

@@ -1,19 +1,50 @@
-# ai
-AI experiments and apps
+# AI & High-Performance Computation Suite
 
-## TranslateGemma Tooling
+A collection of AI-related, simulation, and high-performance calculation projects, ranging from local LLM translation tools to Monte Carlo sports simulators and vectorized math search engines.
 
-The `translate/` folder now contains three ways to use TranslateGemma through Ollama:
+Each subfolder contains its own self-contained codebase and comprehensive documentation.
 
-- `translate/demo.sh`: Bash entrypoint for quick terminal translation
-- `translate/translate.py`: Python CLI with file, stdin, and output support
-- `translate/app.py`: Local web app with a richer interface
+---
 
-Typical usage:
+## Project Catalog
 
-```bash
-cd translate
-printf 'Hello world\n' | bash demo.sh --dry-run
-python translate.py --input sample.txt
-python app.py
+### 1. TranslateGemma Tooling (`translate/`)
+* **Description**: Wrapper utilities and applications to run local text and document translation using Google's **TranslateGemma** model via **Ollama**.
+* **Features**:
+  - Premium Web UI with interactive source/target language selection, drag-and-drop batch upload, file staging, and live prompt preview.
+  - Multi-parameter Python CLI wrapper supporting `stdin`, `stdout`, and direct file reads/writes.
+  - Quick-use Bash entrypoint.
+* **Documentation**: See [translate/README.md](file:///home/mev/source/ai/translate/README.md) for installation and usage instructions.
+
+---
+
+### 2. World Cup 2026 Tracker & Simulator (`worldcup/`)
+* **Description**: An advanced C++20 tracker and Monte Carlo simulator for the upcoming 48-team FIFA World Cup 2026.
+* **Features**:
+  - Elo-calibrated Poisson goal model with host-nation advantage adjustments.
+  - Full simulation engine projecting team advancement probabilities across all tournament phases.
+  - Ingestion script to pull real-time score feeds via ESPN Scoreboard APIs.
+  - Embedded multi-threaded HTTP/REST web server with a glassmorphic dashboard showcasing group tables, bracket configurations, and what-if sandboxes.
+* **Documentation**: See [worldcup/README.md](file:///home/mev/source/ai/worldcup/README.md) for details on build requirements, CLI commands, and server setup.
+
+---
+
+### 3. Hailstone (Collatz) Search Program (`hailstone/`)
+* **Description**: A multi-backend, high-performance Collatz (3x+1) peak search engine searching for new peak trajectories beyond $2^{64}$.
+* **Features**:
+  - CPU (OpenMP, AVX-512 SIMD vectorization), Vulkan Compute, and AMD HIP (ROCm) GPU backends.
+  - Custom 128-bit unsigned integer math structure (`uint128`).
+  - Heavy performance optimization via Vermeulen Polynomial filter tables, early loop exits, and suffix-first search pruning.
+  - Distributed search mode: dynamically clusters tasks via high-performance C++ TCP daemons (`hailstoned`) and a Python coordinator controller with Web monitoring.
+* **Documentation**: See [hailstone/README.md](file:///home/mev/source/ai/hailstone/README.md) for architectural documentation, performance benchmarks, and run setup instructions.
+
+---
+
+## Directory Structure
+
+```text
+ai/
+├── hailstone/     # High-performance Collatz peak search program
+├── translate/     # TranslateGemma local LLM translation wrappers & UI
+└── worldcup/      # FIFA World Cup 2026 tracker, simulator & web server
 ```

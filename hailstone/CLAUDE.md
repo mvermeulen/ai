@@ -27,7 +27,7 @@ perf record -g -- ./build/hailstone_cpu_profile --num-blocks 1
 # View the profile report mapped to source lines
 perf report --annotate
 ```
-*Note: Available profile targets include `hailstone_cpu_profile`, `hailstone_verify_profile`, `hailstone_path_profile`, `hailstone_vulkan_profile`, and `hailstone_hip_profile`. For full profiling instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/profiling.md).*
+*Note: Available profile targets include `hailstone_cpu_profile`, `hailstone_verify_profile`, `hailstone_path_profile`, `hailstone_vulkan_profile`, and `hailstone_hip_profile`. For full profiling instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/2026-06-15-profiling.md).*
 
 ### Verification & Test Commands
 Run these commands after making *any* code or logic changes. Correctness is verified when all suites pass:
@@ -72,7 +72,7 @@ python3 tools/generate_peaks_doc.py
 - Under $2^{32}$, loops automatically transition to native 64-bit arithmetic (`uint64_t`) for speed. Verify that the 64-bit transition threshold logic remains aligned with the CPU golden reference.
 
 ### 3. Maintain Documentation, Benchmarks, and Rules
-- When optimizations or features are added, update the relevant documentation in `doc/` (e.g. `doc/vectorization_investigation.md` or other study files).
+- When optimizations or features are added, update the relevant documentation in `doc/` (e.g. `doc/2026-06-14-vectorization_investigation.md` or other study files).
 - Keep performance logs up-to-date by running `benchmarks/benchmark.py`.
 - Keep this `CLAUDE.md`, `.clinerules`, and `.github/copilot-instructions.md` updated as the project's architecture evolves.
 

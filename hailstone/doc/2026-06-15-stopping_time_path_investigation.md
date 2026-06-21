@@ -1,6 +1,6 @@
 # Investigation: Paths Taken by Peaks in Stopping Time
 
-This document investigates the trajectory paths of record-breaking stopping time peaks (often called $\sigma$-peaks) in the Collatz search. Building on the core path representations detailed in [Trajectory Path Representation and Optimization Opportunities](file:///home/mev/source/ai/hailstone/doc/path_investigation_and_opportunities.md) and complementing the [Paths Taken by Peaks in Maximum Values Investigation](file:///home/mev/source/ai/hailstone/doc/max_value_path_investigation.md), we analyze the structures of these paths prior to reaching the stopping time to find common patterns, mathematical constraints, and structural relationships between stopping-time-maximizing trajectories and steps-maximizing trajectories.
+This document investigates the trajectory paths of record-breaking stopping time peaks (often called $\sigma$-peaks) in the Collatz search. Building on the core path representations detailed in [Trajectory Path Representation and Optimization Opportunities](file:///home/mev/source/ai/hailstone/doc/2026-06-14-path_investigation_and_opportunities.md) and complementing the [Paths Taken by Peaks in Maximum Values Investigation](file:///home/mev/source/ai/hailstone/doc/2026-06-15-max_value_path_investigation.md), we analyze the structures of these paths prior to reaching the stopping time to find common patterns, mathematical constraints, and structural relationships between stopping-time-maximizing trajectories and steps-maximizing trajectories.
 
 ---
 
@@ -47,7 +47,7 @@ In **100%** of the recorded stopping time peaks, the global maximum intermediate
 
 This is mathematically necessary for any trajectory where the peak value $P_{peak}$ is strictly greater than the starting value $n$. Since $P_{peak} > n$, the stopping time threshold (falling below $n$) cannot be met at or before reaching the peak. 
 
-This Peak-Before-Stop ordering is shared by all max value peaks, but stands in sharp contrast to steps peaks, where **70%** of trajectories resolve their stopping times *before* reaching their peak due to predecessor step inheritance. For a full analysis of this duality, see the [Paths Taken by Peaks in Maximum Values Investigation](file:///home/mev/source/ai/hailstone/doc/max_value_path_investigation.md#3-ordering-of-peaks-and-stopping-times-the-duality-of-landmarks).
+This Peak-Before-Stop ordering is shared by all max value peaks, but stands in sharp contrast to steps peaks, where **70%** of trajectories resolve their stopping times *before* reaching their peak due to predecessor step inheritance. For a full analysis of this duality, see the [Paths Taken by Peaks in Maximum Values Investigation](file:///home/mev/source/ai/hailstone/doc/2026-06-15-max_value_path_investigation.md#3-ordering-of-peaks-and-stopping-times-the-duality-of-landmarks).
 
 ### B. Critical Growth Balance (The 1.70 Ratio)
 For a starting value $n$, each combined odd step (`*`) multiplies the value by approximately $1.5$ (since $x \to \frac{3x+1}{2} \approx 1.5x$), and each division step (`/`) multiplies the value by $0.5$. 

@@ -158,6 +158,50 @@ HD_ATTR int count_trailing_zeros(uint128 a) {
     }
 }
 
+HD_ATTR int clz64(uint64_t val) {
+    return __builtin_clzll(val);
+}
+
+HD_ATTR int count_leading_zeros(uint128 a) {
+    if (a.high != 0) {
+        return clz64(a.high);
+    } else if (a.low != 0) {
+        return 64 + clz64(a.low);
+    } else {
+        return 128;
+    }
+}
+
+HD_ATTR uint128 operator*(const uint128& a, const uint128& b) {
+#if !defined(__HIPCC__) && !defined(__CUDACC__) && defined(__SIZEOF_INT128__)
+    return to_struct(to_native(a) * to_native(b));
+#else
+    uint64_t a_low_temp = a.low;
+    uint64_t b_low_temp = b.low;
+    
+    uint64_t a0 = a_low_temp & 0xFFFFFFFFULL;
+    uint64_t a1 = a_low_temp >> 32;
+    uint64_t b0 = b_low_temp & 0xFFFFFFFFULL;
+    uint64_t b1 = b_low_temp >> 32;
+    
+    uint64_t p00 = a0 * b0;
+    uint64_t p01 = a0 * b1;
+    uint64_t p10 = a1 * b0;
+    uint64_t p11 = a1 * b1;
+    
+    uint64_t middle = p01 + p10;
+    uint64_t middle_carry = (middle < p01) ? (1ULL << 32) : 0;
+    
+    uint128 res;
+    res.low = p00 + (middle << 32);
+    uint64_t carry_low = (res.low < p00) ? 1 : 0;
+    
+    res.high = p11 + (middle >> 32) + middle_carry + carry_low;
+    res.high += a.high * b.low + a.low * b.high;
+    return res;
+#endif
+}
+
 HD_ATTR bool check_mul3_add1_overflow(uint128 n) {
     // Max value where 3n + 1 does not overflow 128 bits is floor((2^128 - 2)/3)
     // which in hex is exactly: 0x5555555555555555_5555555555555554

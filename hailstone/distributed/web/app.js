@@ -152,7 +152,7 @@ function renderWorkers(workers, activeBackend) {
 
     keys.forEach(addr => {
         const w = workers[addr];
-        const statusClass = w.status === 'online' ? 'online' : (w.status === 'busy' ? 'busy' : 'offline');
+        const statusClass = w.status === 'online' ? 'online' : (w.status === 'busy' ? 'busy' : (w.status === 'benchmarking' ? 'benchmarking' : 'offline'));
         const loadStr = w.system_load ? w.system_load[0].toFixed(2) : '0.00';
         
         let benchmarkHtml = '';
@@ -166,8 +166,12 @@ function renderWorkers(workers, activeBackend) {
                 }
                 
                 if (speed !== null) {
-                    const activeClass = b === activeBackend && w.status === 'busy' ? 'active' : '';
-                    benchmarkHtml += `<span class="bench-tag ${activeClass}">${b.toUpperCase()}: ${speed.toFixed(1)} M/s</span>`;
+                    const activeClass = (b === activeBackend || (w.active_job && b === w.active_job.backend)) && w.status === 'busy' ? 'active' : '';
+                    let label = b.toUpperCase();
+                    if (b === 'cpu_domain') label = 'CPU (DS)';
+                    else if (b === 'vulkan_domain') label = 'VULKAN (DS)';
+                    else if (b === 'hip_domain') label = 'HIP (DS)';
+                    benchmarkHtml += `<span class="bench-tag ${activeClass}">${label}: ${speed.toFixed(1)} M/s</span>`;
                 }
             });
         }
@@ -183,6 +187,21 @@ function renderWorkers(workers, activeBackend) {
                     Running for ${elapsed}s
                 </div>
             `;
+        } else if (w.status === 'benchmarking') {
+            activeJobHtml = `
+                <div class="worker-job-info" style="background: rgba(255, 234, 0, 0.05); border-color: rgba(255, 234, 0, 0.2); color: var(--warning);">
+                    Running range-specific benchmarks...
+                </div>
+            `;
+        }
+        
+        let selectedConfigHtml = '';
+        if (w.selected_backend) {
+            let backendLabel = w.selected_backend.toUpperCase();
+            if (w.selected_backend === 'cpu_domain') backendLabel = 'CPU (DS)';
+            else if (w.selected_backend === 'vulkan_domain') backendLabel = 'VULKAN (DS)';
+            else if (w.selected_backend === 'hip_domain') backendLabel = 'HIP (DS)';
+            selectedConfigHtml = `<span style="font-size: 11px; color: var(--accent-blue); font-weight: 600; margin-top: 2px;">Tuned: ${backendLabel} (${w.selected_cutoff} bit)</span>`;
         }
 
         const htmlContent = `
@@ -190,6 +209,7 @@ function renderWorkers(workers, activeBackend) {
                 <div class="worker-identity">
                     <span class="worker-addr">${addr}</span>
                     <span class="worker-cores">${w.cpu_cores || '?'} Cores | Load: ${loadStr}</span>
+                    ${selectedConfigHtml}
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <span class="status-indicator">

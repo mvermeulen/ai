@@ -30,13 +30,18 @@ class DaemonState:
 
     def run_benchmarks(self):
         print("=== Running Startup Micro-benchmarks ===")
-        backends_to_test = {
-            "cpu": "hailstone_cpu",
-            "vulkan": "hailstone_vulkan",
-            "hip": "hailstone_hip"
-        }
+        backends_to_test = [
+            {"name": "cpu", "binary": "hailstone_cpu", "extra_args": ["--no-domain-switching"]},
+            {"name": "cpu_domain", "binary": "hailstone_cpu", "extra_args": ["--domain-switching"]},
+            {"name": "vulkan", "binary": "hailstone_vulkan", "extra_args": ["--no-domain-switching"]},
+            {"name": "vulkan_domain", "binary": "hailstone_vulkan", "extra_args": ["--domain-switching"]},
+            {"name": "hip", "binary": "hailstone_hip", "extra_args": ["--no-domain-switching"]},
+            {"name": "hip_domain", "binary": "hailstone_hip", "extra_args": ["--domain-switching"]}
+        ]
         
-        for name, binary_name in backends_to_test.items():
+        for config in backends_to_test:
+            name = config["name"]
+            binary_name = config["binary"]
             path = os.path.join(self.build_dir, binary_name)
             if not os.path.exists(path):
                 print(f"Backend '{name}' not found (missing binary: {binary_name})")
@@ -46,7 +51,7 @@ class DaemonState:
             print(f"Benchmarking backend '{name}'... ", end="", flush=True)
             try:
                 # Run a quick 5M range search to measure actual throughput
-                cmd = [path, "--no-checkpoint", "--start-num", "3", "--end-num", "5000003", "--cutoff-width", "20"]
+                cmd = [path, "--no-checkpoint", "--start-num", "3", "--end-num", "5000003", "--cutoff-width", "20"] + config["extra_args"]
                 proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
                 if proc.returncode == 0:
                     match = re.search(r"Throughput:\s+([\d.]+)\s+M numbers/s", proc.stdout)
@@ -202,6 +207,62 @@ class DaemonHTTPHandler(BaseHTTPRequestHandler):
             self.send_json({"status": "queued", "job_id": job_id}, 202)
             return
 
+        elif path == "/api/benchmark":
+            backend = body.get("backend", "cpu")
+            start_num = body.get("start_num")
+            end_num = body.get("end_num")
+            cutoff_width = body.get("cutoff_width", 20)
+
+            if not start_num or not end_num:
+                self.send_json({"error": "Missing parameters 'start_num' or 'end_num'"}, 400)
+                return
+
+            actual_backend = backend
+            extra_args = []
+            if backend == "cpu_domain":
+                actual_backend = "cpu"
+                extra_args = ["--domain-switching"]
+            elif backend == "cpu":
+                extra_args = ["--no-domain-switching"]
+            elif backend == "vulkan_domain":
+                actual_backend = "vulkan"
+                extra_args = ["--domain-switching"]
+            elif backend == "vulkan":
+                extra_args = ["--no-domain-switching"]
+            elif backend == "hip_domain":
+                actual_backend = "hip"
+                extra_args = ["--domain-switching"]
+            elif backend == "hip":
+                extra_args = ["--no-domain-switching"]
+
+            binary_name = f"hailstone_{actual_backend}"
+            executable_path = os.path.join(state.build_dir, binary_name)
+
+            if not os.path.exists(executable_path):
+                self.send_json({"error": f"Binary for backend '{backend}' not found"}, 404)
+                return
+
+            cmd = [
+                executable_path,
+                "--no-checkpoint",
+                "--start-num", str(start_num),
+                "--end-num", str(end_num),
+                "--cutoff-width", str(cutoff_width)
+            ] + extra_args
+
+            try:
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+                if proc.returncode == 0:
+                    metrics = state.parse_stdout(proc.stdout)
+                    self.send_json({"status": "success", "throughput": metrics["throughput_m_numbers_s"]})
+                else:
+                    self.send_json({"status": "failed", "error": f"Exit code {proc.returncode}. Stderr: {proc.stderr}"}, 500)
+            except subprocess.TimeoutExpired:
+                self.send_json({"status": "failed", "error": "Benchmark timed out"}, 500)
+            except Exception as e:
+                self.send_json({"status": "failed", "error": str(e)}, 500)
+            return
+
         elif path == "/api/cancel":
             with state.lock:
                 if state.active_job is None:
@@ -243,7 +304,25 @@ class DaemonHTTPHandler(BaseHTTPRequestHandler):
             self.finalize_job(job_id, "failed", error=f"Could not create input checkpoint file: {e}")
             return
 
-        binary_name = f"hailstone_{backend}"
+        actual_backend = backend
+        extra_args = []
+        if backend == "cpu_domain":
+            actual_backend = "cpu"
+            extra_args = ["--domain-switching"]
+        elif backend == "cpu":
+            extra_args = ["--no-domain-switching"]
+        elif backend == "vulkan_domain":
+            actual_backend = "vulkan"
+            extra_args = ["--domain-switching"]
+        elif backend == "vulkan":
+            extra_args = ["--no-domain-switching"]
+        elif backend == "hip_domain":
+            actual_backend = "hip"
+            extra_args = ["--domain-switching"]
+        elif backend == "hip":
+            extra_args = ["--no-domain-switching"]
+
+        binary_name = f"hailstone_{actual_backend}"
         executable_path = os.path.join(state.build_dir, binary_name)
 
         cmd = [
@@ -252,9 +331,9 @@ class DaemonHTTPHandler(BaseHTTPRequestHandler):
             "--start-num", str(start_num),
             "--end-num", str(end_num),
             "--cutoff-width", str(cutoff_width)
-        ]
+        ] + extra_args
 
-        print(f"Running job {job_id} [{start_num}, {end_num}] using {binary_name}...")
+        print(f"Running job {job_id} [{start_num}, {end_num}] using {binary_name} {' '.join(extra_args)}...")
         
         proc = None
         try:

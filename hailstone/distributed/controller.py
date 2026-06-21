@@ -15,8 +15,11 @@ DEFAULT_CHECKPOINT = "hailstone_distributed.chk"
 
 DEFAULT_THROUGHPUT = {
     "cpu": 10.0,
+    "cpu_domain": 12.0,
     "vulkan": 200.0,
-    "hip": 300.0
+    "vulkan_domain": 220.0,
+    "hip": 300.0,
+    "hip_domain": 330.0
 }
 
 # Logging settings
@@ -69,6 +72,115 @@ def tcp_exchange(address, cmd, payload=None, timeout=2.0):
         return json.loads(response.decode("utf-8")), None
     except Exception as e:
         return None, str(e)
+
+def run_range_benchmark(address, backend, start, end, cutoff):
+    cmd = f"BENCHMARK {backend} {start} {end} {cutoff}"
+    data, err = tcp_exchange(address, cmd, timeout=15.0)
+    if err:
+        return 0.0, err
+    if data and data.get("status") == "success":
+        return float(data.get("throughput", 0.0)), None
+    return 0.0, data.get("error", "Unknown benchmark error")
+
+def benchmark_worker_thread(worker_addr, task_start_time, task_start_num, global_backend, global_cutoff):
+    log(f"Starting initial range-specific benchmarking for worker {worker_addr}...")
+    try:
+        with state.lock:
+            worker = state.workers.get(worker_addr)
+            if not worker:
+                return
+            backends = dict(worker.get("backends", {}))
+            
+        candidates = []
+        if global_backend == "best_gpu":
+            has_gpu = False
+            if "hip" in backends:
+                candidates.append(("hip", 20))
+                candidates.append(("hip", 24))
+                has_gpu = True
+            if "vulkan" in backends:
+                candidates.append(("vulkan", 20))
+                candidates.append(("vulkan", 24))
+                has_gpu = True
+            
+            if not has_gpu:
+                log(f"Worker {worker_addr} has no GPU backend available. Falling back to CPU for benchmarking.")
+                candidates.append(("cpu", 20))
+                candidates.append(("cpu", 24))
+        else:
+            candidates.append((global_backend, global_cutoff))
+            
+        results = {}
+        for b, c in candidates:
+            with state.lock:
+                if not state.is_running or state.task_start_time != task_start_time:
+                    log(f"Benchmark run cancelled for worker {worker_addr}: task state changed.")
+                    return
+            
+            T_baseline = backends.get(b, DEFAULT_THROUGHPUT.get(b, 10.0))
+            if T_baseline is None or T_baseline == 0:
+                T_baseline = DEFAULT_THROUGHPUT.get(b, 10.0)
+                
+            size = int(T_baseline * 1000000.0 * 5.0)
+            size = max(size, 1000000)
+            
+            start = task_start_num
+            end = start + size - 1
+            
+            log(f"Benchmarking {worker_addr} range [{start}, {end}] config: {b} with cutoff {c} (target 5s)...")
+            throughput, err = run_range_benchmark(worker_addr, b, start, end, c)
+            if err:
+                log(f"[Warning] Benchmark config {b}/{c} failed on {worker_addr}: {err}")
+                results[(b, c)] = 0.0
+            else:
+                log(f"Benchmark config {b}/{c} on {worker_addr} throughput: {throughput:.2f} M/s")
+                results[(b, c)] = throughput
+        
+        best_cfg = None
+        best_throughput = -1.0
+        for cfg, t in results.items():
+            if t > best_throughput:
+                best_throughput = t
+                best_cfg = cfg
+                
+        if best_cfg is None or best_throughput <= 0.0:
+            log(f"[Warning] All benchmarks failed on {worker_addr}. Using fallback default.")
+            if global_backend == "best_gpu":
+                if "hip" in backends:
+                    best_cfg = ("hip", 20)
+                elif "vulkan" in backends:
+                    best_cfg = ("vulkan", 20)
+                else:
+                    best_cfg = ("cpu", 20)
+            else:
+                best_cfg = (global_backend, global_cutoff)
+            best_throughput = backends.get(best_cfg[0], DEFAULT_THROUGHPUT.get(best_cfg[0], 10.0))
+            if best_throughput is None or best_throughput == 0:
+                best_throughput = 10.0
+                
+        best_backend, best_cutoff = best_cfg
+        
+        with state.lock:
+            if state.is_running and state.task_start_time == task_start_time:
+                worker = state.workers.get(worker_addr)
+                if worker:
+                    worker["selected_backend"] = best_backend
+                    worker["selected_cutoff"] = best_cutoff
+                    worker["benchmarked_for_task"] = task_start_time
+                    if "throughput_history" not in worker:
+                        worker["throughput_history"] = {}
+                    worker["throughput_history"][best_backend] = [best_throughput]
+                    worker["status"] = "online"
+                    log(f"[Tuned] Worker {worker_addr} auto-tuned to: {best_backend} with cutoff {best_cutoff} (throughput: {best_throughput:.2f} M/s)")
+            else:
+                log(f"Benchmark finished but ignored for {worker_addr}: task state changed.")
+                
+    except Exception as e:
+        log(f"Exception during benchmarking for {worker_addr}: {e}")
+        with state.lock:
+            worker = state.workers.get(worker_addr)
+            if worker and worker["status"] == "benchmarking":
+                worker["status"] = "online"
 
 def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, job_id, expected_timeout):
     start_time = time.time()
@@ -271,7 +383,10 @@ class ControllerState:
                     "cpu_cores": 0,
                     "system_load": [0.0, 0.0, 0.0],
                     "error_count": 0,
-                    "last_seen": 0.0
+                    "last_seen": 0.0,
+                    "benchmarked_for_task": None,
+                    "selected_backend": None,
+                    "selected_cutoff": None
                 }
                 log(f"Registered worker: {address}")
                 # Start health checker thread for this worker
@@ -579,18 +694,35 @@ def background_scheduler():
                 cutoff_width = state.task_cutoff_width
                 target_duration = state.task_target_duration
                 task_end = state.task_end_num
+                task_start_num = state.task_start_num
+                task_start_time = state.task_start_time
 
             if run_scheduler:
                 # Find online, idle workers
                 for worker_addr, worker in state.workers.items():
                     if worker["status"] == "online":
-                        # Does it support our backend?
-                        throughput = worker["backends"].get(backend)
+                        # Check if worker needs range-specific benchmarking/auto-tuning for current task
+                        if worker.get("benchmarked_for_task") != task_start_time:
+                            with state.lock:
+                                worker["status"] = "benchmarking"
+                            t = threading.Thread(target=benchmark_worker_thread, args=(
+                                worker_addr, task_start_time, task_start_num,
+                                backend, cutoff_width
+                            ))
+                            t.daemon = True
+                            t.start()
+                            continue
+
+                        # Use worker-specific tuned configurations
+                        worker_backend = worker.get("selected_backend", backend)
+                        worker_cutoff = worker.get("selected_cutoff", cutoff_width)
+
+                        throughput = worker["backends"].get(worker_backend)
                         if throughput is None or throughput == 0:
                             continue # Backend unsupported on worker
                         
-                        if "throughput_history" in worker and backend in worker["throughput_history"]:
-                            hist = worker["throughput_history"][backend]
+                        if "throughput_history" in worker and worker_backend in worker["throughput_history"]:
+                            hist = worker["throughput_history"][worker_backend]
                             if hist:
                                 throughput = sum(hist) / len(hist)
                         
@@ -620,7 +752,7 @@ def background_scheduler():
                             # Prepare start checkpoint data
                             checkpoint_payload = state.serialize_peaks_string()
                             
-                            log(f"Dispatching range [{start}, {end}] to {worker_addr} (expected run: {expected_run:.1f}s, timeout: {timeout_dur:.1f}s)...")
+                            log(f"Dispatching range [{start}, {end}] to {worker_addr} (using backend: {worker_backend}, cutoff: {worker_cutoff}, expected run: {expected_run:.1f}s, timeout: {timeout_dur:.1f}s)...")
                             
                             with state.lock:
                                 worker["status"] = "busy"
@@ -634,7 +766,7 @@ def background_scheduler():
                                 }
                             
                             t = threading.Thread(target=tcp_worker_thread, args=(
-                                worker_addr, backend, start, end, cutoff_width, checkpoint_payload, job_id, timeout_dur))
+                                worker_addr, worker_backend, start, end, worker_cutoff, checkpoint_payload, job_id, timeout_dur))
                             t.daemon = True
                             t.start()
             
@@ -728,9 +860,10 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                 for w_addr, job in state.active_jobs.items():
                     worker = state.workers.get(w_addr)
                     if worker:
-                        t = worker["backends"].get(state.task_backend, 0.0)
-                        if "throughput_history" in worker and state.task_backend in worker["throughput_history"]:
-                            hist = worker["throughput_history"][state.task_backend]
+                        w_backend = worker.get("selected_backend", state.task_backend)
+                        t = worker["backends"].get(w_backend, 0.0) if w_backend != "best_gpu" else 0.0
+                        if "throughput_history" in worker and w_backend in worker["throughput_history"]:
+                            hist = worker["throughput_history"][w_backend]
                             if hist:
                                 t = sum(hist) / len(hist)
                         combined_throughput += t

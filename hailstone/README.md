@@ -17,7 +17,7 @@ Vermeulen polynomials and precomputed lookup tables speed up the Collatz search 
    - **Final Polynomials (`fpoly`)**: Represents the final state of the residue class after exactly $w$ divisions by 2.
    - **Maximum Intermediate Polynomials (`mpoly`)**: Represents the peak intermediate state along the path where the ratio $\frac{3^a}{2^b}$ is maximized, used to bound peak intermediate values and prune search classes.
 2. **Polynomial Step Lookup Optimization**: Instead of running trajectories all the way to 1, the search loops (CPU, HIP, and Vulkan) terminate early when the value drops below $2^8 = 256$. The remaining steps are retrieved in $O(1)$ time from a precomputed steps lookup table (`steps8`). This reduces loop iterations, thread divergence, and instruction counts, accelerating GPU execution by up to **4.0x** and CPU execution by **79%**.
-3. **Suffix-First Search (Apriori Cutoffs)**: By generating unique `fpoly` suffix equivalence classes and applying even-class exclusion and modulo 6 filtering, the search is restructured to execute only the non-redundant allowed suffixes. Suffix-First search is enabled by default with width 24 on CPU and Vulkan backends (loading a build-time precomputed binary asset `allowed_suffixes_24.bin` to prevent startup delay), pruning the checked search space by **87.89%** and yielding up to **1.19x CPU speedup** and **1.11x GPU Vulkan speedup** over the 20-bit cutoff configuration. On the HIP backend, width 20 is the default because cache misses on the larger 24-bit table offset the pruning benefits.
+3. **Suffix-First Search (Apriori Cutoffs)**: By generating unique `fpoly` suffix equivalence classes and applying even-class exclusion and modulo 6 filtering, the search is restructured to execute only the non-redundant allowed suffixes. Suffix-First search is enabled by default with width `20` across all backends. On GPU backends (Vulkan and HIP), width `20` is the default and is faster because cache misses on the larger 24-bit table offset the pruning benefits. To disable Suffix-First and run the standard search, pass `--cutoff-width 0`.
 4. **64-bit Loop Transition & Steps-Pruning**: Bypassing 128-bit multi-precision arithmetic on the CPU and GPU (HIP & Vulkan) backends once trajectories drop below $2^{32}$ (transitioning to fast, native 64-bit loops), combined with early steps-pruning. By checking if the accumulated steps at the $2^{32}$ transition point plus $1,050$ (the maximum steps possible for starting values $< 2^{32}$) is less than the current global steps peak, we immediately prune the remainder of the trajectory. This delivers a **3.0x speedup** on CPU (overall **4.62x speedup** over unoptimized baseline) and up to **1.97x speedup** on GPUs (yielding throughputs up to **1.11 Billion numbers/s** on Vulkan).
 5. **AVX-512 CPU SIMD Vectorization**: Added an AVX-512 vectorized acceleration path on the CPU backend using x86 SIMD intrinsics. This path processes 8 trajectories of 64-bit integers in parallel using 512-bit ZMM registers (`__m512i`), utilizing vector shift-add for $3x+1$ math, vector leading-zero-count arithmetic (`lzcnt`), dynamic lane compaction, and active lane refilling. It features dynamic runtime CPU capability detection (falling back to scalar if unsupported), yielding a **2.11x sequential speedup**, and scales with OpenMP to achieve **506.79 M numbers/s** (an **8.17x parallel scaling speedup**) on 32-core systems while maintaining 100% identical step counts and peak parity.
 
@@ -89,6 +89,8 @@ This will build:
 * `hailstone_test_uint128`: `uint128` math unit tests
 * `hailstone_hip` (if ROCm is found): AMD HIP executable
 * `hailstone_path`: Trajectory path representation utility
+* `hailstoned`: C++ distributed worker daemon
+
 
 ---
 
@@ -108,7 +110,11 @@ The search executables (`hailstone_cpu`, `hailstone_vulkan`, and `hailstone_hip`
 * `--no-save-checkpoint, --no_save_checkpoint`: Disable saving checkpoints at the end of the search (allows warm-starting from a checkpoint without overwriting it).
 * `--use-avx512, --use_avx512`: Force enable AVX-512 vectorized CPU search (enabled by default if supported).
 * `--no-avx512, --no_avx512`: Force disable AVX-512 vectorized CPU search.
-* `--cutoff-width, --cutoff_width VALUE`: Configure the bit-width of Suffix-First search (accepts `8`, `12`, `16`, `20`, or `24`). Suffix-First search is enabled by default with width `24` on CPU/Vulkan (our fastest configuration, precomputed at build-time), and width `20` on HIP. To disable Suffix-First and run the standard search, pass `--cutoff-width 0`.
+* `--cutoff-width, --cutoff_width VALUE`: Configure the bit-width of Suffix-First search (accepts `8`, `12`, `16`, `20`, or `24`). Suffix-First search is enabled by default with width `20` across all backends. To disable Suffix-First and run the standard search, pass `--cutoff-width 0`.
+* `--domain-switching, --domain_switching`: Enable David Bařina's domain-switching arithmetic (supported on CPU, AVX-512, Vulkan, and HIP backends). This option yields speedups at very high block ranges on CPU backends (up to +31.6% at Block 100,000), but incurs overhead/slowdown on GPU backends due to the emulation of 128-bit operations.
+* `--no-domain-switching, --no_domain_switching`: Disable David Bařina's domain-switching arithmetic (default).
+
+
 
 
 
@@ -211,12 +217,53 @@ python3 benchmarks/benchmark.py --mode full
 
 Benchmark results and peak counts will automatically append to the optimization history in [benchmarks/README.md](file:///home/mev/source/ai/hailstone/benchmarks/README.md) and [benchmarks/history.json](file:///home/mev/source/ai/hailstone/benchmarks/history.json).
 
-### 3. CPU Profiling
-The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/profiling.md).
+### 3. Extended Configuration Sweep (Block 100,000)
+To evaluate trade-offs in the 128-bit search space, we run the extended sweep driver (`extended_sweep.py`) at Block 100,000 (checking 1,000,000,000 starting numbers). Since search ranges smaller than a full block ($2^{32}$ values) run sequentially on a single thread on the CPU, the CPU configurations are benchmarked with 1 thread. Below is the performance matrix of backends, thread counts, SIMD instruction sets, domain-switching, and suffix-first cutoff widths:
+
+| [Backend](doc/optimizations_illustrated.md#parallelization--vectorization) | Threads | [Domain Switch](doc/optimizations_illustrated.md#domain-switching-arithmetic) | [Cutoff Width](doc/optimizations_illustrated.md#cutoffs--suffix-first-search) | Time (s) | Computational Throughput (M/s) | Comp. Speedup | Search Coverage Speed (M/s) | Coverage Speedup |
+|---|---|---|---|---|---|---|---|---|
+| CPU | 1 | OFF | 0 | 48.744 | 10.26 | 1.00x (Base) | 20.52 | 1.00x (Base) |
+| CPU | 1 | OFF | 20 | 9.738 | 11.42 | 1.11x | 102.70 | 5.00x |
+| CPU | 1 | OFF | 24 | 7.883 | 11.52 | 1.12x | 126.85 | 6.18x |
+| CPU | 1 | ON | 0 | 53.298 | 9.38 | 0.91x | 18.76 | 0.91x |
+| CPU | 1 | ON | 20 | 10.789 | 10.31 | 1.00x | 92.69 | 4.52x |
+| CPU | 1 | ON | 24 | 8.791 | 10.33 | 1.01x | 113.75 | 5.54x |
+| CPU-AVX512 | 1 | OFF | 20 | 9.784 | 11.37 | 1.11x | 102.20 | 4.98x |
+| CPU-AVX512 | 1 | OFF | 24 | 8.169 | 11.12 | 1.08x | 122.41 | 5.97x |
+| CPU-AVX512 | 1 | ON | 20 | 7.419 | 14.99 | 1.46x | 134.80 | 6.57x |
+| CPU-AVX512 | 1 | ON | 24 | 5.949 | 15.27 | 1.49x | 168.10 | 8.19x |
+| Vulkan | N/A | OFF | 0 | 0.778 | 642.62 | 62.63x | 1285.18 | 62.63x |
+| Vulkan | N/A | OFF | 20 | 0.131 | 848.82 | 82.73x | 7633.59 | 371.99x |
+| Vulkan | N/A | OFF | 24 | 0.107 | 849.09 | 82.76x | 9345.79 | 455.45x |
+| Vulkan | N/A | ON | 0 | 1.897 | 263.63 | 25.70x | 527.26 | 25.70x |
+| Vulkan | N/A | ON | 20 | 0.307 | 362.58 | 35.34x | 3260.52 | 158.90x |
+| Vulkan | N/A | ON | 24 | 0.265 | 342.61 | 33.39x | 3772.16 | 183.83x |
+| HIP | N/A | OFF | 0 | 0.602 | 830.58 | 80.95x | 1661.13 | 80.95x |
+| HIP | N/A | OFF | 20 | 0.114 | 972.28 | 94.76x | 8741.26 | 425.99x |
+| HIP | N/A | OFF | 24 | 0.086 | 1056.01 | 102.93x | 11627.91 | 566.66x |
+| HIP | N/A | ON | 0 | 0.872 | 573.26 | 55.87x | 1146.53 | 55.87x |
+| HIP | N/A | ON | 20 | 0.125 | 891.27 | 86.87x | 8012.82 | 390.49x |
+| HIP | N/A | ON | 24 | 0.111 | 816.04 | 79.54x | 8984.73 | 437.85x |
+
+#### Key Observations
+* **Search Coverage Speed vs. Computational Throughput**:
+  * For standard search (`Cutoff Width = 0`), the search coverage speed is exactly $2\times$ the computational throughput since the search only skips even numbers (50% pruning).
+  * For suffix-first search (`Cutoff Width = 20` or `24`), apriori cutoffs prune away approximately **88.5%** of the trajectories. As a result, the search coverage speed (logical scan rate) scales up by **~8.7x** relative to computational throughput. For instance, the **HIP (DS: OFF, Cutoff: 24)** config achieves `1056.01 M/s` of computational throughput but sweeps the range at a staggering **11,627.91 M/s** (a **566.66x speedup** over the CPU baseline).
+* **Domain Switching Trade-offs (CPU vs. GPU)**:
+  * **Helps CPU**: Domain switching reduces trajectory step counts. In the CPU backend, this translates to instruction savings, boosting throughput by **+31% to +33%** when combined with AVX-512 ON and suffix-first search (e.g., from `11.52 M/s` to `15.27 M/s` at width 24).
+  * **Hurts GPU**: GPU threads are highly sensitive to branch divergence and the math emulation overhead of executing 128-bit domain-switching trajectories. Enabling domain-switching on GPUs results in a performance hit (e.g., HIP's coverage speed drops from `11,627.91 M/s` to `8,984.73 M/s` at width 24).
+* **Where AVX-512 Vectorization Excel**:
+  * **Only active in Suffix-First**: AVX-512 vectorization is only implemented in the suffix-first search paths (`Cutoff > 0`). When Cutoff is 0, AVX-512 ON/OFF yields identical throughput as both fall back to the standard scalar loop.
+  * **Requires Domain Switching to offset lane refill overhead**: Because AVX-512 lanes finish at different times and require active lane refilling from stack memory, this microarchitectural overhead makes AVX-512 slightly slower than the simple scalar loop when Domain Switching is OFF. However, when Domain Switching is ON, the vector gather and multiplication execution rate is fast enough to offset this overhead, delivering a **~42% to 45% speedup** (e.g., throughput increases from `10.33 M/s` to `15.27 M/s` at width 24).
+
+### 4. CPU Profiling
+The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/2026-06-15-profiling.md).
 
 ---
 
 ## Distributed Search Mode
+
+![Hailstone Distributed Search Architecture](hailstone-distributed.png)
 
 The distributed search mode splits the Collatz peak search range across a cluster of worker machines. It comprises a highly optimized C++ daemon and a Python central controller:
 
