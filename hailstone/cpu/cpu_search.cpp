@@ -1550,7 +1550,7 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
     for (uint32_t s : res.std_allowed) {
         for (int B = 0; B < 9; ++B) {
             uint32_t rem = (B + s) % 9;
-            if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
+            if (rem == 2 || rem == 5 || rem == 8) {
                 res.std_skipped[B]++;
             }
         }
@@ -1588,17 +1588,10 @@ BaseDependentSuffixes generate_base_dependent_suffixes(int width) {
 #endif
         
         uint32_t r1 = info.first_suffix;
-        // For each base B % 9, check if any member of the class lands on a skipped residue
+        // For each base B % 9, check if the representative r1 lands on a skipped residue
         for (int B = 0; B < 9; ++B) {
-            bool has_skipped = false;
-            for (uint32_t m : info.members) {
-                uint32_t rem = (B + m) % 9;
-                if (rem == 2 || rem == 4 || rem == 5 || rem == 8) {
-                    has_skipped = true;
-                    break;
-                }
-            }
-            if (!has_skipped) {
+            uint32_t rem = (B + r1) % 9;
+            if (rem != 2 && rem != 5 && rem != 8) {
                 res.allowed_tables[B].push_back(r1);
             }
         }
