@@ -940,15 +940,30 @@ std::string buildDashboardHtml() {
           <div class="card">
             <div class="card-title">Sandboxed Progression Odds</div>
             <button class="btn btn-primary" onclick="runSandboxSim()" style="width:100%;margin-bottom:1rem">Run Sandbox Forecast</button>
+            
+            <div style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
+              <span style="font-size:0.8rem;color:var(--text-secondary);align-self:center;margin-right:0.5rem;">Visible Columns:</span>
+              <button id="toggle-col-r32" class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="toggleSandboxCol('r32')">R32</button>
+              <button id="toggle-col-r16" class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="toggleSandboxCol('r16')">R16</button>
+              <button id="toggle-col-qf" class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="toggleSandboxCol('qf')">QF</button>
+              <button id="toggle-col-sf" class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="toggleSandboxCol('sf')">SF</button>
+              <button id="toggle-col-final" class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="toggleSandboxCol('final')">Final</button>
+              <button id="toggle-col-champion" class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;" onclick="toggleSandboxCol('champion')">Champ</button>
+            </div>
+
             <div id="sandbox-loading" class="loading-overlay" style="padding:1rem">
               <div class="spinner" style="width:24px;height:24px"></div>
             </div>
             <table id="sandbox-table">
               <thead>
                 <tr>
-                  <th>Team</th>
-                  <th>Adv R32 %</th>
-                  <th>Champion %</th>
+                  <th style="cursor:pointer;" onclick="setSandboxSort('abbr')">Team <span id="sort-ind-abbr"></span></th>
+                  <th id="th-col-r32" style="cursor:pointer;" onclick="setSandboxSort('r32')">Adv R32 % <span id="sort-ind-r32"></span></th>
+                  <th id="th-col-r16" style="cursor:pointer;" onclick="setSandboxSort('r16')">R16 % <span id="sort-ind-r16"></span></th>
+                  <th id="th-col-qf" style="cursor:pointer;" onclick="setSandboxSort('qf')">QF % <span id="sort-ind-qf"></span></th>
+                  <th id="th-col-sf" style="cursor:pointer;" onclick="setSandboxSort('sf')">SF % <span id="sort-ind-sf"></span></th>
+                  <th id="th-col-final" style="cursor:pointer;" onclick="setSandboxSort('final')">Final % <span id="sort-ind-final"></span></th>
+                  <th id="th-col-champion" style="cursor:pointer;" onclick="setSandboxSort('champion')">Champion % <span id="sort-ind-champion">▼</span></th>
                 </tr>
               </thead>
               <tbody id="sandbox-table-body"></tbody>
@@ -1035,6 +1050,12 @@ std::string buildDashboardHtml() {
     let activeTab = 'standings';
     let locks = {}; // matchId -> outcome ("home", "draw", "away")
     let allMatchesData = [];
+
+    // Sandbox state
+    let sandboxTeamsData = [];
+    let sandboxSortCol = 'champion';
+    let sandboxSortDesc = true;
+    let sandboxColsVisible = { r32: true, r16: true, qf: true, sf: true, final: true, champion: true };
 
     function switchTab(tab) {
       document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
@@ -1202,7 +1223,7 @@ std::string buildDashboardHtml() {
       loading.style.display = 'flex';
       results.style.display = 'none';
 
-      const res = await fetch('/api/simulation?iterations=20000');
+      const res = await fetch('/api/simulation?iterations=100000');
       const data = await res.json();
       loading.style.display = 'none';
       results.style.display = 'block';
@@ -1315,28 +1336,87 @@ std::string buildDashboardHtml() {
       }
       const locksParam = lockList.join(',');
 
-      const res = await fetch('/api/simulation?iterations=20000&locks=' + encodeURIComponent(locksParam));
+      const res = await fetch('/api/simulation?iterations=100000&locks=' + encodeURIComponent(locksParam));
       const data = await res.json();
       loading.style.display = 'none';
 
-      const tbody = document.getElementById('sandbox-table-body');
-      tbody.innerHTML = '';
-
+      // Convert to array and include all stages
       let teams = Object.keys(data.r32).map(abbr => ({
         abbr,
         r32: data.r32[abbr],
+        r16: data.r16[abbr],
+        qf: data.qf[abbr],
+        sf: data.sf[abbr],
+        final: data.final[abbr],
         champion: data.champion[abbr]
       }));
 
-      teams.sort((a, b) => b.champion - a.champion || b.r32 - a.r32);
+      // Filter out mathematically eliminated teams
+      sandboxTeamsData = teams.filter(t => 
+        t.r32 > 0 || t.r16 > 0 || t.qf > 0 || t.sf > 0 || t.final > 0 || t.champion > 0
+      );
 
-      teams.slice(0, 16).forEach(t => {
+      renderSandboxTable();
+    }
+
+    function setSandboxSort(col) {
+      if (sandboxSortCol === col) {
+        sandboxSortDesc = !sandboxSortDesc;
+      } else {
+        sandboxSortCol = col;
+        sandboxSortDesc = true;
+      }
+      renderSandboxTable();
+    }
+
+    function toggleSandboxCol(col) {
+      sandboxColsVisible[col] = !sandboxColsVisible[col];
+      const btn = document.getElementById('toggle-col-' + col);
+      if (sandboxColsVisible[col]) {
+        btn.className = 'btn btn-primary';
+      } else {
+        btn.className = 'btn btn-secondary';
+      }
+      renderSandboxTable();
+    }
+
+    function renderSandboxTable() {
+      const tbody = document.getElementById('sandbox-table-body');
+      tbody.innerHTML = '';
+
+      // Update header visibility
+      const cols = ['r32', 'r16', 'qf', 'sf', 'final', 'champion'];
+      cols.forEach(c => {
+        document.getElementById('th-col-' + c).style.display = sandboxColsVisible[c] ? '' : 'none';
+        document.getElementById('sort-ind-' + c).innerText = sandboxSortCol === c ? (sandboxSortDesc ? '▼' : '▲') : '';
+      });
+      document.getElementById('sort-ind-abbr').innerText = sandboxSortCol === 'abbr' ? (sandboxSortDesc ? '▼' : '▲') : '';
+
+      sandboxTeamsData.sort((a, b) => {
+        let valA = a[sandboxSortCol];
+        let valB = b[sandboxSortCol];
+        if (sandboxSortCol === 'abbr') {
+          return sandboxSortDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
+        }
+        if (valA === valB) {
+          // tiebreaker is champion or r32
+          if (sandboxSortCol !== 'champion' && a.champion !== b.champion) return b.champion - a.champion;
+          return b.r32 - a.r32;
+        }
+        return sandboxSortDesc ? (valB - valA) : (valA - valB);
+      });
+
+      sandboxTeamsData.forEach(t => {
         let row = document.createElement('tr');
-        row.innerHTML = `
-          <td><strong>${t.abbr}</strong></td>
-          <td>${(t.r32 * 100).toFixed(1)}%</td>
-          <td>${(t.champion * 100).toFixed(1)}%</td>
-        `;
+        let html = `<td><strong>${t.abbr}</strong></td>`;
+        if (sandboxColsVisible.r32) html += `<td>${(t.r32 * 100).toFixed(1)}%</td>`;
+        if (sandboxColsVisible.r16) html += `<td>${(t.r16 * 100).toFixed(1)}%</td>`;
+        if (sandboxColsVisible.qf) html += `<td>${(t.qf * 100).toFixed(1)}%</td>`;
+        if (sandboxColsVisible.sf) html += `<td>${(t.sf * 100).toFixed(1)}%</td>`;
+        if (sandboxColsVisible.final) html += `<td>${(t.final * 100).toFixed(1)}%</td>`;
+        if (sandboxColsVisible.champion) html += `<td><span class="team-badge" style="background:var(--success-bg);color:var(--success-color)">${(t.champion * 100).toFixed(1)}%</span></td>`;
+        
+        row.innerHTML = html;
         tbody.appendChild(row);
       });
     }
@@ -2398,7 +2478,7 @@ std::string WebServer::standingsJson() const {
 
     MonteCarlo mc;
     mc.setModelParameters(baseRate_, alpha_, hostAdvantage_);
-    auto results = mc.simulate(temp, 10000, 12345);
+    auto results = mc.simulate(temp, 100000, 12345);
 
     std::vector<std::string> groupsList = temp.getGroups();
     std::sort(groupsList.begin(), groupsList.end());
