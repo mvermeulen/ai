@@ -402,6 +402,7 @@ select option {
     gap: 16px;
     max-height: 400px;
     overflow-y: auto;
+    overflow-x: auto;
 }
 
 .empty-state {
@@ -483,6 +484,10 @@ select option {
 .worker-benchmarks {
     display: flex;
     gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    flex: 1;
+    min-width: 0;
 }
 
 .bench-tag {
@@ -491,6 +496,8 @@ select option {
     background: rgba(255, 255, 255, 0.03);
     padding: 2px 6px;
     border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .bench-tag.active {
@@ -617,6 +624,7 @@ select option {
 /* Scrollbar styling */
 ::-webkit-scrollbar {
     width: 8px;
+    height: 8px;
 }
 
 ::-webkit-scrollbar-track {
