@@ -59,17 +59,17 @@ std::string get_capabilities_json() {
         std::string extra_args;
     };
     std::vector<BackendConfig> backends = {
-        {"cpu", "hailstone_cpu", " --no-domain-switching"},
-        {"cpu_domain", "hailstone_cpu", " --domain-switching"},
-        {"cpu_nosteps", "hailstone_cpu_nosteps", " --no-domain-switching"},
-        {"cpu_domain_nosteps", "hailstone_cpu_nosteps", " --domain-switching"},
-        {"vulkan", "hailstone_vulkan", " --no-domain-switching"},
+        {"cpu", "hailstone_cpu", " --use-avx512"},
+        {"cpu_domain", "hailstone_cpu", " --domain-switching --use-avx512"},
+        {"cpu_nosteps", "hailstone_cpu_nosteps", " --use-avx512"},
+        {"cpu_domain_nosteps", "hailstone_cpu_nosteps", " --domain-switching --use-avx512"},
+        {"vulkan", "hailstone_vulkan", ""},
         {"vulkan_domain", "hailstone_vulkan", " --domain-switching"},
-        {"vulkan_nosteps", "hailstone_vulkan_nosteps", " --no-domain-switching"},
+        {"vulkan_nosteps", "hailstone_vulkan_nosteps", ""},
         {"vulkan_domain_nosteps", "hailstone_vulkan_nosteps", " --domain-switching"},
-        {"hip", "hailstone_hip", " --no-domain-switching"},
+        {"hip", "hailstone_hip", ""},
         {"hip_domain", "hailstone_hip", " --domain-switching"},
-        {"hip_nosteps", "hailstone_hip_nosteps", " --no-domain-switching"},
+        {"hip_nosteps", "hailstone_hip_nosteps", ""},
         {"hip_domain_nosteps", "hailstone_hip_nosteps", " --domain-switching"}
     };
     std::string json = "{";
@@ -329,11 +329,20 @@ void handle_client(int client_fd) {
             dup2(pipe_fd[1], STDERR_FILENO);
             close(pipe_fd[1]);
             
-            execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
-                  "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
-                  "--cutoff-width", cutoff.c_str(), 
-                  (domain_switching ? "--domain-switching" : "--no-domain-switching"), 
-                  (char*)NULL);
+            if (actual_backend.find("cpu") != std::string::npos) {
+                execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
+                      "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
+                      "--cutoff-width", cutoff.c_str(), 
+                      (domain_switching ? "--domain-switching" : "--no-domain-switching"), 
+                      "--use-avx512",
+                      (char*)NULL);
+            } else {
+                execl(bin_path.c_str(), bin_path.c_str(), "--checkpoint", chk_file.c_str(), 
+                      "--start-num", start_n.c_str(), "--end-num", end_n.c_str(), 
+                      "--cutoff-width", cutoff.c_str(), 
+                      (domain_switching ? "--domain-switching" : "--no-domain-switching"), 
+                      (char*)NULL);
+            }
             exit(1);
         } 
         else if (child_pid > 0) {
