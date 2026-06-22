@@ -5,7 +5,7 @@ service hailstoned
         socket_type     = stream
         protocol        = tcp
         wait            = no
-        user            = nobody
+        user            = root
         server          = /usr/bin/hailstoned
         port            = 5429
         instances       = 50

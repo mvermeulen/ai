@@ -890,7 +890,8 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                         "end_num": str(state.task_end_num),
                         "backend": state.task_backend,
                         "cutoff_width": state.task_cutoff_width,
-                        "target_duration": state.task_target_duration
+                        "target_duration": state.task_target_duration,
+                        "omit_steps": state.task_omit_steps
                     },
                     "progress": {
                         "next_search_num": str(state.next_search_num),

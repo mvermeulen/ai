@@ -105,7 +105,8 @@ async function updateDashboard() {
         document.getElementById('progress-percent').textContent = `${progressPercent.toFixed(2)}%`;
 
         // 4. Render Worker Nodes
-        renderWorkers(data.workers, data.task.backend);
+        const activeBackend = data.task.omit_steps ? data.task.backend + '_nosteps' : data.task.backend;
+        renderWorkers(data.workers, activeBackend);
 
         // 5. Render Peaks Tables (Sorting descending to show newest peaks first)
         renderPeaksTable('max-value-peaks-body', data.global_peaks.max_value_peaks, 'max_value');

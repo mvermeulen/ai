@@ -62,6 +62,7 @@ cp build/hailstone_cpu_nosteps ${PKG_DIR}/usr/bin/
 
 mkdir -p ${PKG_DIR}/usr/share/hailstone
 cp build/allowed_suffixes_*.bin ${PKG_DIR}/usr/share/hailstone/ 2>/dev/null || true
+cp build/*.spv ${PKG_DIR}/usr/share/hailstone/ 2>/dev/null || true
 
 cp distributed/hailstoned.xinetd ${PKG_DIR}/etc/xinetd.d/hailstoned
 
