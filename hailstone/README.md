@@ -225,32 +225,32 @@ To evaluate trade-offs in the 128-bit search space, we run the extended sweep dr
 | [Backend](doc/optimizations_illustrated.md#parallelization--vectorization) | Threads | [Domain Switch](doc/optimizations_illustrated.md#domain-switching-arithmetic) | [Cutoff Width](doc/optimizations_illustrated.md#cutoffs--suffix-first-search) | Time (s) | Computational Throughput (M/s) | Comp. Speedup | Search Coverage Speed (M/s) | Coverage Speedup |
 |---|---|---|---|---|---|---|---|---|
 | CPU | 1 | OFF | 0 | 48.744 | 10.26 | 1.00x (Base) | 20.52 | 1.00x (Base) |
-| CPU | 1 | OFF | 20 | 9.738 | 11.42 | 1.11x | 102.70 | 5.00x |
-| CPU | 1 | OFF | 24 | 7.883 | 11.52 | 1.12x | 126.85 | 6.18x |
+| CPU | 1 | OFF | 20 | TBD | TBD | TBD | TBD | TBD |
+| CPU | 1 | OFF | 24 | TBD | TBD | TBD | TBD | TBD |
 | CPU | 1 | ON | 0 | 53.298 | 9.38 | 0.91x | 18.76 | 0.91x |
-| CPU | 1 | ON | 20 | 10.789 | 10.31 | 1.00x | 92.69 | 4.52x |
-| CPU | 1 | ON | 24 | 8.791 | 10.33 | 1.01x | 113.75 | 5.54x |
-| CPU-AVX512 | 1 | OFF | 20 | 9.784 | 11.37 | 1.11x | 102.20 | 4.98x |
-| CPU-AVX512 | 1 | OFF | 24 | 8.169 | 11.12 | 1.08x | 122.41 | 5.97x |
-| CPU-AVX512 | 1 | ON | 20 | 7.419 | 14.99 | 1.46x | 134.80 | 6.57x |
-| CPU-AVX512 | 1 | ON | 24 | 5.949 | 15.27 | 1.49x | 168.10 | 8.19x |
+| CPU | 1 | ON | 20 | TBD | TBD | TBD | TBD | TBD |
+| CPU | 1 | ON | 24 | TBD | TBD | TBD | TBD | TBD |
+| CPU-AVX512 | 1 | OFF | 20 | TBD | TBD | TBD | TBD | TBD |
+| CPU-AVX512 | 1 | OFF | 24 | TBD | TBD | TBD | TBD | TBD |
+| CPU-AVX512 | 1 | ON | 20 | TBD | TBD | TBD | TBD | TBD |
+| CPU-AVX512 | 1 | ON | 24 | TBD | TBD | TBD | TBD | TBD |
 | Vulkan | N/A | OFF | 0 | 0.778 | 642.62 | 62.63x | 1285.18 | 62.63x |
-| Vulkan | N/A | OFF | 20 | 0.131 | 848.82 | 82.73x | 7633.59 | 371.99x |
-| Vulkan | N/A | OFF | 24 | 0.107 | 849.09 | 82.76x | 9345.79 | 455.45x |
+| Vulkan | N/A | OFF | 20 | TBD | TBD | TBD | TBD | TBD |
+| Vulkan | N/A | OFF | 24 | TBD | TBD | TBD | TBD | TBD |
 | Vulkan | N/A | ON | 0 | 1.897 | 263.63 | 25.70x | 527.26 | 25.70x |
-| Vulkan | N/A | ON | 20 | 0.307 | 362.58 | 35.34x | 3260.52 | 158.90x |
-| Vulkan | N/A | ON | 24 | 0.265 | 342.61 | 33.39x | 3772.16 | 183.83x |
+| Vulkan | N/A | ON | 20 | TBD | TBD | TBD | TBD | TBD |
+| Vulkan | N/A | ON | 24 | TBD | TBD | TBD | TBD | TBD |
 | HIP | N/A | OFF | 0 | 0.602 | 830.58 | 80.95x | 1661.13 | 80.95x |
-| HIP | N/A | OFF | 20 | 0.114 | 972.28 | 94.76x | 8741.26 | 425.99x |
-| HIP | N/A | OFF | 24 | 0.086 | 1056.01 | 102.93x | 11627.91 | 566.66x |
+| HIP | N/A | OFF | 20 | TBD | TBD | TBD | TBD | TBD |
+| HIP | N/A | OFF | 24 | TBD | TBD | TBD | TBD | TBD |
 | HIP | N/A | ON | 0 | 0.872 | 573.26 | 55.87x | 1146.53 | 55.87x |
-| HIP | N/A | ON | 20 | 0.125 | 891.27 | 86.87x | 8012.82 | 390.49x |
-| HIP | N/A | ON | 24 | 0.111 | 816.04 | 79.54x | 8984.73 | 437.85x |
-| **CPU (No Steps)** | 1 | OFF | 24 | 0.072 | 1257.65 | 122.58x | 13850.41 | 674.97x |
-| **CPU-AVX512 (No Steps)** | 1 | ON | 24 | 0.060 | 1526.30 | 148.76x | 16806.72 | 819.04x |
-| **Vulkan (No Steps)** | N/A | OFF | 24 | 0.066 | 1372.92 | 133.81x | 15114.87 | 736.59x |
-| **HIP (No Steps)** | N/A | OFF | 24 | 0.077 | 1186.90 | 115.68x | 13071.89 | 637.03x |
-| **CPU-AVX512 (No Steps, OpenMP)** | 32 | ON | 24 | 9.508* | 13129.37 | 1279.66x | 144546.30 | 7044.16x |
+| HIP | N/A | ON | 20 | TBD | TBD | TBD | TBD | TBD |
+| HIP | N/A | ON | 24 | TBD | TBD | TBD | TBD | TBD |
+| **CPU (No Steps)** | 1 | OFF | 24 | TBD | TBD | TBD | TBD | TBD |
+| **CPU-AVX512 (No Steps)** | 1 | ON | 24 | TBD | TBD | TBD | TBD | TBD |
+| **Vulkan (No Steps)** | N/A | OFF | 24 | TBD | TBD | TBD | TBD | TBD |
+| **HIP (No Steps)** | N/A | OFF | 24 | TBD | TBD | TBD | TBD | TBD |
+| **CPU-AVX512 (No Steps, OpenMP)** | 32 | ON | 24 | TBD | TBD | TBD | TBD | TBD |
 
 *\* The OpenMP benchmark was evaluated at depth (block 100,000) over a 320-block range (~1.37 Trillion values) to properly demonstrate parallel scaling, which is why the elapsed time is longer despite the massively higher throughput.*
 
@@ -265,7 +265,8 @@ To evaluate trade-offs in the 128-bit search space, we run the extended sweep dr
   * **Only active in Suffix-First**: AVX-512 vectorization is only implemented in the suffix-first search paths (`Cutoff > 0`). When Cutoff is 0, AVX-512 ON/OFF yields identical throughput as both fall back to the standard scalar loop.
   * **Requires Domain Switching to offset lane refill overhead**: Because AVX-512 lanes finish at different times and require active lane refilling from stack memory, this microarchitectural overhead makes AVX-512 slightly slower than the simple scalar loop when Domain Switching is OFF. However, when Domain Switching is ON, the vector gather and multiplication execution rate is fast enough to offset this overhead, delivering a **~42% to 45% speedup** (e.g., throughput increases from `10.33 M/s` to `15.27 M/s` at width 24).
 * **The High Cost of Computing Steps**: As demonstrated by the "No Steps" configurations (`-DOMIT_STEPS_COMPUTATION=ON`), a massive amount of the computational time is spent simply tracking the exact number of steps required for a trajectory to reach 1 after it drops below the starting value. When we omit this requirement and exit early, performance skyrockets by **over 100x** across all backends. Interestingly, this optimization causes the incredibly low-latency AVX-512 CPU execution to overtake the GPU backends, as the workload per trajectory becomes too small to hide GPU kernel scheduling overhead.
-  * **OpenMP Parallel Scaling**: Scaling this "No Steps" AVX-512 backend across 32 threads using OpenMP yields an unprecedented search coverage speed of **144.5 Billion values per second**. At this staggering rate, a single 32-core machine could verify stopping time and max value peaks for the entire $2^{64}$ search space in approximately **4.04 years** (down from an estimated 28,000+ years using the single-threaded scalar baseline).
+  * **Note:** The exact performance multipliers and metrics for the "No Steps" and "Suffix-First" modes are currently pending a full benchmark re-run following a mathematical bug fix in the underlying suffix filters.
+  * **OpenMP Parallel Scaling**: Scaling this "No Steps" AVX-512 backend across 32 threads using OpenMP yields an unprecedented search coverage speed (exact metrics TBD). At this staggering rate, a single 32-core machine could verify stopping time and max value peaks for the entire $2^{64}$ search space in years (down from an estimated 28,000+ years using the single-threaded scalar baseline).
 
 ### 4. CPU Profiling
 The project includes support for building profiling targets with `-g` and `-fno-omit-frame-pointer` flags to enable source-annotated analysis using `perf`. For detailed build, record, and report instructions, see the [CPU Profiling Guide](file:///home/mev/source/ai/hailstone/doc/2026-06-15-profiling.md).
