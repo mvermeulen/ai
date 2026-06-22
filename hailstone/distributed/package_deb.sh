@@ -41,7 +41,7 @@ PKG_DIR="${BUILD_DIR}/hailstoned_${VERSION}_amd64"
 echo "Building binaries..."
 mkdir -p build && cd build
 cmake ..
-make -j$(nproc) hailstoned hailstone_cpu hailstone_cpu_nosteps
+make -j$(nproc)
 cd ..
 
 echo "Preparing package structure..."
@@ -59,6 +59,9 @@ cp build/hailstone_cpu_nosteps ${PKG_DIR}/usr/bin/
 [ -f build/hailstone_vulkan_nosteps ] && cp build/hailstone_vulkan_nosteps ${PKG_DIR}/usr/bin/
 [ -f build/hailstone_hip ] && cp build/hailstone_hip ${PKG_DIR}/usr/bin/
 [ -f build/hailstone_hip_nosteps ] && cp build/hailstone_hip_nosteps ${PKG_DIR}/usr/bin/
+
+mkdir -p ${PKG_DIR}/usr/share/hailstone
+cp build/allowed_suffixes_*.bin ${PKG_DIR}/usr/share/hailstone/ 2>/dev/null || true
 
 cp distributed/hailstoned.xinetd ${PKG_DIR}/etc/xinetd.d/hailstoned
 
@@ -86,6 +89,7 @@ if command -v systemctl >/dev/null 2>&1; then
 else
     service xinetd reload || service xinetd restart
 fi
+rm -f /tmp/hailstoned_benchmarks.cache
 exit 0
 EOF
 chmod +x ${PKG_DIR}/DEBIAN/postinst

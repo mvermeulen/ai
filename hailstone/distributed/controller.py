@@ -249,7 +249,7 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
         
         sock.close()
         
-        if checkpoint_data:
+        if checkpoint_data and metrics["elapsed_seconds"] > 0:
             actual_elapsed = time.time() - start_time
             log(f"[Success] Job {job_id} completed on {address} in {metrics['elapsed_seconds']:.2f}s (actual controller time: {actual_elapsed:.2f}s).")
             state.merge_worker_checkpoint(checkpoint_data)
@@ -277,7 +277,7 @@ def tcp_worker_thread(address, backend, start, end, cutoff, checkpoint_payload, 
                         worker["throughput_history"][backend].pop(0)
         else:
             actual_elapsed = time.time() - start_time
-            log(f"[Failed] Job {job_id} failed on {address} after {actual_elapsed:.2f}s: Socket closed before checkpoint received.")
+            log(f"[Failed] Job {job_id} failed on {address} after {actual_elapsed:.2f}s: Worker returned no valid metrics or socket closed.")
             with state.lock:
                 if address in state.active_jobs and state.active_jobs[address]["job_id"] == job_id:
                     state.failed_chunks.append((start, end))
@@ -737,6 +737,9 @@ def background_scheduler():
                             hist = worker["throughput_history"][worker_backend]
                             if hist:
                                 throughput = sum(hist) / len(hist)
+
+                        if throughput <= 0.0:
+                            throughput = 0.1  # Fallback to prevent division by zero
                         
                         # We have an idle worker! Decide next range
                         chunk_range = None

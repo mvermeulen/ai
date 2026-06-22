@@ -394,15 +394,21 @@ void handle_client(int client_fd) {
                 waitpid(child_pid, NULL, 0);
             } else {
                 // Wait for child to finish normally
-                waitpid(child_pid, NULL, 0);
+                int status = 0;
+                waitpid(child_pid, &status, 0);
                 
-                // Send back checkpoint file
-                std::ifstream chk_in(chk_file);
-                if (chk_in.good()) {
-                    std::stringstream buffer;
-                    buffer << chk_in.rdbuf();
-                    std::string payload = "\n__BEGIN_CHECKPOINT__\n" + buffer.str() + "\n__END_CHECKPOINT__\n";
-                    send(client_fd, payload.c_str(), payload.length(), MSG_NOSIGNAL);
+                if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+                    std::string error_msg = "{\"status\": \"failed\", \"error\": \"Process exited with code " + std::to_string(WEXITSTATUS(status)) + "\"}\n";
+                    send(client_fd, error_msg.c_str(), error_msg.length(), MSG_NOSIGNAL);
+                } else {
+                    // Send back checkpoint file
+                    std::ifstream chk_in(chk_file);
+                    if (chk_in.good()) {
+                        std::stringstream buffer;
+                        buffer << chk_in.rdbuf();
+                        std::string payload = "\n__BEGIN_CHECKPOINT__\n" + buffer.str() + "\n__END_CHECKPOINT__\n";
+                        send(client_fd, payload.c_str(), payload.length(), MSG_NOSIGNAL);
+                    }
                 }
             }
             
@@ -417,6 +423,13 @@ void handle_client(int client_fd) {
 }
 
 int main(int argc, char* argv[]) {
+    // Try to change directory to where the allowed_suffixes files might be
+    if (access("/usr/share/hailstone/allowed_suffixes_24.bin", F_OK) == 0) {
+        chdir("/usr/share/hailstone");
+    } else if (access("/usr/bin/allowed_suffixes_24.bin", F_OK) == 0) {
+        chdir("/usr/bin");
+    }
+
     int port = 0;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--port") {
