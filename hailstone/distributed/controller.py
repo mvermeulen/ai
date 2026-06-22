@@ -115,6 +115,13 @@ def benchmark_worker_thread(worker_addr, task_start_time, task_start_num, global
                 log(f"Worker {worker_addr} has no GPU backend available. Falling back to CPU for benchmarking.")
                 candidates.append((apply_omit("cpu"), 20))
                 candidates.append((apply_omit("cpu"), 24))
+        elif global_backend == "best_cpu":
+            if apply_omit("cpu") in backends or "cpu" in backends:
+                candidates.append((apply_omit("cpu"), 20))
+                candidates.append((apply_omit("cpu"), 24))
+            if apply_omit("cpu_domain") in backends or "cpu_domain" in backends:
+                candidates.append((apply_omit("cpu_domain"), 20))
+                candidates.append((apply_omit("cpu_domain"), 24))
         else:
             candidates.append((apply_omit(global_backend), global_cutoff))
             
@@ -160,6 +167,8 @@ def benchmark_worker_thread(worker_addr, task_start_time, task_start_num, global
                     best_cfg = (apply_omit("vulkan"), 20)
                 else:
                     best_cfg = (apply_omit("cpu"), 20)
+            elif global_backend == "best_cpu":
+                best_cfg = (apply_omit("cpu"), 20)
             else:
                 best_cfg = (apply_omit(global_backend), global_cutoff)
             best_throughput = backends.get(best_cfg[0], DEFAULT_THROUGHPUT.get(best_cfg[0], 10.0))
@@ -876,7 +885,7 @@ class ControllerHTTPHandler(BaseHTTPRequestHandler):
                     worker = state.workers.get(w_addr)
                     if worker:
                         w_backend = worker.get("selected_backend", state.task_backend)
-                        t = worker["backends"].get(w_backend, 0.0) if w_backend != "best_gpu" else 0.0
+                        t = worker["backends"].get(w_backend, 0.0) if w_backend not in ["best_gpu", "best_cpu"] else 0.0
                         if "throughput_history" in worker and w_backend in worker["throughput_history"]:
                             hist = worker["throughput_history"][w_backend]
                             if hist:
