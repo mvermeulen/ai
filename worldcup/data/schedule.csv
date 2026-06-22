@@ -39,7 +39,7 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 38,group,H,2026-06-21,ESP,KSA,4,0,-1,-1,final,Miami
 39,group,H,2026-06-21,URU,CPV,2,2,-1,-1,final,Boston
 40,group,F,2026-06-21,JPN,TUN,4,0,-1,-1,final,Miami
-41,group,J,2026-06-22,ARG,AUT,0,0,-1,-1,upcoming,Houston
+41,group,J,2026-06-22,ARG,AUT,2,0,-1,-1,final,Houston
 42,group,J,2026-06-22,ALG,JOR,-1,-1,-1,-1,scheduled,Kansas City
 43,group,I,2026-06-22,FRA,IRQ,0,0,-1,-1,upcoming,Toronto
 44,group,I,2026-06-22,SEN,NOR,-1,-1,-1,-1,scheduled,Seattle
