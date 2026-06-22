@@ -984,6 +984,7 @@ std::string buildDashboardHtml() {
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
               <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('contenders')">Reset to Top 5</button>
               <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('all')">Select All</button>
+              <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('still_alive')">Still Alive</button>
               <button class="btn btn-secondary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="selectQuickGroup('none')">Clear</button>
             </div>
           </div>
@@ -1790,6 +1791,18 @@ std::string buildDashboardHtml() {
         allTeams.forEach(abbr => selectedTeams.add(abbr));
       } else if (groupType === 'none') {
         selectedTeams.clear();
+      } else if (groupType === 'still_alive') {
+        selectedTeams.clear();
+        const allTeams = [...new Set(historyData.map(d => d.team))];
+        allTeams.forEach(abbr => {
+          const teamPoints = historyData.filter(d => d.team === abbr);
+          if (teamPoints.length > 0) {
+            const maxPoint = teamPoints.reduce((max, p) => p.games_played > max.games_played ? p : max, teamPoints[0]);
+            if (maxPoint.probability > 0) {
+              selectedTeams.add(abbr);
+            }
+          }
+        });
       } else if (groupType === 'contenders') {
         selectedTeams.clear();
         const allTeams = [...new Set(historyData.map(d => d.team))];
