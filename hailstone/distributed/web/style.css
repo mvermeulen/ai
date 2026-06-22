@@ -31,7 +31,6 @@ body {
     color: var(--text-primary);
     font-family: var(--font-sans);
     min-height: 100vh;
-    overflow-x: hidden;
     position: relative;
 }
 
@@ -158,6 +157,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 24px;
+    min-width: 0;
 }
 
 /* Premium Card (Glassmorphism) */
