@@ -103,37 +103,41 @@ std::vector<Team*> Tiebreaker::breakGroupTie(std::vector<Team*>& teams,
         return teams;
     }
 
-    // Sort by points, goal difference, goals scored
+    // Sort primarily by points
     std::sort(teams.begin(), teams.end(), [](const Team* a, const Team* b) {
-        if (a->points() != b->points()) return a->points() > b->points();
-        if (a->goalDifference() != b->goalDifference()) return a->goalDifference() > b->goalDifference();
-        if (a->goalsFor() != b->goalsFor()) return a->goalsFor() > b->goalsFor();
-        return false; // Remain tied for now
+        return a->points() > b->points();
     });
 
-    // Check for ties and apply H2H
+    // Check for ties and apply H2H then overall stats
     std::vector<Team*> finalSorted;
     size_t i = 0;
     while (i < teams.size()) {
         size_t j = i + 1;
-        while (j < teams.size() &&
-               teams[i]->points() == teams[j]->points() &&
-               teams[i]->goalDifference() == teams[j]->goalDifference() &&
-               teams[i]->goalsFor() == teams[j]->goalsFor()) {
+        while (j < teams.size() && teams[i]->points() == teams[j]->points()) {
             j++;
         }
 
         std::vector<Team*> tied(teams.begin() + i, teams.begin() + j);
         if (tied.size() > 1) {
-            // Compute head-to-head records
+            // Compute head-to-head records among tied teams
             auto h2h = computeH2H(tied, matches);
             std::sort(tied.begin(), tied.end(), [&h2h](Team* a, Team* b) {
                 const auto& sa = h2h[a];
                 const auto& sb = h2h[b];
+                
+                // 1. Head-to-head points
                 if (sa.points != sb.points) return sa.points > sb.points;
+                // 2. Head-to-head goal difference
                 if (sa.goalDiff != sb.goalDiff) return sa.goalDiff > sb.goalDiff;
+                // 3. Head-to-head goals scored
                 if (sa.goalsFor != sb.goalsFor) return sa.goalsFor > sb.goalsFor;
-                // Fallback: drawing of lots (alphabetical by abbreviation)
+                
+                // 4. Overall goal difference
+                if (a->goalDifference() != b->goalDifference()) return a->goalDifference() > b->goalDifference();
+                // 5. Overall goals scored
+                if (a->goalsFor() != b->goalsFor()) return a->goalsFor() > b->goalsFor();
+                
+                // 6. Fallback: drawing of lots (alphabetical by abbreviation)
                 return a->abbreviation() < b->abbreviation();
             });
         }
