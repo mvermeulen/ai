@@ -2078,6 +2078,10 @@ WebServer::WebServer(Tournament tournament,
       alpha_(alpha),
       hostAdvantage_(hostAdvantage),
       defaultIterations_(defaultIterations) {
+    
+    tournament_.computeStandings();
+    refreshBracketSlotsFromResults();
+
     std::string historyPath = "data/probability_history.csv";
     std::ifstream f(historyPath.c_str());
     if (!f.good()) {
