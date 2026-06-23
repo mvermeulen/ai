@@ -44,7 +44,7 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 43,group,I,2026-06-22,FRA,IRQ,3,0,-1,-1,final,Toronto
 44,group,I,2026-06-22,SEN,NOR,2,3,-1,-1,final,Seattle
 45,group,K,2026-06-23,POR,UZB,5,0,-1,-1,final,San Francisco
-46,group,K,2026-06-23,COL,COD,-1,-1,-1,-1,scheduled,Los Angeles
+46,group,K,2026-06-23,COL,COD,0,0,-1,-1,upcoming,Los Angeles
 47,group,L,2026-06-23,ENG,GHA,0,0,-1,-1,final,Boston
 48,group,L,2026-06-23,CRO,PAN,-1,-1,-1,-1,scheduled,Atlanta
 49,group,B,2026-06-24,CAN,SUI,-1,-1,-1,-1,scheduled,Vancouver
