@@ -2705,15 +2705,35 @@ bool WebServer::applyResultUpdate(const std::string& body, std::string& error) {
         groupStandings[group] = tournament_.teamsByGroup(group);
       }
 
+      MonteCarlo mc;
+      mc.setModelParameters(baseRate_, alpha_, hostAdvantage_);
+      auto results = mc.simulate(tournament_, 10000, 12345);
+
       auto resolveGroupSlot = [&](const std::string& slot) -> std::string {
         if (startsWith(slot, "WINNER_GROUP_")) {
           const std::string group = slot.substr(std::string("WINNER_GROUP_").size());
+          if (groupStandings.find(group) != groupStandings.end()) {
+            for (const auto* team : groupStandings[group]) {
+              auto it = results.group1stProbability.find(team->abbreviation());
+              if (it != results.group1stProbability.end() && it->second >= 0.999999) {
+                return team->abbreviation();
+              }
+            }
+          }
           if (groupFinalized[group] && groupStandings[group].size() >= 1) {
             return groupStandings[group][0]->abbreviation();
           }
         }
         if (startsWith(slot, "RUNNER_UP_GROUP_")) {
           const std::string group = slot.substr(std::string("RUNNER_UP_GROUP_").size());
+          if (groupStandings.find(group) != groupStandings.end()) {
+            for (const auto* team : groupStandings[group]) {
+              auto it = results.group2ndProbability.find(team->abbreviation());
+              if (it != results.group2ndProbability.end() && it->second >= 0.999999) {
+                return team->abbreviation();
+              }
+            }
+          }
           if (groupFinalized[group] && groupStandings[group].size() >= 2) {
             return groupStandings[group][1]->abbreviation();
           }
