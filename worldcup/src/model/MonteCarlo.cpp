@@ -143,22 +143,14 @@ TeamOutcome MonteCarlo::simulateIteration(const Tournament& tournament, std::mt1
     }
 
     // Set R16 matchups (Matches 89 to 96)
-    // Winner 73 vs 74
-    getMatchRef(89).setTeams(r32Winners[0], r32Winners[1]);
-    // Winner 75 vs 76
-    getMatchRef(90).setTeams(r32Winners[2], r32Winners[3]);
-    // Winner 77 vs 78
-    getMatchRef(91).setTeams(r32Winners[4], r32Winners[5]);
-    // Winner 79 vs 80
-    getMatchRef(92).setTeams(r32Winners[6], r32Winners[7]);
-    // Winner 81 vs 82
-    getMatchRef(93).setTeams(r32Winners[8], r32Winners[9]);
-    // Winner 83 vs 84
-    getMatchRef(94).setTeams(r32Winners[10], r32Winners[11]);
-    // Winner 85 vs 86
-    getMatchRef(95).setTeams(r32Winners[12], r32Winners[13]);
-    // Winner 87 vs 88
-    getMatchRef(96).setTeams(r32Winners[14], r32Winners[15]);
+    getMatchRef(89).setTeams(r32Winners[1], r32Winners[4]);  // 74 vs 77
+    getMatchRef(90).setTeams(r32Winners[0], r32Winners[2]);  // 73 vs 75
+    getMatchRef(91).setTeams(r32Winners[3], r32Winners[5]);  // 76 vs 78
+    getMatchRef(92).setTeams(r32Winners[6], r32Winners[7]);  // 79 vs 80
+    getMatchRef(93).setTeams(r32Winners[10], r32Winners[11]); // 83 vs 84
+    getMatchRef(94).setTeams(r32Winners[8], r32Winners[9]);  // 81 vs 82
+    getMatchRef(95).setTeams(r32Winners[13], r32Winners[15]); // 86 vs 88
+    getMatchRef(96).setTeams(r32Winners[12], r32Winners[14]); // 85 vs 87
 
     // --- Round of 16 (Matches 89 to 96) ---
     std::vector<std::string> r16Winners(8);
@@ -171,14 +163,10 @@ TeamOutcome MonteCarlo::simulateIteration(const Tournament& tournament, std::mt1
     }
 
     // Set Quarterfinal matchups (Matches 97 to 100)
-    // Winner 89 vs 90
-    getMatchRef(97).setTeams(r16Winners[0], r16Winners[1]);
-    // Winner 91 vs 92
-    getMatchRef(98).setTeams(r16Winners[2], r16Winners[3]);
-    // Winner 93 vs 94
-    getMatchRef(99).setTeams(r16Winners[4], r16Winners[5]);
-    // Winner 95 vs 96
-    getMatchRef(100).setTeams(r16Winners[6], r16Winners[7]);
+    getMatchRef(97).setTeams(r16Winners[0], r16Winners[1]); // 89 vs 90
+    getMatchRef(98).setTeams(r16Winners[4], r16Winners[5]); // 93 vs 94
+    getMatchRef(99).setTeams(r16Winners[2], r16Winners[3]); // 91 vs 92
+    getMatchRef(100).setTeams(r16Winners[6], r16Winners[7]); // 95 vs 96
 
     // --- Quarterfinals (Matches 97 to 100) ---
     std::vector<std::string> qfWinners(4);
