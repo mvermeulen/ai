@@ -32,6 +32,14 @@ cmake ..
 make -j$(nproc)
 ```
 
+## Email Notifications
+BillMinder includes an automated background engine that sends a weekly email summary of bills due within the next 14 days. 
+To enable this feature:
+1. Rename `.env.example` to `.env`.
+2. Fill in your `SMTP_USER` (e.g., your secondary Gmail account).
+3. Fill in your `SMTP_PASS` (a 16-character App Password generated in your Google Account settings).
+4. Run `./start.sh`. The service will automatically detect the configuration and boot the notification engine.
+
 ## Security Model
 - **Local-First**: Operational data stays on the local machine.
 - **Data Privacy**: No passwords, tokens, or personal identifiers are stored in the repo.
