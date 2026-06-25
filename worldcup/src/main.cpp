@@ -22,6 +22,7 @@ void printUsage() {
               << "  ./wc impact [iterations]\n"
               << "  ./wc backfit-model\n"
               << "  ./wc fetch-live\n"
+              << "  ./wc bracket [--unplayed]\n"
               << "  ./wc web [port]\n";
 }
 
@@ -107,6 +108,13 @@ int main(int argc, char* argv[]) {
             std::cout << "Running match importance analysis (" << iterations << " iterations)..." << std::endl;
             auto analysis = mc.analyzeImpact(tournament, iterations, 12345);
             AsciiPrinter::printImpactAnalysis(analysis);
+        } else if (command == "bracket") {
+            bool unplayedOnly = false;
+            if (argc > 2 && std::string(argv[2]) == "--unplayed") {
+                unplayedOnly = true;
+            }
+            tournament.computeStandings();
+            AsciiPrinter::printBracket(tournament, unplayedOnly, &mc);
         } else if (command == "web") {
             int port = 8080;
             if (argc > 2) {

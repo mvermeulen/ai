@@ -7,6 +7,7 @@
 class AsciiPrinter {
 public:
     static void printAllStandings(const Tournament& tournament, const MatchSimulationResults* simResults = nullptr);
+    static void printBracket(const Tournament& tournament, bool unplayedOnly = false, const MonteCarlo* mc = nullptr);
     static void printSimulationResults(const MatchSimulationResults& results);
     static void printImpactAnalysis(const ImpactAnalysisResults& analysis);
 };
