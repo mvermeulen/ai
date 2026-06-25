@@ -1,0 +1,8 @@
+CompileFlags:
+  Add: 
+    - "-I/home/mev/source/ai/billminder/third_party"
+    - "-I/home/mev/source/ai/billminder/third_party/sqlite3"
+    - "-I/home/mev/source/ai/billminder/core/include"
+    - "-I/home/mev/source/ai/billminder/build/_deps/googletest-src/googletest/include"
+    - "-I/home/mev/source/ai/billminder/build/_deps/googletest-src/googlemock/include"
+    - "-std=c++20"

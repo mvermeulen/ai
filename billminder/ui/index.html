@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BillMinder Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>BillMinder</h1>
+            <p>Your Personal Obligations & Projections</p>
+        </div>
+    </header>
+    <main class="container">
+        <section class="card" id="bill-entry">
+            <h2>Add New Bill</h2>
+            <form id="add-bill-form">
+                <div class="form-group">
+                    <label for="name">Bill Name</label>
+                    <input type="text" id="name" placeholder="e.g. Internet" required>
+                </div>
+                <div class="form-group">
+                    <label for="amount">Expected Amount</label>
+                    <input type="number" id="amount" placeholder="0.00" required step="0.01">
+                </div>
+                <div class="form-group">
+                    <label for="due_date">Due Date</label>
+                    <input type="date" id="due_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="recurrence">Recurrence</label>
+                    <select id="recurrence">
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                        <option value="none">One-time</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn primary">Save Bill</button>
+            </form>
+        </section>
+
+        <section class="card" id="bill-list">
+            <h2>Active Bills</h2>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Amount</th>
+                        <th>Due Date</th>
+                        <th>Recurrence</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="bills-tbody">
+                    <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+    <script src="js/app.js"></script>
+</body>
+</html>

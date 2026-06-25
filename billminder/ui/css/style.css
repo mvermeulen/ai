@@ -1,0 +1,153 @@
+:root {
+    --primary: #4F46E5;
+    --primary-hover: #4338CA;
+    --bg: #F9FAFB;
+    --card-bg: #FFFFFF;
+    --text: #111827;
+    --text-light: #6B7280;
+    --border: #E5E7EB;
+    --danger: #EF4444;
+    --success: #10B981;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+header {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 1.5rem 0;
+    margin-bottom: 2rem;
+}
+
+header h1 {
+    font-weight: 600;
+    color: var(--primary);
+    letter-spacing: -0.02em;
+}
+
+header p {
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+.card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    margin-bottom: 2rem;
+}
+
+h2 {
+    font-size: 1.25rem;
+    margin-bottom: 1.5rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    align-items: end;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+label {
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+input, select {
+    padding: 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    transition: border-color 0.2s;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+    font-family: inherit;
+}
+
+.btn.primary {
+    background-color: var(--primary);
+    color: white;
+}
+
+.btn.primary:hover {
+    background-color: var(--primary-hover);
+}
+
+.btn.small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th, .data-table td {
+    padding: 1rem 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+    font-weight: 600;
+    color: var(--text-light);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-upcoming { background: #DBEAFE; color: #1E40AF; }
+.status-paid { background: #D1FAE5; color: #065F46; }
+.status-overdue { background: #FEE2E2; color: #991B1B; }

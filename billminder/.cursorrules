@@ -1,0 +1,24 @@
+# BillMinder AI Development Guidelines
+
+You are assisting with the BillMinder project. Please adhere strictly to these rules:
+
+## 1. Architectural Boundaries
+- **Core Service**: Written in C++20. Handles SQLite persistence, scheduling logic, and HTTP API serving (via `cpp-httplib`).
+- **CLI**: Written in C++. Interacts with the Core Service via REST API, NOT by touching SQLite directly.
+- **Web UI**: Vanilla JS, HTML, CSS only. No heavy frontend frameworks (React, Vue, etc.).
+- **Shared API**: The CLI and Web UI MUST go through the REST API. The SQLite database is private to the Core Service.
+
+## 2. Security and Data Privacy
+- **NEVER** write or commit real credentials, personal financial data, or production `.env` files to the repository.
+- The `data/` directory is strictly for local database storage and MUST remain in `.gitignore`.
+- Treat all financial fields and amounts as sensitive. Do not expose them in verbose system logs unless masked or generalized.
+
+## 3. Technology Stack & Dependencies
+- Prefer lightweight, header-only C++ libraries (e.g., `cpp-httplib`, `nlohmann/json`) to minimize build complexity.
+- Build system is CMake. Keep `CMakeLists.txt` clean and modern.
+- Use SQLite C API for database interaction.
+
+## 4. Coding Practices
+- Follow modern C++ practices (C++20).
+- Write unit tests for all date/projection logic and integration tests for API endpoints.
+- Provide clear Doxygen-style inline comments for complex domain logic.

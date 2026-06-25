@@ -2,9 +2,9 @@
 
 ## Status
 
-Draft 0.1
+Baseline 1.0 (Requirements & High-Level Architecture finalized)
 
-This document is intentionally requirements-first. It captures the problem, constraints, success criteria, and architectural direction at a high level. Detailed design, schema, protocols, and implementation plans should wait until the open questions at the end are answered.
+This document captures the problem, constraints, success criteria, and architectural direction at a high level. It serves as the baseline for detailed design, schema, protocols, and implementation plans.
 
 ## Current Working Assumptions
 
@@ -17,7 +17,7 @@ The following assumptions reflect the first round of stakeholder answers and sho
 5. Initial deployment should be local-only rather than remotely exposed.
 6. MCP should eventually support carefully scoped write actions, not only read-only queries.
 7. Email reminders are the first notification channel worth designing for.
-8. The likely implementation direction is containerized services with SQLite storage on a home server and enough logging to troubleshoot operations safely.
+8. The likely implementation direction is a single Docker Compose deployment with a C++ core service, SQLite storage, and a Vanilla JS/HTML/CSS local web UI.
 
 ## Problem Statement
 
@@ -68,7 +68,8 @@ The initial target is a single primary user managing personal or household bills
    - payee
    - status such as upcoming, paid, overdue, skipped, uncertain
    - optional notes
-5. The system must allow projecting future bills that have not yet been issued but are expected based on prior patterns or user-defined recurrence rules.
+   *(Note: Schema changes and additional fields will be added incrementally via data migrations as needed.)*
+5. The system must allow projecting future bills that have not yet been issued. Projected amounts do not need to stay fixed per recurrence; when a bill is paid, the system records the actual amount, and historical actual amounts can be used to improve future expectations.
 6. The system must provide views of:
    - bills due soon
    - overdue bills
@@ -127,10 +128,10 @@ This is not yet a final design. It is a working direction to validate against th
 
 ### Core Components
 
-1. A local or home-server data service that owns the source-of-truth bill store, likely backed by SQLite.
+1. A core service (implemented primarily in C++) that owns the source-of-truth bill store, likely backed by SQLite. Python layers may be utilized where advantageous (e.g., integrations, rapid prototyping).
 2. A scheduler or projection service that computes upcoming obligations and reminders.
 3. An MCP server layer that exposes safe query and action tools to authorized clients.
-4. Two first-class user clients: a CLI and a local web UI.
+4. Two first-class user clients: a CLI (C++) and a local-admin web UI (Vanilla JS/HTML/CSS). Both clients will communicate with the core service via a shared API (e.g., REST/HTTP) to support a distributed architecture.
 5. A notification adapter layer, with email as the first concrete channel.
 
 ### Responsibility Boundaries
@@ -150,11 +151,11 @@ This is not yet a final design. It is a working direction to validate against th
 
 ### Deployment Direction
 
-1. Start with a single trusted deployment on one home server or personal machine.
-2. Package the system so it can run cleanly in containers.
+1. Start with a single compose-style deployment (e.g., Docker Compose) on one home server or personal machine.
+2. Package the core service, database mount, and web UI to run cleanly in containers.
 3. Keep the first deployment local-only.
 4. Add any remote client path only after the trust, authentication, and backup models are clear.
-5. If remote access is later introduced, prefer secure tunnels, VPN, or mutually authenticated private network access over public exposure.
+5. If remote access is later introduced via a portal, ensure appropriate security boundaries are implemented.
 
 ## Data Sensitivity Model
 
@@ -200,9 +201,9 @@ Recommended high-level handling:
 
 ### Phase 3: MCP Integration
 
-1. Expose read-focused MCP tools first if that simplifies rollout.
-2. Add carefully scoped mutation tools, including payment-status updates, only with trust checks and audit behavior.
-3. Evaluate whether MCP is best used for user assistance, automation, or both.
+1. Step 1: Support entering bills and querying what is due next.
+2. Step 2: Expand additional ways to have bills entered.
+3. Step 3: Support marking bills as paid and add extended reporting capabilities.
 
 ### Phase 4: Distributed Operation
 
@@ -218,26 +219,32 @@ Recommended high-level handling:
 5. Exposing remote access without a simple, testable trust model.
 6. Allowing verbose logs or reports to become a secondary data leak path.
 
-## Decisions To Make Before Detailed Design
+## Engineering Practices
 
-1. What exact bill fields are allowed beyond minimal metadata, and which are explicitly forbidden?
-2. Should projections be deterministic recurrence-based only, or include estimated variable amounts?
-3. What private storage location and backup approach should be standard?
-4. Which MCP write actions are acceptable in the first release beyond marking a bill as paid?
-5. How should email delivery credentials be stored, rotated, and tested safely?
+To ensure a robust, maintainable, and secure codebase, the following practices must be integrated into the development lifecycle:
 
-## Follow-Up Questions
+1. **Adequate Testing:**
+   - Implement unit tests for core domain logic (e.g., date calculations, recurrence rules, amount projections).
+   - Implement integration tests for API endpoints and database operations.
+   - Use automated test runners via CI/CD pipelines (e.g., GitHub Actions) to enforce test execution before merging.
 
-1. Which additional stored fields are acceptable beyond bill name, recurrence, amount, due date, and paid status? For example: payment method nickname, autopay flag, statement close date, grace period, provider contact info.
-2. Should projected amounts stay fixed per recurrence, or should the design allow estimated ranges for bills that vary month to month?
-3. Do you want the local web UI to be strictly local-admin, or should the design anticipate a read-only dashboard mode later?
-4. Is email reminder delivery expected to use an external SMTP provider, a local mail relay, or is that still open?
-5. For containerization, do you want a single compose-style deployment first, or should the architecture target a more distributed multi-host setup from the beginning?
+2. **Documentation:**
+   - Maintain clear API documentation for the shared REST/HTTP boundary.
+   - Document setup, build, and local deployment instructions clearly in the repository.
+   - Use inline comments and structured docstrings (e.g., Doxygen for C++) to explain complex scheduling or financial logic.
 
-## Next Step
+3. **Security-Level Auditing:**
+   - Implement automated secret scanning (e.g., `git-secrets`, TruffleHog, or GitHub Advanced Security) as pre-commit hooks and CI checks to prevent accidental commits of private data.
+   - Regularly audit `.gitignore`, environment variable loading, and deployment configurations to ensure the "private-data directory" boundary is strictly enforced.
+   - Conduct periodic code reviews specifically focused on data handling and logging to prevent accidental exposure of sensitive metadata.
 
-After the clarifying questions are answered, this document should be revised into:
+4. **AI Tool Maintainability:**
+   - Maintain explicit system instructions or rule files (e.g., `.cursorrules`, `AI.md`) in the repository for AI assistants (like Claude, Copilot, or Cline) to follow.
+   - Ensure these AI instructions enforce our architectural boundaries, secure data handling practices, and tech stack choices.
+   - Continuously update these instructions as new patterns are established to ensure any AI agent can safely maintain and extend the tool.
 
-1. A confirmed high-level requirements document.
-2. A threat model and privacy model.
-3. A more concrete architecture decision record for the first implementation slice.
+## Next Steps
+
+1. Create a detailed technical design outlining the API contract, database schema, and C++ service structure.
+2. Establish a threat model and privacy model for data storage.
+3. Begin Phase 1 (Local-First MVP) development using the agreed upon tech stack.

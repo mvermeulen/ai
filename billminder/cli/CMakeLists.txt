@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.24)
+find_package(Threads REQUIRED)
+add_executable(billminder_cli src/main.cpp)
+target_include_directories(billminder_cli PRIVATE ../third_party)
+target_link_libraries(billminder_cli PRIVATE Threads::Threads)

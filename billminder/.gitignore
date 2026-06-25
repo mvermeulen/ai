@@ -1,0 +1,36 @@
+# Build artifacts
+build/
+bin/
+lib/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+compile_commands.json
+
+# Dependencies
+third_party/
+
+# Data & Secrets (CRITICAL BOUNDARY)
+data/
+*.sqlite
+*.sqlite3
+*.db
+.env
+*.pem
+*.key
+*.cert
+credentials.json
+secrets.yaml
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
