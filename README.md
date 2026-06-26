@@ -40,10 +40,22 @@ Each subfolder contains its own self-contained codebase and comprehensive docume
 
 ---
 
+### 4. BillMinder (`billminder/`)
+* **Description**: A personal system for tracking upcoming and projected bills, ensuring obligations are paid on time, and providing forward visibility into expected cash flow.
+* **Features**:
+  - C++20 Core Service handling SQLite persistence, scheduling logic, and HTTP API serving.
+  - C++ CLI tool for interacting with the Core Service via REST API.
+  - Vanilla JS, HTML, CSS Web Dashboard.
+  - Automated weekly email notifications for upcoming bills.
+* **Documentation**: See [billminder/README.md](file:///home/mev/source/ai/billminder/README.md) for quick start instructions, architecture, and configuration.
+
+---
+
 ## Directory Structure
 
 ```text
 ai/
+├── billminder/    # Personal bill tracking, scheduling, and cash flow visibility system
 ├── hailstone/     # High-performance Collatz peak search program
 ├── translate/     # TranslateGemma local LLM translation wrappers & UI
 └── worldcup/      # FIFA World Cup 2026 tracker, simulator & web server
