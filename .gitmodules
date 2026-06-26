@@ -1,0 +1,3 @@
+[submodule "ollama-model-lab"]
+	path = ollama-model-lab
+	url = https://github.com/mvermeulen/ollama-model-lab.git
