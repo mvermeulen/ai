@@ -1,3 +1,6 @@
 [submodule "ollama-model-lab"]
 	path = ollama-model-lab
 	url = https://github.com/mvermeulen/ollama-model-lab.git
+[submodule "local-deep-research"]
+	path = local-deep-research
+	url = https://github.com/mvermeulen/local-deep-research.git
