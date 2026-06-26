@@ -1,6 +1,8 @@
 [submodule "ollama-model-lab"]
 	path = ollama-model-lab
 	url = https://github.com/mvermeulen/ollama-model-lab.git
+	branch = mev-custom
 [submodule "local-deep-research"]
 	path = local-deep-research
 	url = https://github.com/mvermeulen/local-deep-research.git
+	branch = mev-custom
