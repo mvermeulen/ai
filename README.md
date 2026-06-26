@@ -51,12 +51,28 @@ Each subfolder contains its own self-contained codebase and comprehensive docume
 
 ---
 
+### 5. Local Deep Research (`local-deep-research/`)
+* **Description**: Upstream project with local customizations.
+* **Type**: Git Submodule tracking `mev-custom` branch.
+* **Documentation**: See [local-deep-research/README.md](file:///home/mev/source/ai/local-deep-research/README.md).
+
+---
+
+### 6. Ollama Model Lab (`ollama-model-lab/`)
+* **Description**: Upstream project with local customizations.
+* **Type**: Git Submodule tracking `mev-custom` branch.
+* **Documentation**: See [ollama-model-lab/README.md](file:///home/mev/source/ai/ollama-model-lab/README.md).
+
+---
+
 ## Directory Structure
 
 ```text
 ai/
-├── billminder/    # Personal bill tracking, scheduling, and cash flow visibility system
-├── hailstone/     # High-performance Collatz peak search program
-├── translate/     # TranslateGemma local LLM translation wrappers & UI
-└── worldcup/      # FIFA World Cup 2026 tracker, simulator & web server
+├── billminder/            # Personal bill tracking, scheduling, and cash flow visibility system
+├── hailstone/             # High-performance Collatz peak search program
+├── local-deep-research/   # Upstream project with local customizations (submodule)
+├── ollama-model-lab/      # Upstream project with local customizations (submodule)
+├── translate/             # TranslateGemma local LLM translation wrappers & UI
+└── worldcup/              # FIFA World Cup 2026 tracker, simulator & web server
 ```
