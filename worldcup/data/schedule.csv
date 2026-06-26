@@ -61,8 +61,8 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 60,group,D,2026-06-25,PAR,AUS,0,0,-1,-1,final,San Francisco
 61,group,H,2026-06-26,ESP,URU,-1,-1,-1,-1,scheduled,Miami
 62,group,H,2026-06-26,KSA,CPV,-1,-1,-1,-1,scheduled,Boston
-63,group,I,2026-06-26,FRA,NOR,-1,-1,-1,-1,scheduled,Toronto
-64,group,I,2026-06-26,SEN,IRQ,-1,-1,-1,-1,scheduled,Seattle
+63,group,I,2026-06-26,FRA,NOR,4,1,-1,-1,final,Toronto
+64,group,I,2026-06-26,SEN,IRQ,5,0,-1,-1,final,Seattle
 65,group,G,2026-06-26,BEL,NZL,-1,-1,-1,-1,scheduled,New York/New Jersey
 66,group,G,2026-06-26,IRN,EGY,-1,-1,-1,-1,scheduled,Philadelphia
 67,group,K,2026-06-27,POR,COL,-1,-1,-1,-1,scheduled,San Francisco
@@ -75,8 +75,8 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 74,knockout_r32,N/A,2026-06-29,GER,THIRD_GROUP_A_B_C_D_F,-1,-1,-1,-1,scheduled,Boston
 75,knockout_r32,N/A,2026-06-29,NED,MAR,-1,-1,-1,-1,scheduled,Monterrey
 76,knockout_r32,N/A,2026-06-29,BRA,JPN,-1,-1,-1,-1,scheduled,Houston
-77,knockout_r32,N/A,2026-06-30,WINNER_GROUP_I,THIRD_GROUP_C_D_F_G_H,-1,-1,-1,-1,scheduled,New York/New Jersey
-78,knockout_r32,N/A,2026-06-30,CIV,RUNNER_UP_GROUP_I,-1,-1,-1,-1,scheduled,Dallas
+77,knockout_r32,N/A,2026-06-30,FRA,THIRD_GROUP_C_D_F_G_H,-1,-1,-1,-1,scheduled,New York/New Jersey
+78,knockout_r32,N/A,2026-06-30,CIV,NOR,-1,-1,-1,-1,scheduled,Dallas
 79,knockout_r32,N/A,2026-06-30,MEX,THIRD_GROUP_C_E_F_H_I,-1,-1,-1,-1,scheduled,Mexico City
 80,knockout_r32,N/A,2026-07-01,WINNER_GROUP_L,THIRD_GROUP_E_H_I_J_K,-1,-1,-1,-1,scheduled,Atlanta
 81,knockout_r32,N/A,2026-07-01,USA,THIRD_GROUP_B_E_F_I_J,-1,-1,-1,-1,scheduled,San Francisco
