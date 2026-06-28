@@ -212,11 +212,20 @@ void AsciiPrinter::printBracket(const Tournament& tournament, bool unplayedOnly,
 
     for (int L = 0; L < 63; ++L) {
         bool emptyLine = true;
+        bool onlySpacesAndPipes = true;
         std::string lineOutput;
         for (int c = 0; c < 6; ++c) {
             if (grid[L][c] != "            ") emptyLine = false;
+            if (grid[L][c] != "            " && grid[L][c] != "          │ ") {
+                onlySpacesAndPipes = false;
+            }
             lineOutput += grid[L][c];
         }
+
+        if (unplayedOnly && onlySpacesAndPipes) {
+            continue;
+        }
+
         if (!emptyLine) {
             std::cout << lineOutput << "\n";
         } else {
