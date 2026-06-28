@@ -67,25 +67,25 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 66,group,G,2026-06-26,IRN,EGY,1,1,-1,-1,final,Philadelphia
 67,group,K,2026-06-27,POR,COL,-1,-1,-1,-1,scheduled,San Francisco
 68,group,K,2026-06-27,UZB,COD,-1,-1,-1,-1,scheduled,Los Angeles
-69,group,L,2026-06-27,ENG,PAN,-1,-1,-1,-1,scheduled,Boston
-70,group,L,2026-06-27,CRO,GHA,0,0,-1,-1,upcoming,Atlanta
+69,group,L,2026-06-27,ENG,PAN,2,0,-1,-1,final,Boston
+70,group,L,2026-06-27,CRO,GHA,2,1,-1,-1,final,Atlanta
 71,group,J,2026-06-27,ARG,JOR,-1,-1,-1,-1,scheduled,Houston
 72,group,J,2026-06-27,AUT,ALG,-1,-1,-1,-1,scheduled,Kansas City
 73,knockout_r32,N/A,2026-06-28,RSA,CAN,-1,-1,-1,-1,scheduled,Los Angeles
-74,knockout_r32,N/A,2026-06-29,GER,THIRD_GROUP_A_B_C_D_F,-1,-1,-1,-1,scheduled,Boston
+74,knockout_r32,N/A,2026-06-29,GER,SWE,-1,-1,-1,-1,scheduled,Boston
 75,knockout_r32,N/A,2026-06-29,NED,MAR,-1,-1,-1,-1,scheduled,Monterrey
 76,knockout_r32,N/A,2026-06-29,BRA,JPN,-1,-1,-1,-1,scheduled,Houston
-77,knockout_r32,N/A,2026-06-30,FRA,THIRD_GROUP_C_D_F_G_H,-1,-1,-1,-1,scheduled,New York/New Jersey
+77,knockout_r32,N/A,2026-06-30,FRA,PAR,-1,-1,-1,-1,scheduled,New York/New Jersey
 78,knockout_r32,N/A,2026-06-30,CIV,NOR,-1,-1,-1,-1,scheduled,Dallas
-79,knockout_r32,N/A,2026-06-30,MEX,THIRD_GROUP_C_E_F_H_I,-1,-1,-1,-1,scheduled,Mexico City
-80,knockout_r32,N/A,2026-07-01,WINNER_GROUP_L,THIRD_GROUP_E_H_I_J_K,-1,-1,-1,-1,scheduled,Atlanta
-81,knockout_r32,N/A,2026-07-01,USA,THIRD_GROUP_B_E_F_I_J,-1,-1,-1,-1,scheduled,San Francisco
+79,knockout_r32,N/A,2026-06-30,MEX,ECU,-1,-1,-1,-1,scheduled,Mexico City
+80,knockout_r32,N/A,2026-07-01,ENG,THIRD_GROUP_E_H_I_J_K,-1,-1,-1,-1,scheduled,Atlanta
+81,knockout_r32,N/A,2026-07-01,USA,BIH,-1,-1,-1,-1,scheduled,San Francisco
 82,knockout_r32,N/A,2026-07-01,BEL,THIRD_GROUP_A_E_H_I_J,-1,-1,-1,-1,scheduled,Seattle
-83,knockout_r32,N/A,2026-07-02,RUNNER_UP_GROUP_K,RUNNER_UP_GROUP_L,-1,-1,-1,-1,scheduled,Toronto
+83,knockout_r32,N/A,2026-07-02,RUNNER_UP_GROUP_K,CRO,-1,-1,-1,-1,scheduled,Toronto
 84,knockout_r32,N/A,2026-07-02,ESP,RUNNER_UP_GROUP_J,-1,-1,-1,-1,scheduled,Los Angeles
 85,knockout_r32,N/A,2026-07-02,SUI,THIRD_GROUP_E_F_G_I_J,-1,-1,-1,-1,scheduled,Vancouver
 86,knockout_r32,N/A,2026-07-03,ARG,CPV,-1,-1,-1,-1,scheduled,Miami
-87,knockout_r32,N/A,2026-07-03,WINNER_GROUP_K,THIRD_GROUP_D_E_I_J_L,-1,-1,-1,-1,scheduled,Kansas City
+87,knockout_r32,N/A,2026-07-03,WINNER_GROUP_K,GHA,-1,-1,-1,-1,scheduled,Kansas City
 88,knockout_r32,N/A,2026-07-03,AUS,EGY,-1,-1,-1,-1,scheduled,Dallas
 89,knockout_r16,N/A,2026-07-04,R32_WINNER_74,R32_WINNER_77,-1,-1,-1,-1,scheduled,Philadelphia
 90,knockout_r16,N/A,2026-07-04,R32_WINNER_73,R32_WINNER_75,-1,-1,-1,-1,scheduled,Houston
