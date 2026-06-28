@@ -7,6 +7,7 @@
 #include "model/MonteCarlo.h"
 #include "output/AsciiPrinter.h"
 #include "output/WebServer.h"
+#include "model/Tiebreaker.h"
 
 namespace {
 
@@ -114,6 +115,7 @@ int main(int argc, char* argv[]) {
                 unplayedOnly = true;
             }
             tournament.computeStandings();
+            Tiebreaker::allocateRoundOf32Matchups(tournament);
             AsciiPrinter::printBracket(tournament, unplayedOnly, &mc);
         } else if (command == "web") {
             int port = 8080;

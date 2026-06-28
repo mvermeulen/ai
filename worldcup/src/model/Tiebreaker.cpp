@@ -53,7 +53,7 @@ std::map<Team*, H2HStats> computeH2H(const std::vector<Team*>& tiedTeams, const 
 }
 
 // Allowed third-place group sets for the 8 group winners in Round of 32
-const std::vector<std::string> winners = {"E", "I", "A", "L", "G", "D", "B", "K"};
+const std::vector<std::string> winners = {"A", "L", "G", "D", "E", "I", "B", "K"};
 const std::map<std::string, std::set<std::string>> allowedGroups = {
     {"E", {"A", "B", "C", "D", "F"}},
     {"I", {"C", "D", "F", "G", "H"}},
@@ -78,7 +78,11 @@ bool backtrackMatchups(size_t winnerIdx,
 
     for (size_t j = 0; j < bestThirdPlaces.size(); ++j) {
         if (!used[j]) {
-            const std::string& thirdGroup = bestThirdPlaces[j]->group();
+            const std::string& thirdGroupFull = bestThirdPlaces[j]->group();
+            std::string thirdGroup = thirdGroupFull;
+            if (thirdGroupFull.find("Group ") == 0) {
+                thirdGroup = thirdGroupFull.substr(6);
+            }
             // Group winners cannot play a third place team from their own group
             if (thirdGroup != winGroup && allowed.count(thirdGroup)) {
                 used[j] = true;
@@ -181,6 +185,12 @@ void Tiebreaker::allocateRoundOf32Matchups(Tournament& tournament) {
     // 3. Rank third-place teams and select the top 8
     std::vector<Team*> rankedThirds = rankThirdPlaces(thirdPlaces);
     std::vector<Team*> bestThirds(rankedThirds.begin(), rankedThirds.begin() + 8);
+
+    // Sort the 8 advancing third-place teams alphabetically by group
+    // to ensure deterministic assignments based on group origin.
+    std::sort(bestThirds.begin(), bestThirds.end(), [](const Team* a, const Team* b) {
+        return a->group() < b->group();
+    });
 
     // 4. Run backtracking to pair the 8 best third-place teams to the 8 group winners
     std::vector<bool> used(bestThirds.size(), false);

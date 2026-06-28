@@ -229,34 +229,107 @@ void AsciiPrinter::printBracket(const Tournament& tournament, bool unplayedOnly,
 }
 
 void AsciiPrinter::printSimulationResults(const MatchSimulationResults& results) {
-    std::vector<std::pair<std::string, double>> sortedTeams;
-    for (const auto& [abbr, prob] : results.championProbability) {
-        sortedTeams.push_back({abbr, prob});
+    struct StageInfo {
+        std::string header;
+        const std::map<std::string, double>* probs;
+    };
+    std::vector<StageInfo> stages = {
+        {"Adv R32 ", &results.r32Probability},
+        {"ReachR16", &results.r16Probability},
+        {"ReachQF ", &results.qfProbability},
+        {"ReachSF ", &results.sfProbability},
+        {"ReachF  ", &results.finalProbability},
+        {"Champ   ", &results.championProbability}
+    };
+
+    auto isStageDone = [](const std::map<std::string, double>& probs) {
+        for (const auto& [abbr, p] : probs) {
+            if (p > 1e-6 && p < 1.0 - 1e-6) return false;
+        }
+        return true;
+    };
+
+    std::vector<bool> stageDone(stages.size());
+    int lastDoneStageIdx = -1;
+    for (size_t i = 0; i < stages.size(); ++i) {
+        stageDone[i] = isStageDone(*stages[i].probs);
+        if (stageDone[i]) {
+            lastDoneStageIdx = static_cast<int>(i);
+        } else {
+            break;
+        }
     }
 
-    // Sort by Champion odds, then R32 odds
-    std::sort(sortedTeams.begin(), sortedTeams.end(), [&](const auto& a, const auto& b) {
+    std::vector<StageInfo> colsToShow;
+    for (size_t i = 0; i < stages.size(); ++i) {
+        if (!stageDone[i]) {
+            colsToShow.push_back(stages[i]);
+        }
+    }
+    if (colsToShow.empty()) {
+        colsToShow.push_back(stages.back()); // Always show Champ if all done
+    }
+
+    std::vector<std::pair<std::string, double>> activeTeams;
+    for (const auto& [abbr, prob] : results.championProbability) {
+        bool alive = false;
+        if (lastDoneStageIdx == -1) {
+            alive = results.r32Probability.at(abbr) > 1e-6;
+        } else {
+            alive = (*stages[lastDoneStageIdx].probs).at(abbr) >= 1.0 - 1e-6;
+        }
+        if (alive) {
+            activeTeams.push_back({abbr, prob});
+        }
+    }
+
+    // Sort by Champion odds, then the next unresolved stage odds
+    std::sort(activeTeams.begin(), activeTeams.end(), [&](const auto& a, const auto& b) {
         if (a.second != b.second) return a.second > b.second;
-        return results.r32Probability.at(a.first) > results.r32Probability.at(b.first);
+        const auto& nextProbs = *colsToShow.front().probs;
+        return nextProbs.at(a.first) > nextProbs.at(b.first);
     });
 
-    std::cout << "┌──────────────────────────────────────────────────────────────────────────┐\n";
-    std::cout << "│ TOURNAMENT FORECAST PROBABILITIES                                        │\n";
-    std::cout << "├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬────────┤\n";
-    std::cout << "│ Team     │ Adv R32  │ ReachR16 │ ReachQF  │ ReachSF  │ ReachF   │ Champ  │\n";
-    std::cout << "├──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼────────┤\n";
+    std::string topBorder = "┌──────────";
+    std::string midBorder = "├──────────";
+    std::string botBorder = "└──────────";
+    std::string headerStr = "│ Team     ";
 
-    for (const auto& [abbr, champProb] : sortedTeams) {
-        std::cout << "│ " << std::left << std::setw(8) << abbr
-                  << " │ " << std::right << std::setprecision(1) << std::fixed
-                  << std::setw(7) << results.r32Probability.at(abbr) * 100.0 << "%"
-                  << " │ " << std::setw(7) << results.r16Probability.at(abbr) * 100.0 << "%"
-                  << " │ " << std::setw(7) << results.qfProbability.at(abbr) * 100.0 << "%"
-                  << " │ " << std::setw(7) << results.sfProbability.at(abbr) * 100.0 << "%"
-                  << " │ " << std::setw(7) << results.finalProbability.at(abbr) * 100.0 << "%"
-                  << " │ " << std::setw(5) << champProb * 100.0 << "% │\n";
+    for (size_t i = 0; i < colsToShow.size(); ++i) {
+        topBorder += "┬──────────";
+        midBorder += "┼──────────";
+        botBorder += "┴──────────";
+        std::string h = colsToShow[i].header;
+        while (h.length() < 8) h += " ";
+        headerStr += "│ " + h.substr(0, 8) + " ";
     }
-    std::cout << "└──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴────────┘\n";
+    topBorder += "┐";
+    midBorder += "┤";
+    botBorder += "┘";
+    headerStr += "│";
+
+    int innerWidth = 10 + colsToShow.size() * 11;
+    std::string title = "TOURNAMENT FORECAST PROBABILITIES";
+    int padding = innerWidth - 2 - title.length();
+    if (padding < 0) padding = 0;
+    std::string titleLine = "│ " + title + std::string(padding, ' ') + " │";
+
+    std::cout << topBorder << "\n";
+    std::cout << titleLine << "\n";
+    std::cout << midBorder << "\n";
+    std::cout << headerStr << "\n";
+    std::cout << midBorder << "\n";
+
+    for (const auto& [abbr, champProb] : activeTeams) {
+        std::cout << "│ " << std::left << std::setw(8) << abbr;
+        for (size_t i = 0; i < colsToShow.size(); ++i) {
+            double val = (*colsToShow[i].probs).at(abbr);
+            std::cout << " │ " << std::right << std::setprecision(1) << std::fixed
+                      << std::setw(7) << val * 100.0 << "%";
+        }
+        std::cout << " │\n";
+    }
+    std::cout << botBorder << "\n";
 }
 
 void AsciiPrinter::printImpactAnalysis(const ImpactAnalysisResults& analysis) {
