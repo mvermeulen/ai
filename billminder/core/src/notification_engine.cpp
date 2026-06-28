@@ -50,9 +50,9 @@ void NotificationEngine::check_and_send() {
     std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_today);
     std::string today(date_buf);
 
-    auto bills = db_->get_bills();
+    auto instances = db_->get_instances();
     // Project 14 days ahead so we catch things coming up soon
-    auto projections = ProjectionEngine::generate_projections(bills, 14, today); 
+    auto projections = ProjectionEngine::generate_projections(instances, 14, today); 
 
     if (projections.empty()) return;
 
@@ -62,7 +62,7 @@ void NotificationEngine::check_and_send() {
 
     double total = 0.0;
     for (const auto& p : projections) {
-        body << "- " << p.name << ": $" << std::fixed << std::setprecision(2) << p.amount_expected 
+        body << "- " << p.bill_name << ": $" << std::fixed << std::setprecision(2) << p.amount_expected 
              << " due on " << p.due_date << "\r\n";
         total += p.amount_expected;
     }

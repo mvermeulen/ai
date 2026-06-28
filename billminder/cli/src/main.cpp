@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     httplib::Client cli("http://localhost:8080");
 
     if (cmd == "list") {
-        auto res = cli.Get("/api/bills");
+        auto res = cli.Get("/api/instances");
         if (res && res->status == 200) {
             auto bills = json::parse(res->body);
             std::cout << std::left << std::setw(25) << "ID" 
@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
             std::cout << std::string(92, '-') << "\n";
             for (const auto& b : bills) {
                 std::cout << std::left << std::setw(25) << b["id"].get<std::string>()
-                          << std::setw(20) << b["name"].get<std::string>()
+                          << std::setw(20) << (b.contains("bill_name") ? b["bill_name"].get<std::string>() : "")
                           << "$" << std::setw(9) << std::fixed << std::setprecision(2) << b["amount_expected"].get<double>()
                           << std::setw(15) << b["due_date"].get<std::string>()
                           << std::setw(12) << b["recurrence_rule"].get<std::string>()
@@ -81,8 +81,7 @@ int main(int argc, char** argv) {
             {"payee", ""},
             {"status", "upcoming"},
             {"notes", ""},
-            {"group_id", slug},
-            {"next_instance_id", ""},
+            {"notes", ""},
             {"created_at", std::string(date_buf)},
             {"updated_at", std::string(date_buf)}
         };
@@ -117,7 +116,7 @@ int main(int argc, char** argv) {
             {"notes", "Paid via CLI"}
         };
         
-        auto res = cli.Post("/api/bills/" + id + "/pay", j.dump(), "application/json");
+        auto res = cli.Post("/api/instances/" + id + "/pay", j.dump(), "application/json");
         if (res && res->status == 200) {
             std::cout << "Bill " << id << " marked as paid.\n";
         } else {
@@ -133,14 +132,14 @@ int main(int argc, char** argv) {
         }
 
         std::string id = argv[2];
-        auto get_res = cli.Get("/api/bills/" + id);
+        auto get_res = cli.Get("/api/instances/" + id);
         if (!get_res || get_res->status != 200) {
             std::cerr << "Failed to fetch bill " << id << "\n";
             return 1;
         }
         
         json j = json::parse(get_res->body);
-        j["name"] = argv[3];
+        // For instances, name is part of the template, so we don't update name on the instance here, just amount/date/recur
         j["amount_expected"] = std::stod(argv[4]);
         j["due_date"] = argv[5];
         j["recurrence_rule"] = argv[6];
@@ -152,7 +151,7 @@ int main(int argc, char** argv) {
         std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_today);
         j["updated_at"] = std::string(date_buf);
 
-        auto res = cli.Put("/api/bills/" + id, j.dump(), "application/json");
+        auto res = cli.Put("/api/instances/" + id, j.dump(), "application/json");
         if (res && res->status == 200) {
             std::cout << "Bill '" << id << "' updated successfully.\n";
         } else {
@@ -168,7 +167,7 @@ int main(int argc, char** argv) {
         }
 
         std::string id = argv[2];
-        auto res = cli.Delete("/api/bills/" + id);
+        auto res = cli.Delete("/api/instances/" + id);
         if (res && res->status == 200) {
             std::cout << "Bill '" << id << "' deleted successfully.\n";
         } else {

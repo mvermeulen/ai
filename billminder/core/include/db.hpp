@@ -34,9 +34,14 @@ public:
     Bill get_bill(const std::string& id);
     void update_bill(const Bill& bill);
     void delete_bill(const std::string& id);
-    
-    // Domain Operations
-    void pay_bill(const std::string& id, double amount_paid, const std::string& payment_date, const std::string& notes = "");
+
+    void create_instance(const BillInstance& instance);
+    std::vector<BillInstance> get_instances();
+    std::vector<BillInstance> get_instances_for_bill(const std::string& bill_id);
+    BillInstance get_instance(const std::string& id);
+    void update_instance(const BillInstance& instance);
+    void delete_instance(const std::string& id);
+    void pay_instance(const std::string& id, double amount, const std::string& date, const std::string& notes = "");
 
 private:
     sqlite3* db_ = nullptr;

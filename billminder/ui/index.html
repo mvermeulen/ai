@@ -5,63 +5,146 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BillMinder Dashboard</title>
     <link rel="stylesheet" href="css/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@400;500;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>BillMinder</h1>
-            <p>Your Personal Obligations & Projections</p>
+    <div class="bg-animated"></div>
+
+    <header class="app-header">
+        <div class="container header-container">
+            <div class="logo-area">
+                <div class="logo-icon">BM</div>
+                <div class="logo-text">
+                    <h1>BillMinder</h1>
+                    <p>Your Personal Obligations & Projections</p>
+                </div>
+            </div>
         </div>
     </header>
-    <main class="container">
-        <section class="card" id="bill-entry">
-            <h2>Add New Bill</h2>
-            <form id="add-bill-form">
-                <div class="form-group">
-                    <label for="name">Bill Name</label>
-                    <input type="text" id="name" placeholder="e.g. Internet" required>
-                </div>
-                <div class="form-group">
-                    <label for="amount">Expected Amount</label>
-                    <input type="number" id="amount" placeholder="0.00" required step="0.01">
-                </div>
-                <div class="form-group">
-                    <label for="due_date">Due Date</label>
-                    <input type="date" id="due_date" required>
-                </div>
-                <div class="form-group">
-                    <label for="recurrence">Recurrence</label>
-                    <select id="recurrence">
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="yearly">Yearly</option>
-                        <option value="none">One-time</option>
-                    </select>
-                </div>
-                <button type="submit" class="btn primary">Save Bill</button>
-            </form>
-        </section>
 
-        <section class="card" id="bill-list">
-            <h2>Active Bills</h2>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Amount</th>
-                        <th>Due Date</th>
-                        <th>Recurrence</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="bills-tbody">
-                    <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
-                </tbody>
-            </table>
-        </section>
+    <main class="container view-container">
+        <!-- Dashboard View -->
+        <div id="view-dashboard" class="fade-section active">
+            <section class="card glass-card" id="bill-entry">
+                <h2>Add New Bill</h2>
+                <form id="add-bill-form">
+                    <div class="form-group">
+                        <label for="name">Bill Name</label>
+                        <input type="text" id="name" placeholder="e.g. Internet" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="amount">Expected Amount</label>
+                        <input type="number" id="amount" placeholder="0.00" required step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="due_date">Due Date</label>
+                        <input type="date" id="due_date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="recurrence">Recurrence</label>
+                        <select id="recurrence">
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="yearly">Yearly</option>
+                            <option value="none">One-time</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn primary glow-btn">Save Bill</button>
+                </form>
+            </section>
+
+            <section class="card glass-card" id="bill-list">
+                <h2>Active Bills</h2>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Amount</th>
+                                <th>Due Date</th>
+                                <th>Recurrence</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bills-tbody">
+                            <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- Detail View -->
+        <div id="view-detail" class="fade-section">
+            <section class="card glass-card" id="bill-detail-view">
+                <div class="detail-header">
+                    <h2 id="detail-bill-name">Bill Details</h2>
+                    <button type="button" class="btn outline" onclick="showDashboard()">
+                        <span style="margin-right: 5px;">&larr;</span> Back to Dashboard
+                    </button>
+                </div>
+                
+                <form id="edit-bill-metadata-form" class="metadata-form">
+                    <div class="form-group">
+                        <label for="detail-url">URL</label>
+                        <input type="url" id="detail-url" placeholder="https://...">
+                    </div>
+                    <div class="form-group">
+                        <label for="detail-account">Account</label>
+                        <input type="text" id="detail-account" placeholder="Username / Account #">
+                    </div>
+                    <div class="form-group">
+                        <label for="detail-password">Password</label>
+                        <input type="text" id="detail-password" placeholder="Password">
+                    </div>
+                    <button type="submit" class="btn primary glow-btn">Save Metadata</button>
+                </form>
+
+                <h3 class="section-subtitle">Instances</h3>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Amount Expected</th>
+                                <th>Due Date</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detail-instances-tbody">
+                            <tr><td colspan="4" style="text-align: center;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
     </main>
-    <script src="js/app.js?v=2"></script>
+
+    <script src="js/app.js?v=4"></script>
+
+    <!-- Edit Instance Modal -->
+    <div id="edit-instance-modal" class="modal-overlay">
+        <div class="card glass-card modal-content">
+            <h3 style="margin-bottom: 1.5rem;">Edit Instance</h3>
+            <form id="edit-instance-form" style="grid-template-columns: 1fr;">
+                <input type="hidden" id="edit-inst-id">
+                <div class="form-group">
+                    <label for="edit-inst-amount">Amount Expected</label>
+                    <input type="number" id="edit-inst-amount" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="edit-inst-date">Due Date</label>
+                    <input type="date" id="edit-inst-date" required>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                    <button type="submit" class="btn primary glow-btn" style="flex: 1;">Save</button>
+                    <button type="button" class="btn outline" onclick="closeEditModal()" style="flex: 1;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

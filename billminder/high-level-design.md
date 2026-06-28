@@ -2,7 +2,7 @@
 
 ## Status
 
-Baseline 1.0 (Requirements & High-Level Architecture finalized)
+Phase 1 MVP - Under Active Development
 
 This document captures the problem, constraints, success criteria, and architectural direction at a high level. It serves as the baseline for detailed design, schema, protocols, and implementation plans.
 
@@ -17,7 +17,7 @@ The following assumptions reflect the first round of stakeholder answers and sho
 5. Initial deployment should be local-only rather than remotely exposed.
 6. MCP should eventually support carefully scoped write actions, not only read-only queries.
 7. Email reminders are the first notification channel worth designing for.
-8. The likely implementation direction is a single Docker Compose deployment with a C++ core service, SQLite storage, and a Vanilla JS/HTML/CSS local web UI.
+8. The likely implementation direction is a single Docker Compose deployment with a C++ core service, SQLite storage, and a Vanilla JS/HTML/CSS local Single Page App (SPA) utilizing a modern, vibrant aesthetic.
 
 ## Problem Statement
 
@@ -58,27 +58,29 @@ The initial target is a single primary user managing personal or household bills
 
 ### Functional Requirements
 
-1. The system must let the user create, edit, archive, and categorize bills.
+1. The system must let the user create, edit, delete, and categorize individual bill instances.
 2. The system must support recurring bills with schedules such as monthly, weekly, quarterly, annually, and custom intervals.
 3. The first implementation may defer one-time obligations until recurring-bill workflows are proven useful.
-4. The system must track at least these fields per bill:
-   - name
-   - amount or expected amount range
-   - due date or recurrence rule
-   - payee
-   - status such as upcoming, paid, overdue, skipped, uncertain
-   - optional notes
-   *(Note: Schema changes and additional fields will be added incrementally via data migrations as needed.)*
-5. The system must allow projecting future bills that have not yet been issued. Projected amounts do not need to stay fixed per recurrence; when a bill is paid, the system records the actual amount, and historical actual amounts can be used to improve future expectations.
-6. The system must provide views of:
-   - bills due soon
-   - overdue bills
+4. The system architecture splits tracking into two distinct entities:
+   - **Bills**: The overarching template containing configuration, metadata (`url`, `account`, encrypted `password`), and recurrence rules.
+   - **Bill Instances**: Individual generated occurrences of a bill, representing a specific obligation at a specific point in time.
+5. The system must track at least these fields per bill instance:
+   - expected amount and due date
+   - status (upcoming, paid, overdue, skipped)
+   - foreign key to the parent bill template
+6. The system must allow projecting future bills that have not yet been issued. Projected amounts do not need to stay fixed per recurrence; when a bill is paid, the system records the actual amount, and historical actual amounts can be used to improve future expectations.
+7. The system must automatically roll over recurring bills when their due date passes or when marked paid:
+   - If unpaid and past-due, mark as `overdue` and spawn the next period's instance as `upcoming`.
+   - If paid, leave as `paid` and immediately spawn the next period's instance as `upcoming`.
+8. The system must provide clean UI views of:
+   - **Active Bills Dashboard**: A consolidated list of bills tracking the earliest actionable instance.
+   - **Bill Details View**: A drill-down view showing template metadata and a history of all instances for a specific bill, with inline modal editing.
    - projected obligations over a future horizon
    - payment history
-7. The system must allow marking a bill as paid and recording when it was paid.
-8. The system should support reminders or alerts, with email as the first planned notification path.
-9. The system should support importing and exporting data in a human-readable format.
-10. The system should preserve an audit-friendly history of changes or at least payment events.
+8. The system must allow marking a bill as paid and recording when it was paid.
+9. The system should support reminders or alerts, with email as the first planned notification path.
+10. The system should support importing and exporting data in a human-readable format.
+11. The system should preserve an audit-friendly history of changes or at least payment events.
 
 ### Distributed System Requirements
 
@@ -122,40 +124,9 @@ The following drivers should shape the architecture before detailed design begin
 5. Safe defaults: the easiest path should also be the safest operational path.
 6. Operational transparency: logs and artifacts should help explain system behavior without exposing sensitive data.
 
-## Candidate High-Level Architecture Direction
+## High-Level Architecture Direction
 
-This is not yet a final design. It is a working direction to validate against the requirements.
-
-### Core Components
-
-1. A core service (implemented primarily in C++) that owns the source-of-truth bill store, likely backed by SQLite. Python layers may be utilized where advantageous (e.g., integrations, rapid prototyping).
-2. A scheduler or projection service that computes upcoming obligations and reminders.
-3. An MCP server layer that exposes safe query and action tools to authorized clients.
-4. Two first-class user clients: a CLI (C++) and a local-admin web UI (Vanilla JS/HTML/CSS). Both clients will communicate with the core service via a shared API (e.g., REST/HTTP) to support a distributed architecture.
-5. A notification adapter layer, with email as the first concrete channel.
-
-### Responsibility Boundaries
-
-1. Storage component:
-   - Persists bills, schedules, payment events, and configuration.
-   - Applies encryption and backup policies.
-2. Projection component:
-   - Expands recurrence rules into future expected obligations.
-   - Flags due-soon and overdue items.
-3. MCP component:
-   - Offers constrained tools for querying summaries and optionally making state changes.
-   - Enforces authentication, authorization, and output filtering.
-4. Client component:
-   - Presents the user workflow.
-   - Avoids direct access to raw storage when possible.
-
-### Deployment Direction
-
-1. Start with a single compose-style deployment (e.g., Docker Compose) on one home server or personal machine.
-2. Package the core service, database mount, and web UI to run cleanly in containers.
-3. Keep the first deployment local-only.
-4. Add any remote client path only after the trust, authentication, and backup models are clear.
-5. If remote access is later introduced via a portal, ensure appropriate security boundaries are implemented.
+The architectural details (components, boundaries, deployment, database schema, and REST API specification) have been separated into a dedicated [Architecture Document](architecture.md).
 
 ## Data Sensitivity Model
 

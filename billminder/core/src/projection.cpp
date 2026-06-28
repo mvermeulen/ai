@@ -47,8 +47,8 @@ std::string ProjectionEngine::add_time_to_date(const std::string& date, const st
     return format_date(tm);
 }
 
-std::vector<Bill> ProjectionEngine::generate_projections(const std::vector<Bill>& current_bills, int days_ahead, const std::string& current_date) {
-    std::vector<Bill> projections;
+std::vector<BillInstance> ProjectionEngine::generate_projections(const std::vector<BillInstance>& current_bills, int days_ahead, const std::string& current_date) {
+    std::vector<BillInstance> projections;
 
     for (const auto& bill : current_bills) {
         // Skip non-recurring bills or bills that have a terminal status
@@ -69,7 +69,7 @@ std::vector<Bill> ProjectionEngine::generate_projections(const std::vector<Bill>
             // Only add if it's strictly in the future relative to the current date window 
             // (or today if next_diff == 0)
             if (next_diff >= 0) {
-                Bill projected_bill = bill;
+                BillInstance projected_bill = bill;
                 projected_bill.id = bill.id + "-proj-" + std::to_string(count);
                 projected_bill.due_date = next_date;
                 projected_bill.status = "projected";
