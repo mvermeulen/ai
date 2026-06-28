@@ -71,24 +71,24 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 70,group,L,2026-06-27,CRO,GHA,2,1,-1,-1,final,Atlanta
 71,group,J,2026-06-27,ARG,JOR,3,1,-1,-1,final,Houston
 72,group,J,2026-06-27,AUT,ALG,3,3,-1,-1,final,Kansas City
-73,knockout_r32,N/A,2026-06-28,RSA,CAN,0,0,-1,-1,upcoming,Los Angeles
-74,knockout_r32,N/A,2026-06-29,GER,SWE,-1,-1,-1,-1,scheduled,Boston
+73,knockout_r32,N/A,2026-06-28,RSA,CAN,0,1,-1,-1,final,Los Angeles
+74,knockout_r32,N/A,2026-06-29,GER,PAR,-1,-1,-1,-1,scheduled,Boston
 75,knockout_r32,N/A,2026-06-29,NED,MAR,-1,-1,-1,-1,scheduled,Monterrey
 76,knockout_r32,N/A,2026-06-29,BRA,JPN,-1,-1,-1,-1,scheduled,Houston
-77,knockout_r32,N/A,2026-06-30,FRA,PAR,-1,-1,-1,-1,scheduled,New York/New Jersey
+77,knockout_r32,N/A,2026-06-30,FRA,SWE,-1,-1,-1,-1,scheduled,New York/New Jersey
 78,knockout_r32,N/A,2026-06-30,CIV,NOR,-1,-1,-1,-1,scheduled,Dallas
 79,knockout_r32,N/A,2026-06-30,MEX,ECU,-1,-1,-1,-1,scheduled,Mexico City
 80,knockout_r32,N/A,2026-07-01,ENG,COD,-1,-1,-1,-1,scheduled,Atlanta
 81,knockout_r32,N/A,2026-07-01,USA,BIH,-1,-1,-1,-1,scheduled,San Francisco
-82,knockout_r32,N/A,2026-07-01,BEL,ALG,-1,-1,-1,-1,scheduled,Seattle
+82,knockout_r32,N/A,2026-07-01,BEL,SEN,-1,-1,-1,-1,scheduled,Seattle
 83,knockout_r32,N/A,2026-07-02,POR,CRO,-1,-1,-1,-1,scheduled,Toronto
 84,knockout_r32,N/A,2026-07-02,ESP,AUT,-1,-1,-1,-1,scheduled,Los Angeles
-85,knockout_r32,N/A,2026-07-02,SUI,SEN,-1,-1,-1,-1,scheduled,Vancouver
+85,knockout_r32,N/A,2026-07-02,SUI,ALG,-1,-1,-1,-1,scheduled,Vancouver
 86,knockout_r32,N/A,2026-07-03,ARG,CPV,-1,-1,-1,-1,scheduled,Miami
 87,knockout_r32,N/A,2026-07-03,COL,GHA,-1,-1,-1,-1,scheduled,Kansas City
 88,knockout_r32,N/A,2026-07-03,AUS,EGY,-1,-1,-1,-1,scheduled,Dallas
 89,knockout_r16,N/A,2026-07-04,R32_WINNER_74,R32_WINNER_77,-1,-1,-1,-1,scheduled,Philadelphia
-90,knockout_r16,N/A,2026-07-04,R32_WINNER_73,R32_WINNER_75,-1,-1,-1,-1,scheduled,Houston
+90,knockout_r16,N/A,2026-07-04,CAN,R32_WINNER_75,-1,-1,-1,-1,scheduled,Houston
 91,knockout_r16,N/A,2026-07-05,R32_WINNER_76,R32_WINNER_78,-1,-1,-1,-1,scheduled,New York/New Jersey
 92,knockout_r16,N/A,2026-07-05,R32_WINNER_79,R32_WINNER_80,-1,-1,-1,-1,scheduled,Mexico City
 93,knockout_r16,N/A,2026-07-06,R32_WINNER_83,R32_WINNER_84,-1,-1,-1,-1,scheduled,Dallas
