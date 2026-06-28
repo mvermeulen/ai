@@ -1,5 +1,8 @@
 #include "server.hpp"
 #include <iostream>
+#include <chrono>
+#include <cctype>
+#include "projection.hpp"
 
 using json = nlohmann::json;
 
@@ -18,6 +21,49 @@ void Server::stop() {
     svr_.stop();
 }
 
+void Server::process_rollovers() {
+    auto now = std::chrono::system_clock::now();
+    auto today_t = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_today = *std::localtime(&today_t);
+    char date_buf[20];
+    std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_today);
+    std::string today(date_buf);
+
+    auto bills = db_->get_bills();
+    for (auto& bill : bills) {
+        if (bill.recurrence_rule == "none") continue;
+        if (!bill.next_instance_id.empty()) continue; 
+        if (bill.due_date >= today) continue; 
+        
+        std::string next_date = ProjectionEngine::add_time_to_date(bill.due_date, bill.recurrence_rule, 1);
+        
+        std::string slug = bill.group_id.empty() ? bill.name : bill.group_id;
+        for (char& c : slug) {
+            if (c == ' ') c = '-';
+            else c = std::tolower(c);
+        }
+        std::string new_id = slug + "-" + next_date;
+        
+        Bill next_bill = bill;
+        next_bill.id = new_id;
+        next_bill.due_date = next_date;
+        next_bill.status = "upcoming";
+        next_bill.next_instance_id = "";
+        next_bill.created_at = today;
+        next_bill.updated_at = today;
+        
+        bill.next_instance_id = new_id;
+        bill.updated_at = today;
+
+        if (bill.status == "upcoming") {
+            bill.status = "overdue";
+        }
+        
+        db_->update_bill(bill);
+        db_->create_bill(next_bill);
+    }
+}
+
 void Server::setup_routes() {
     // Enable CORS for UI development
     svr_.Options(".*", [](const httplib::Request&, httplib::Response& res) {
@@ -33,6 +79,7 @@ void Server::setup_routes() {
     // GET /api/bills
     svr_.Get("/api/bills", [this, cors](const httplib::Request&, httplib::Response& res) {
         try {
+            process_rollovers();
             auto bills = db_->get_bills();
             json j = bills;
             cors(res);

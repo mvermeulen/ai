@@ -36,6 +36,8 @@ void Database::initialize_schema() {
             payee TEXT,
             status TEXT NOT NULL,
             notes TEXT,
+            group_id TEXT,
+            next_instance_id TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -50,10 +52,18 @@ void Database::initialize_schema() {
         );
     )";
     execute(schema);
+
+    // Run migrations for existing database (ignore errors if columns exist)
+    char* err_msg = nullptr;
+    sqlite3_exec(db_, "ALTER TABLE bills ADD COLUMN group_id TEXT;", nullptr, nullptr, &err_msg);
+    if(err_msg) sqlite3_free(err_msg);
+    err_msg = nullptr;
+    sqlite3_exec(db_, "ALTER TABLE bills ADD COLUMN next_instance_id TEXT;", nullptr, nullptr, &err_msg);
+    if(err_msg) sqlite3_free(err_msg);
 }
 
 void Database::create_bill(const Bill& bill) {
-    const char* sql = "INSERT INTO bills (id, name, amount_expected, due_date, recurrence_rule, payee, status, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+    const char* sql = "INSERT INTO bills (id, name, amount_expected, due_date, recurrence_rule, payee, status, notes, group_id, next_instance_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw DatabaseError(std::string("Failed to prepare statement: ") + sqlite3_errmsg(db_));
@@ -67,8 +77,10 @@ void Database::create_bill(const Bill& bill) {
     sqlite3_bind_text(stmt, 6, bill.payee.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 7, bill.status.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 8, bill.notes.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 9, bill.created_at.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 10, bill.updated_at.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 9, bill.group_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 10, bill.next_instance_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 11, bill.created_at.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 12, bill.updated_at.c_str(), -1, SQLITE_TRANSIENT);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);
@@ -78,7 +90,7 @@ void Database::create_bill(const Bill& bill) {
 }
 
 std::vector<Bill> Database::get_bills() {
-    const char* sql = "SELECT id, name, amount_expected, due_date, recurrence_rule, payee, status, notes, created_at, updated_at FROM bills;";
+    const char* sql = "SELECT id, name, amount_expected, due_date, recurrence_rule, payee, status, notes, group_id, next_instance_id, created_at, updated_at FROM bills ORDER BY due_date ASC;";
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw DatabaseError(std::string("Failed to prepare statement: ") + sqlite3_errmsg(db_));
@@ -95,8 +107,10 @@ std::vector<Bill> Database::get_bills() {
         b.payee = sqlite3_column_type(stmt, 5) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
         b.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
         b.notes = sqlite3_column_type(stmt, 7) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
-        b.created_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-        b.updated_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+        b.group_id = sqlite3_column_type(stmt, 8) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+        b.next_instance_id = sqlite3_column_type(stmt, 9) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+        b.created_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
+        b.updated_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
         bills.push_back(b);
     }
     sqlite3_finalize(stmt);
@@ -104,7 +118,7 @@ std::vector<Bill> Database::get_bills() {
 }
 
 Bill Database::get_bill(const std::string& id) {
-    const char* sql = "SELECT id, name, amount_expected, due_date, recurrence_rule, payee, status, notes, created_at, updated_at FROM bills WHERE id = ?;";
+    const char* sql = "SELECT id, name, amount_expected, due_date, recurrence_rule, payee, status, notes, group_id, next_instance_id, created_at, updated_at FROM bills WHERE id = ?;";
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw DatabaseError(std::string("Failed to prepare statement: ") + sqlite3_errmsg(db_));
@@ -121,8 +135,10 @@ Bill Database::get_bill(const std::string& id) {
         b.payee = sqlite3_column_type(stmt, 5) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
         b.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
         b.notes = sqlite3_column_type(stmt, 7) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
-        b.created_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-        b.updated_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+        b.group_id = sqlite3_column_type(stmt, 8) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+        b.next_instance_id = sqlite3_column_type(stmt, 9) == SQLITE_NULL ? "" : reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+        b.created_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
+        b.updated_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
         sqlite3_finalize(stmt);
         return b;
     }
@@ -131,7 +147,7 @@ Bill Database::get_bill(const std::string& id) {
 }
 
 void Database::update_bill(const Bill& bill) {
-    const char* sql = "UPDATE bills SET name=?, amount_expected=?, due_date=?, recurrence_rule=?, payee=?, status=?, notes=?, updated_at=? WHERE id=?;";
+    const char* sql = "UPDATE bills SET name=?, amount_expected=?, due_date=?, recurrence_rule=?, payee=?, status=?, notes=?, group_id=?, next_instance_id=?, updated_at=? WHERE id=?;";
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw DatabaseError(std::string("Failed to prepare statement: ") + sqlite3_errmsg(db_));
@@ -144,8 +160,10 @@ void Database::update_bill(const Bill& bill) {
     sqlite3_bind_text(stmt, 5, bill.payee.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 6, bill.status.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 7, bill.notes.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 8, bill.updated_at.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 9, bill.id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 8, bill.group_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 9, bill.next_instance_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 10, bill.updated_at.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 11, bill.id.c_str(), -1, SQLITE_TRANSIENT);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);

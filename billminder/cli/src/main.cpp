@@ -13,6 +13,8 @@ void print_usage(const char* prog) {
     std::cout << "Commands:\n";
     std::cout << "  list                      List all active bills\n";
     std::cout << "  add <name> <amt> <date> <recur>  Add a new bill (e.g. add Internet 50.00 2026-07-01 monthly)\n";
+    std::cout << "  edit <id> <name> <amt> <date> <recur>  Edit an existing bill\n";
+    std::cout << "  delete <id>               Delete a bill instance\n";
     std::cout << "  pay <id> <amt>            Mark a bill as paid (e.g. pay bill-123 50.00)\n";
 }
 
@@ -62,15 +64,25 @@ int main(int argc, char** argv) {
         char date_buf[20];
         std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_today);
         
+        std::string name_str = argv[2];
+        std::string slug = name_str;
+        for (char& c : slug) {
+            if (c == ' ' || !std::isalnum(c)) c = '-';
+            else c = std::tolower(c);
+        }
+        std::string id = slug + "-" + argv[4];
+        
         json j = {
-            {"id", "bill-" + std::to_string(today_t)},
-            {"name", argv[2]},
+            {"id", id},
+            {"name", name_str},
             {"amount_expected", std::stod(argv[3])},
             {"due_date", argv[4]},
             {"recurrence_rule", argv[5]},
             {"payee", ""},
             {"status", "upcoming"},
             {"notes", ""},
+            {"group_id", slug},
+            {"next_instance_id", ""},
             {"created_at", std::string(date_buf)},
             {"updated_at", std::string(date_buf)}
         };
@@ -110,6 +122,57 @@ int main(int argc, char** argv) {
             std::cout << "Bill " << id << " marked as paid.\n";
         } else {
             std::cerr << "Failed to pay bill.\n";
+            if (res) std::cerr << res->body << "\n";
+            return 1;
+        }
+    } else if (cmd == "edit") {
+        if (argc < 7) {
+            std::cerr << "Missing arguments for 'edit'\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+
+        std::string id = argv[2];
+        auto get_res = cli.Get("/api/bills/" + id);
+        if (!get_res || get_res->status != 200) {
+            std::cerr << "Failed to fetch bill " << id << "\n";
+            return 1;
+        }
+        
+        json j = json::parse(get_res->body);
+        j["name"] = argv[3];
+        j["amount_expected"] = std::stod(argv[4]);
+        j["due_date"] = argv[5];
+        j["recurrence_rule"] = argv[6];
+        
+        auto now = std::chrono::system_clock::now();
+        auto today_t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm_today = *std::localtime(&today_t);
+        char date_buf[20];
+        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_today);
+        j["updated_at"] = std::string(date_buf);
+
+        auto res = cli.Put("/api/bills/" + id, j.dump(), "application/json");
+        if (res && res->status == 200) {
+            std::cout << "Bill '" << id << "' updated successfully.\n";
+        } else {
+            std::cerr << "Failed to update bill.\n";
+            if (res) std::cerr << res->body << "\n";
+            return 1;
+        }
+    } else if (cmd == "delete") {
+        if (argc < 3) {
+            std::cerr << "Missing arguments for 'delete'\n";
+            print_usage(argv[0]);
+            return 1;
+        }
+
+        std::string id = argv[2];
+        auto res = cli.Delete("/api/bills/" + id);
+        if (res && res->status == 200) {
+            std::cout << "Bill '" << id << "' deleted successfully.\n";
+        } else {
+            std::cerr << "Failed to delete bill.\n";
             if (res) std::cerr << res->body << "\n";
             return 1;
         }

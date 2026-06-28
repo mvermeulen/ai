@@ -13,6 +13,8 @@ struct Bill {
     std::string payee;
     std::string status; // 'upcoming', 'paid', 'overdue', 'skipped'
     std::string notes;
+    std::string group_id;
+    std::string next_instance_id;
     std::string created_at;
     std::string updated_at;
 };
@@ -28,6 +30,8 @@ inline void to_json(nlohmann::json& j, const Bill& b) {
         {"payee", b.payee},
         {"status", b.status},
         {"notes", b.notes},
+        {"group_id", b.group_id},
+        {"next_instance_id", b.next_instance_id},
         {"created_at", b.created_at},
         {"updated_at", b.updated_at}
     };
@@ -42,6 +46,8 @@ inline void from_json(const nlohmann::json& j, Bill& b) {
     if (j.contains("payee")) j.at("payee").get_to(b.payee);
     if (j.contains("status")) j.at("status").get_to(b.status);
     if (j.contains("notes")) j.at("notes").get_to(b.notes);
+    if (j.contains("group_id")) j.at("group_id").get_to(b.group_id);
+    if (j.contains("next_instance_id")) j.at("next_instance_id").get_to(b.next_instance_id);
     if (j.contains("created_at")) j.at("created_at").get_to(b.created_at);
     if (j.contains("updated_at")) j.at("updated_at").get_to(b.updated_at);
 }

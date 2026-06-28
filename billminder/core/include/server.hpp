@@ -13,6 +13,7 @@ public:
 
 private:
     void setup_routes();
+    void process_rollovers();
     std::shared_ptr<Database> db_;
     httplib::Server svr_;
 };
