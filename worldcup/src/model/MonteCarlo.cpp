@@ -116,9 +116,11 @@ TeamOutcome MonteCarlo::simulateIteration(const Tournament& tournament, std::mt1
         const Team* home = sim.getTeam(match.homeTeam());
         const Team* away = sim.getTeam(match.awayTeam());
         if (home && away) {
-            int hs, as, hp, ap;
-            simulateMatch(*home, *away, true, hs, as, hp, ap, rng);
-            match.setScore(hs, as, hp, ap, "final");
+            if (!match.isPlayed()) {
+                int hs, as, hp, ap;
+                simulateMatch(*home, *away, true, hs, as, hp, ap, rng);
+                match.setScore(hs, as, hp, ap, "final");
+            }
             if (match.homeTeamWon()) {
                 winnerOut = match.homeTeam();
                 loserOut = match.awayTeam();
