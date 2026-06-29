@@ -1041,6 +1041,16 @@ std::string buildDashboardHtml() {
             <input type="number" id="form-away-score" class="form-input" style="width:100%" min="0" required>
           </div>
         </div>
+        <div style="display:flex;gap:1rem;margin-bottom:1rem">
+          <div style="flex:1">
+            <label class="form-input" style="display:block;margin-bottom:0.5rem">Home Penalty (opt)</label>
+            <input type="number" id="form-home-penalty" class="form-input" style="width:100%" min="0">
+          </div>
+          <div style="flex:1">
+            <label class="form-input" style="display:block;margin-bottom:0.5rem">Away Penalty (opt)</label>
+            <input type="number" id="form-away-penalty" class="form-input" style="width:100%" min="0">
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary" style="width:100%">Save Result</button>
       </form>
     </div>
@@ -1435,6 +1445,8 @@ std::string buildDashboardHtml() {
       document.getElementById('modal-match-title').innerText = 'Enter Score by Match ID';
       document.getElementById('form-home-score').value = '';
       document.getElementById('form-away-score').value = '';
+      document.getElementById('form-home-penalty').value = '';
+      document.getElementById('form-away-penalty').value = '';
       openUpdateModal();
     }
 
@@ -1444,6 +1456,8 @@ std::string buildDashboardHtml() {
       document.getElementById('modal-match-title').innerText = `${homeTeam} vs ${awayTeam} (Match #${matchId})`;
       document.getElementById('form-home-score').value = '';
       document.getElementById('form-away-score').value = '';
+      document.getElementById('form-home-penalty').value = '';
+      document.getElementById('form-away-penalty').value = '';
       openUpdateModal();
     }
 
@@ -1452,11 +1466,18 @@ std::string buildDashboardHtml() {
       const id = document.getElementById('form-match-id').value;
       const home = document.getElementById('form-home-score').value;
       const away = document.getElementById('form-away-score').value;
+      const homePen = document.getElementById('form-home-penalty').value;
+      const awayPen = document.getElementById('form-away-penalty').value;
+
+      if ((homePen !== '' || awayPen !== '') && home !== away) {
+        alert("Penalty scores can only be applied when the regular score is tied.");
+        return;
+      }
 
       const res = await fetch('/api/update-result', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'match_id=' + id + '&home_score=' + home + '&away_score=' + away
+        body: 'match_id=' + id + '&home_score=' + home + '&away_score=' + away + '&home_penalty_score=' + homePen + '&away_penalty_score=' + awayPen
       });
 
       const data = await res.json();
@@ -2662,6 +2683,8 @@ bool WebServer::applyResultUpdate(const std::string& body, std::string& error) {
     auto itId = params.find("match_id");
     auto itHome = params.find("home_score");
     auto itAway = params.find("away_score");
+    auto itHomePen = params.find("home_penalty_score");
+    auto itAwayPen = params.find("away_penalty_score");
 
     if (itId == params.end() || itHome == params.end() || itAway == params.end()) {
         error = "Missing match_id, home_score, or away_score";
@@ -2672,11 +2695,31 @@ bool WebServer::applyResultUpdate(const std::string& body, std::string& error) {
         int matchId = std::stoi(itId->second);
         int homeScore = std::stoi(itHome->second);
         int awayScore = std::stoi(itAway->second);
+        int homePen = -1;
+        int awayPen = -1;
+        
+        if (itHomePen != params.end() && !itHomePen->second.empty()) {
+            homePen = std::stoi(itHomePen->second);
+        }
+        if (itAwayPen != params.end() && !itAwayPen->second.empty()) {
+            awayPen = std::stoi(itAwayPen->second);
+        }
+        
+        if ((homePen != -1 || awayPen != -1) && homeScore != awayScore) {
+            error = "Penalty scores can only be applied when the regular score is tied.";
+            return false;
+        }
 
         bool found = false;
         for (auto& match : tournament_.allMatches()) {
             if (match.matchId() == matchId) {
-                match.setScore(homeScore, awayScore, -1, -1, "final");
+                bool isKnockout = match.stage() != "group";
+                if (isKnockout && homeScore == awayScore && (homePen == -1 || awayPen == -1 || homePen == awayPen)) {
+                    error = "Elimination round matches ending in a tie require valid, non-tied penalty scores.";
+                    return false;
+                }
+                
+                match.setScore(homeScore, awayScore, homePen, awayPen, "final");
                 found = true;
                 break;
             }
