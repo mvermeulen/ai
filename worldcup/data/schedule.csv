@@ -72,7 +72,7 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 71,group,J,2026-06-27,ARG,JOR,3,1,-1,-1,final,Houston
 72,group,J,2026-06-27,AUT,ALG,3,3,-1,-1,final,Kansas City
 73,knockout_r32,N/A,2026-06-28,RSA,CAN,0,1,-1,-1,final,Los Angeles
-74,knockout_r32,N/A,2026-06-29,GER,PAR,0,0,-1,-1,upcoming,Boston
+74,knockout_r32,N/A,2026-06-29,GER,PAR,1,1,3,4,final,Boston
 75,knockout_r32,N/A,2026-06-29,NED,MAR,0,0,-1,-1,upcoming,Monterrey
 76,knockout_r32,N/A,2026-06-29,BRA,JPN,2,1,-1,-1,final,Houston
 77,knockout_r32,N/A,2026-06-30,FRA,SWE,-1,-1,-1,-1,scheduled,New York/New Jersey
@@ -87,9 +87,9 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 86,knockout_r32,N/A,2026-07-03,ARG,CPV,-1,-1,-1,-1,scheduled,Miami
 87,knockout_r32,N/A,2026-07-03,COL,GHA,-1,-1,-1,-1,scheduled,Kansas City
 88,knockout_r32,N/A,2026-07-03,AUS,EGY,-1,-1,-1,-1,scheduled,Dallas
-89,knockout_r16,N/A,2026-07-04,R32_WINNER_74,R32_WINNER_77,-1,-1,-1,-1,scheduled,Philadelphia
+89,knockout_r16,N/A,2026-07-04,PAR,R32_WINNER_77,-1,-1,-1,-1,scheduled,Philadelphia
 90,knockout_r16,N/A,2026-07-04,CAN,R32_WINNER_75,-1,-1,-1,-1,scheduled,Houston
-91,knockout_r16,N/A,2026-07-05,R32_WINNER_76,R32_WINNER_78,-1,-1,-1,-1,scheduled,New York/New Jersey
+91,knockout_r16,N/A,2026-07-05,BRA,R32_WINNER_78,-1,-1,-1,-1,scheduled,New York/New Jersey
 92,knockout_r16,N/A,2026-07-05,R32_WINNER_79,R32_WINNER_80,-1,-1,-1,-1,scheduled,Mexico City
 93,knockout_r16,N/A,2026-07-06,R32_WINNER_83,R32_WINNER_84,-1,-1,-1,-1,scheduled,Dallas
 94,knockout_r16,N/A,2026-07-06,R32_WINNER_81,R32_WINNER_82,-1,-1,-1,-1,scheduled,Seattle
