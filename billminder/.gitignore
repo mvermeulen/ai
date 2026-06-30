@@ -34,3 +34,6 @@ secrets.yaml
 *.swp
 *.swo
 .DS_Store
+
+# Scripts
+sync_to_alamogordo.sh
