@@ -205,16 +205,56 @@ void AsciiPrinter::printBracket(const Tournament& tournament, bool unplayedOnly,
             }
         }
     }
+    std::vector<bool> colVisible(6, true);
+    if (unplayedOnly) {
+        for (size_t r = 0; r < rounds.size(); ++r) {
+            bool hasUnplayed = false;
+            for (int matchId : rounds[r]) {
+                auto it = matchMap.find(matchId);
+                if (it != matchMap.end() && !it->second.isFinal()) {
+                    hasUnplayed = true;
+                    break;
+                }
+            }
+            colVisible[r] = hasUnplayed;
+        }
+        colVisible[5] = false;
+    }
 
-    std::cout << "\n";
-    std::cout << "\033[1mROUND OF 32 ROUND OF 16 QUARTERFINALSEMIFINALS  FINAL       CHAMPION    \033[0m\n";
-    std::cout << "─────────── ─────────── ─────────── ─────────── ─────────── ─────────── \n";
+    std::vector<std::string> headers = {
+        "ROUND OF 32 ",
+        "ROUND OF 16 ",
+        "QUARTERFINAL",
+        "SEMIFINALS  ",
+        "FINAL       ",
+        "CHAMPION    "
+    };
+
+    std::string headerLine = "\033[1m";
+    std::string sepLine = "";
+    bool hasVisibleCol = false;
+    for (int c = 0; c < 6; ++c) {
+        if (colVisible[c]) {
+            headerLine += headers[c];
+            sepLine += "─────────── ";
+            hasVisibleCol = true;
+        }
+    }
+    headerLine += "\033[0m";
+
+    if (hasVisibleCol) {
+        std::cout << "\n";
+        std::cout << headerLine << "\n";
+        std::cout << sepLine << "\n";
+    }
 
     for (int L = 0; L < 63; ++L) {
         bool emptyLine = true;
         bool onlySpacesAndPipes = true;
         std::string lineOutput;
         for (int c = 0; c < 6; ++c) {
+            if (!colVisible[c]) continue;
+
             if (grid[L][c] != "            ") emptyLine = false;
             if (grid[L][c] != "            " && grid[L][c] != "          │ ") {
                 onlySpacesAndPipes = false;
@@ -226,9 +266,9 @@ void AsciiPrinter::printBracket(const Tournament& tournament, bool unplayedOnly,
             continue;
         }
 
-        if (!emptyLine) {
+        if (!emptyLine && hasVisibleCol) {
             std::cout << lineOutput << "\n";
-        } else {
+        } else if (hasVisibleCol) {
             // Check if entirely empty lines can be skipped, but to maintain visual tree, we should print them
             // Actually, we must print empty lines if they are within the bracket range to preserve vertical scale.
             std::cout << "\n";
