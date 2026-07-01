@@ -6,6 +6,7 @@ BillMinder is a personal system for tracking upcoming and projected bills, helpi
 - **Core Service**: Written in C++20. Handles SQLite persistence, scheduling logic, and HTTP API serving.
 - **CLI**: Written in C++. Interacts with the Core Service via REST API.
 - **Web UI**: Vanilla JS, HTML, CSS only.
+- **Mobile App**: React Native (Expo) Android App. Features zero-persistence for enhanced privacy. See [mobile/README.md](mobile/README.md) for details.
 
 ## Quick Start
 
