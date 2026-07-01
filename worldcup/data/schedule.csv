@@ -80,7 +80,7 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 79,knockout_r32,N/A,2026-06-30,MEX,ECU,2,0,-1,-1,final,Mexico City
 80,knockout_r32,N/A,2026-07-01,ENG,COD,2,1,-1,-1,final,Atlanta
 81,knockout_r32,N/A,2026-07-01,USA,BIH,-1,-1,-1,-1,scheduled,San Francisco
-82,knockout_r32,N/A,2026-07-01,BEL,SEN,-1,-1,-1,-1,scheduled,Seattle
+82,knockout_r32,N/A,2026-07-01,BEL,SEN,3,2,-1,-1,final,Seattle
 83,knockout_r32,N/A,2026-07-02,POR,CRO,-1,-1,-1,-1,scheduled,Toronto
 84,knockout_r32,N/A,2026-07-02,ESP,AUT,-1,-1,-1,-1,scheduled,Los Angeles
 85,knockout_r32,N/A,2026-07-02,SUI,ALG,-1,-1,-1,-1,scheduled,Vancouver
@@ -92,7 +92,7 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 91,knockout_r16,N/A,2026-07-05,BRA,NOR,-1,-1,-1,-1,scheduled,New York/New Jersey
 92,knockout_r16,N/A,2026-07-05,MEX,ENG,-1,-1,-1,-1,scheduled,Mexico City
 93,knockout_r16,N/A,2026-07-06,R32_WINNER_83,R32_WINNER_84,-1,-1,-1,-1,scheduled,Dallas
-94,knockout_r16,N/A,2026-07-06,R32_WINNER_81,R32_WINNER_82,-1,-1,-1,-1,scheduled,Seattle
+94,knockout_r16,N/A,2026-07-06,R32_WINNER_81,BEL,-1,-1,-1,-1,scheduled,Seattle
 95,knockout_r16,N/A,2026-07-07,R32_WINNER_86,R32_WINNER_88,-1,-1,-1,-1,scheduled,Atlanta
 96,knockout_r16,N/A,2026-07-07,R32_WINNER_85,R32_WINNER_87,-1,-1,-1,-1,scheduled,Vancouver
 97,quarterfinals,N/A,2026-07-09,R16_WINNER_89,R16_WINNER_90,-1,-1,-1,-1,scheduled,Boston
