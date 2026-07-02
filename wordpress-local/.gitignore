@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# wpsync secrets & local-only state
+.wpsync/config.yml
+.wpsync/*.env
+.wpsync/snapshots/
+.wpsync/backups/
+.env
+
+# OS
+.DS_Store
+
+# editor swap files left by the prompt.txt symlink trick, etc.
+.#*
