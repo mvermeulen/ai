@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WPOffline Studio</title>
+    <meta name="description" content="A premium offline-first WordPress management solution.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <i class="ph-fill ph-planet"></i>
+                <span>WPOffline</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#" id="nav-dashboard" class="active"><i class="ph ph-squares-four"></i> Dashboard</a></li>
+                <li><a href="#" id="nav-editor"><i class="ph ph-pen-nib"></i> Editor</a></li>
+                <li><a href="#" id="nav-media"><i class="ph ph-image"></i> Media</a></li>
+                <li><a href="#" id="nav-strava"><i class="ph ph-map-trifold"></i> Strava Tools</a></li>
+            </ul>
+            <div class="sidebar-bottom">
+                <button id="btn-sync-all" class="btn btn-primary btn-full">
+                    <i class="ph ph-arrows-clockwise"></i> Sync to WP
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view active">
+                <header class="view-header">
+                    <h1>Dashboard</h1>
+                    <p class="subtitle">Manage your local drafts and synchronized content.</p>
+                </header>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <i class="ph ph-file-text"></i>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-local">0</span>
+                            <span class="stat-label">Local Drafts</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="ph ph-cloud-check"></i>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-synced">0</span>
+                            <span class="stat-label">Synced Posts</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="content-table-wrapper mt-4">
+                    <div class="table-header">
+                        <h2>Recent Posts</h2>
+                        <button class="btn btn-secondary btn-sm" id="btn-pull-wp"><i class="ph ph-download-simple"></i> Pull Remote</button>
+                    </div>
+                    <table class="content-table" id="posts-table">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Status</th>
+                                <th>Sync State</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Posts dynamically injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Editor View -->
+            <section id="view-editor" class="view">
+                <header class="view-header">
+                    <h1>Editor</h1>
+                    <div class="header-actions">
+                        <button class="btn btn-secondary" id="btn-editor-cancel">Cancel</button>
+                        <button class="btn btn-primary" id="btn-editor-save">Save Local</button>
+                    </div>
+                </header>
+                <div class="editor-container">
+                    <input type="hidden" id="editor-post-id">
+                    <div class="form-group">
+                        <input type="text" id="editor-title" placeholder="Post Title..." class="input-title">
+                    </div>
+                    <div class="editor-split">
+                        <div class="editor-pane">
+                            <div class="pane-header">Markdown</div>
+                            <textarea id="editor-content" placeholder="Write your story in Markdown..."></textarea>
+                        </div>
+                        <div class="editor-pane">
+                            <div class="pane-header">Preview</div>
+                            <div id="editor-preview" class="markdown-preview"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Media View -->
+            <section id="view-media" class="view">
+                <header class="view-header">
+                    <h1>Media</h1>
+                    <p class="subtitle">Upload photos for offline use.</p>
+                </header>
+                <div class="upload-zone" id="media-upload-zone">
+                    <i class="ph ph-upload-simple upload-icon"></i>
+                    <h3>Drag & Drop Photos Here</h3>
+                    <p>or click to browse</p>
+                    <input type="file" id="media-input" accept="image/*" style="display:none;">
+                </div>
+                <div class="media-grid mt-4" id="media-grid">
+                    <!-- Media items injected here -->
+                </div>
+            </section>
+
+            <!-- Strava View -->
+            <section id="view-strava" class="view">
+                <header class="view-header">
+                    <h1>Strava Tools</h1>
+                    <p class="subtitle">Generate embed codes for your routes.</p>
+                </header>
+                <div class="strava-card">
+                    <div class="form-group">
+                        <label>Strava Route ID or URL</label>
+                        <input type="text" id="strava-input" class="input-standard" placeholder="e.g. 12345678 or https://www.strava.com/routes/12345678">
+                    </div>
+                    <button class="btn btn-primary mt-2" id="btn-generate-strava">Generate Embed</button>
+                    
+                    <div class="strava-result mt-4 hidden" id="strava-result-container">
+                        <label>Markdown Code</label>
+                        <textarea id="strava-code" class="input-standard code-font" readonly></textarea>
+                        <button class="btn btn-secondary mt-2" id="btn-copy-strava"><i class="ph ph-copy"></i> Copy to Clipboard</button>
+                    </div>
+                </div>
+            </section>
+            
+        </main>
+    </div>
+
+    <!-- Modals & Toasts -->
+    <div id="toast-container" class="toast-container"></div>
+    
+    <!-- Sync Modal -->
+    <div id="sync-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="ph ph-arrows-clockwise"></i> Sync Engine</h2>
+                <button class="close-modal"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p>You are about to sync local changes to WordPress.</p>
+                <div class="sync-logs" id="sync-logs"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-sync-dryrun">Dry Run First</button>
+                <button class="btn btn-primary" id="btn-sync-confirm">Execute Sync</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
