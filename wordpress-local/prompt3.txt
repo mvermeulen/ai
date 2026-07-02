@@ -1,0 +1,20 @@
+In this directory are six implementations of a tool to improve the experience
+of updating a wordpress site from an offline location and then sync.
+
+These are checked into the following six branches:
+
+- wordpress-local-antigravity-v1
+- wordpress-local-antigravity-v2
+- wordpress-local-claude-v1
+- wordpress-local-claude-v2
+- wordpress-local-copilot-v1
+- wordpress-local-copilot-v2
+
+Create a document that:
+- compares and contrasts the approaches taken
+- identifies best practices, particularly those shown by one implementation but might be useful for others
+- describes some key questions that might determine the choice taken
+- recommends an approach, perhaps starting with one of the branches but adopting some ideas from others
+
+Write your document into a file named: evaluation-claude.md.  Don't check it
+in yet.
