@@ -1,0 +1,6 @@
+Good job. With the first implementation. Now that we have it done, create
+a second alternative approach. Make different choices than the initial
+implementation so we can see a range of what is possible as well as mix/match
+capabilities. Pull all this work on a new branch named
+wordpress-local-copilot-v2 so it that stays separate from the main
+branch and from the first implementation. Be creative.
