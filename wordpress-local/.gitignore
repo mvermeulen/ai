@@ -1,0 +1,16 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# wpsync-v2 local data (SQLite mirror db + secrets)
+.wpsync2/config.json
+.wpsync2/*.db
+.wpsync2/*.db-journal
+.wpsync2/*.db-wal
+.wpsync2/*.db-shm
+.env
+
+# OS
+.DS_Store
+.#*
