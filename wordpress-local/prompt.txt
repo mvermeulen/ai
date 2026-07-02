@@ -1,0 +1,31 @@
+I want a better solution for offline editing and updating of my wordpress
+site: https://mvermeulen.org/gone2look4america/
+
+The current workflow involves:
+- logging into my site
+- going to the wordpress dashboard
+- doing functions such as:
+  * drafting a new blog entry or a new page
+  * editing/updating existing pages or blog entries
+  * uploading media such as photos
+  * creating links to strava routes
+  * etc.
+
+It works but I would like to do many more functions *offline* and then when
+the internet is available do a "sync" to update various parts of the website
+or add pages, etc.
+
+Draft a new project with these abilities in mind. I want to compare what you
+can do with a separate implementation from another tool and hence will give
+you both this prompt. Show off what you can do and how well you can solve my
+problem. Do this work on a branch named:
+wordpress-local-copilot-v1 and commit all the changes to this branch
+when they are fully tested.
+
+Surprise me with your creativity and thoroughness. However, if you are
+completely stuck feel free to ask me a question or two.
+
+For this initial development we won't have a login account/password to the
+wordpress blog, but assume once deployed we will have such access. Make sure
+to add appropriate safety checks to keep from accidentally destroying existing
+content with those permissions.
