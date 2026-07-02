@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WPOffline Writer</title>
+    <!-- Google Fonts: Lora for content, Inter for UI -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="ph ph-notebook"></i> WPOffline V2
+            </div>
+            
+            <div class="nav-section">
+                <div class="nav-header">
+                    <span>Drafts</span>
+                    <button id="btn-new-post"><i class="ph ph-plus"></i></button>
+                </div>
+                <ul id="drafts-list" class="doc-list">
+                    <!-- Drafts injected here -->
+                </ul>
+            </div>
+
+            <div class="nav-section mt-4">
+                <div class="nav-header">
+                    <span>Published</span>
+                </div>
+                <ul id="published-list" class="doc-list">
+                    <!-- Published injected here -->
+                </ul>
+            </div>
+            
+            <div class="sidebar-footer">
+                <button id="btn-sync" class="btn btn-block"><i class="ph ph-arrows-left-right"></i> Sync Status</button>
+            </div>
+        </aside>
+
+        <!-- Editor Area -->
+        <main class="editor-area">
+            <div class="editor-topbar">
+                <span id="save-status" class="status-text text-muted">All changes saved to disk</span>
+                <button id="btn-view-preview" class="btn btn-icon"><i class="ph ph-eye"></i> Preview</button>
+            </div>
+            
+            <div class="editor-scroll">
+                <div class="editor-content">
+                    <input type="text" id="post-title" class="title-input" placeholder="Untitled Document" autocomplete="off">
+                    
+                    <div class="metadata-block">
+                        <div class="meta-row">
+                            <span class="meta-label">Status</span>
+                            <span class="meta-value" id="meta-status">draft</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="meta-label">WP ID</span>
+                            <span class="meta-value text-muted" id="meta-wpid">None (New)</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Textarea for Markdown writing -->
+                    <textarea id="post-body" class="body-input" placeholder="Start writing... Use Markdown format."></textarea>
+                    
+                    <!-- Hidden input to track current filename & folder -->
+                    <input type="hidden" id="current-filename">
+                    <input type="hidden" id="current-folder">
+                </div>
+            </div>
+        </main>
+        
+        <!-- Preview Panel (Hidden by default) -->
+        <aside id="preview-panel" class="preview-panel hidden">
+            <div class="preview-header">
+                <h2>Live Preview</h2>
+                <button id="btn-close-preview" class="btn btn-icon"><i class="ph ph-x"></i></button>
+            </div>
+            <div id="preview-content" class="preview-content markdown-body"></div>
+        </aside>
+    </div>
+
+    <!-- Sync Modal -->
+    <div id="sync-modal" class="modal">
+        <div class="modal-box">
+            <h2><i class="ph ph-arrows-left-right"></i> Sync Hub</h2>
+            <p class="text-muted">Review what will be pushed to WordPress.</p>
+            
+            <div id="sync-logs" class="sync-logs"></div>
+            
+            <div class="modal-actions">
+                <button id="btn-sync-close" class="btn">Close</button>
+                <button id="btn-sync-run" class="btn btn-primary">Run Mock Sync</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
