@@ -45,6 +45,7 @@ add_executable(wc_tests
     tests/test_tournament.cpp
     tests/test_tiebreaker.cpp
     tests/test_montecarlo.cpp
+    tests/test_asciiprinter.cpp
     src/util/CsvParser.cpp
     src/model/Team.cpp
     src/model/Match.cpp

@@ -299,34 +299,30 @@ void AsciiPrinter::printSimulationResults(const MatchSimulationResults& results)
     };
 
     std::vector<bool> stageDone(stages.size());
-    int lastDoneStageIdx = -1;
+    int firstUnresolvedStageIdx = -1;
     for (size_t i = 0; i < stages.size(); ++i) {
         stageDone[i] = isStageDone(*stages[i].probs);
-        if (stageDone[i]) {
-            lastDoneStageIdx = static_cast<int>(i);
-        } else {
+        if (!stageDone[i]) {
+            firstUnresolvedStageIdx = static_cast<int>(i);
             break;
         }
     }
 
     std::vector<StageInfo> colsToShow;
-    for (size_t i = 0; i < stages.size(); ++i) {
-        if (!stageDone[i]) {
+    if (firstUnresolvedStageIdx >= 0) {
+        for (size_t i = static_cast<size_t>(firstUnresolvedStageIdx); i < stages.size(); ++i) {
             colsToShow.push_back(stages[i]);
         }
-    }
-    if (colsToShow.empty()) {
+    } else {
         colsToShow.push_back(stages.back()); // Always show Champ if all done
     }
 
     std::vector<std::pair<std::string, double>> activeTeams;
     for (const auto& [abbr, prob] : results.championProbability) {
-        bool alive = false;
-        if (lastDoneStageIdx == -1) {
-            alive = results.r32Probability.at(abbr) > 1e-6;
-        } else {
-            alive = (*stages[lastDoneStageIdx].probs).at(abbr) >= 1.0 - 1e-6;
-        }
+        int aliveStageIdx = firstUnresolvedStageIdx >= 0
+            ? firstUnresolvedStageIdx
+            : static_cast<int>(stages.size() - 1);
+        bool alive = (*stages[aliveStageIdx].probs).at(abbr) > 1e-6;
         if (alive) {
             activeTeams.push_back({abbr, prob});
         }
