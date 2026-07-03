@@ -868,6 +868,19 @@ std::string buildDashboardHtml() {
           <p class="page-desc">Track and forecast the knockout matches from the Round of 32 down to the Final. Click any unplayed match card to enter scores.</p>
         </div>
       </div>
+      <div class="card" style="padding: 1rem 1.5rem; margin-bottom: 1rem;">
+        <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;">
+          <span style="font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; margin-right: 0.25rem;">Bracket View:</span>
+          <button id="bracket-mode-all" class="btn btn-primary" style="padding: 0.3rem 0.7rem; font-size: 0.78rem;" onclick="setBracketFilterMode('all')">Show All</button>
+          <button id="bracket-mode-still-alive" class="btn btn-secondary" style="padding: 0.3rem 0.7rem; font-size: 0.78rem;" onclick="setBracketFilterMode('still_alive')">Still Alive</button>
+          <span style="font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; margin: 0 0.1rem 0 0.6rem;">Columns:</span>
+          <button id="bracket-toggle-r32" class="btn btn-primary" style="padding: 0.3rem 0.6rem; font-size: 0.76rem;" onclick="toggleBracketRound('r32')">R32</button>
+          <button id="bracket-toggle-r16" class="btn btn-primary" style="padding: 0.3rem 0.6rem; font-size: 0.76rem;" onclick="toggleBracketRound('r16')">R16</button>
+          <button id="bracket-toggle-qf" class="btn btn-primary" style="padding: 0.3rem 0.6rem; font-size: 0.76rem;" onclick="toggleBracketRound('qf')">QF</button>
+          <button id="bracket-toggle-sf" class="btn btn-primary" style="padding: 0.3rem 0.6rem; font-size: 0.76rem;" onclick="toggleBracketRound('sf')">SF</button>
+          <button id="bracket-toggle-final" class="btn btn-primary" style="padding: 0.3rem 0.6rem; font-size: 0.76rem;" onclick="toggleBracketRound('final')">Final</button>
+        </div>
+      </div>
       <div id="bracket-container-parent" class="card" style="padding: 1.5rem; overflow-x: auto;">
         <div id="bracket-view" class="bracket-wrapper">
           <!-- Columns will be dynamically inserted here -->
@@ -1066,6 +1079,18 @@ std::string buildDashboardHtml() {
     let sandboxSortCol = 'champion';
     let sandboxSortDesc = true;
     let sandboxColsVisible = { r32: true, r16: true, qf: true, sf: true, final: true, champion: true };
+
+    // Bracket visibility state
+    let bracketMatchesData = [];
+    const bracketRounds = [
+      { key: 'r32', name: 'Round of 32', shortName: 'R32', matches: [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87] },
+      { key: 'r16', name: 'Round of 16', shortName: 'R16', matches: [89, 90, 93, 94, 91, 92, 95, 96] },
+      { key: 'qf', name: 'Quarterfinals', shortName: 'QF', matches: [97, 98, 99, 100] },
+      { key: 'sf', name: 'Semifinals', shortName: 'SF', matches: [101, 102] },
+      { key: 'final', name: 'Final', shortName: 'Final', matches: [104] }
+    ];
+    let bracketVisibleRounds = { r32: true, r16: true, qf: true, sf: true, final: true };
+    let bracketFilterMode = 'all';
 
     function switchTab(tab) {
       document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
@@ -1591,6 +1616,167 @@ std::string buildDashboardHtml() {
       return card;
     }
 
+    function updateBracketControlButtons() {
+      const allBtn = document.getElementById('bracket-mode-all');
+      const aliveBtn = document.getElementById('bracket-mode-still-alive');
+      if (allBtn) allBtn.className = bracketFilterMode === 'all' ? 'btn btn-primary' : 'btn btn-secondary';
+      if (aliveBtn) aliveBtn.className = bracketFilterMode === 'still_alive' ? 'btn btn-primary' : 'btn btn-secondary';
+
+      bracketRounds.forEach(round => {
+        const btn = document.getElementById('bracket-toggle-' + round.key);
+        if (btn) {
+          btn.className = bracketVisibleRounds[round.key] ? 'btn btn-primary' : 'btn btn-secondary';
+          btn.innerText = round.shortName;
+        }
+      });
+    }
+
+    function roundHasUnplayedMatch(round, matchMap) {
+      return round.matches.some(matchId => {
+        const match = matchMap[matchId];
+        return match && match.status !== 'final';
+      });
+    }
+
+    function setBracketFilterMode(mode) {
+      bracketFilterMode = mode;
+      if (mode === 'all') {
+        bracketRounds.forEach(round => {
+          bracketVisibleRounds[round.key] = true;
+        });
+      } else if (mode === 'still_alive') {
+        const matchMap = {};
+        bracketMatchesData.forEach(m => {
+          matchMap[m.match_id] = m;
+        });
+
+        bracketRounds.forEach(round => {
+          bracketVisibleRounds[round.key] = roundHasUnplayedMatch(round, matchMap);
+        });
+
+        if (!Object.values(bracketVisibleRounds).some(Boolean)) {
+          bracketVisibleRounds.final = true;
+        }
+      }
+
+      updateBracketControlButtons();
+      renderEliminationBracket();
+    }
+
+    function toggleBracketRound(roundKey) {
+      bracketFilterMode = 'custom';
+      bracketVisibleRounds[roundKey] = !bracketVisibleRounds[roundKey];
+
+      if (!Object.values(bracketVisibleRounds).some(Boolean)) {
+        bracketVisibleRounds[roundKey] = true;
+      }
+
+      updateBracketControlButtons();
+      renderEliminationBracket();
+    }
+
+    function renderEliminationBracket() {
+      const container = document.getElementById('bracket-view');
+      if (!container) return;
+
+      const matches = bracketMatchesData || [];
+      const matchMap = {};
+      matches.forEach(m => {
+        matchMap[m.match_id] = m;
+      });
+
+      const rounds = bracketRounds.filter(round => bracketVisibleRounds[round.key]);
+
+      container.innerHTML = '';
+      const innerContainer = document.createElement('div');
+      innerContainer.className = 'bracket-inner';
+
+      if (rounds.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-secondary); padding: 2rem; text-align: center;">No bracket columns selected.</div>';
+        updateBracketControlButtons();
+        return;
+      }
+
+      const headersRow = document.createElement('div');
+      headersRow.className = 'bracket-headers';
+      rounds.forEach(round => {
+        const headerCol = document.createElement('div');
+        headerCol.className = 'bracket-header-col';
+        headerCol.innerText = round.name;
+        headersRow.appendChild(headerCol);
+      });
+      innerContainer.appendChild(headersRow);
+
+      const bracketContainer = document.createElement('div');
+      bracketContainer.className = 'bracket-container';
+      // Compress vertical space based on earliest visible round.
+      const leadRoundGameCount = rounds[0] ? rounds[0].matches.length : 1;
+      const dynamicHeight = Math.max(420, leadRoundGameCount * 150);
+      bracketContainer.style.height = dynamicHeight + 'px';
+
+      rounds.forEach((round, roundIdx) => {
+        const column = document.createElement('div');
+        column.className = 'bracket-column';
+
+        if (roundIdx < rounds.length - 1) {
+          for (let i = 0; i < round.matches.length; i += 2) {
+            const matchupDiv = document.createElement('div');
+            matchupDiv.className = 'bracket-matchup';
+
+            const matchId1 = round.matches[i];
+            const matchId2 = round.matches[i + 1];
+            const match1 = matchMap[matchId1];
+            const match2 = matchMap[matchId2];
+
+            if (match1) matchupDiv.appendChild(createBracketCard(match1));
+            if (match2) matchupDiv.appendChild(createBracketCard(match2));
+
+            column.appendChild(matchupDiv);
+          }
+        } else {
+          const matchId = round.matches[0];
+          const match = matchMap[matchId];
+          if (match) {
+            const finalWrapper = document.createElement('div');
+            finalWrapper.style.display = 'flex';
+            finalWrapper.style.flexDirection = 'column';
+            finalWrapper.style.justifyContent = 'center';
+            finalWrapper.style.height = '100%';
+            finalWrapper.appendChild(createBracketCard(match));
+            column.appendChild(finalWrapper);
+          }
+        }
+
+        bracketContainer.appendChild(column);
+      });
+
+      innerContainer.appendChild(bracketContainer);
+      container.appendChild(innerContainer);
+
+      const thirdPlaceMatch = matchMap[103];
+      if (thirdPlaceMatch) {
+        const tpCard = createBracketCard(thirdPlaceMatch);
+        tpCard.style.margin = '0 auto';
+        tpCard.style.maxWidth = '250px';
+
+        const thirdPlaceContainer = document.createElement('div');
+        thirdPlaceContainer.className = 'third-place-container';
+
+        const tpHeader = document.createElement('div');
+        tpHeader.className = 'bracket-round-header';
+        tpHeader.style.margin = '0 auto 1.5rem auto';
+        tpHeader.style.maxWidth = '250px';
+        tpHeader.style.borderColor = 'var(--warning-color)';
+        tpHeader.innerText = 'Third Place Play-off';
+
+        thirdPlaceContainer.appendChild(tpHeader);
+        thirdPlaceContainer.appendChild(tpCard);
+        container.appendChild(thirdPlaceContainer);
+      }
+
+      updateBracketControlButtons();
+    }
+
     async function loadEliminationBracket() {
       const container = document.getElementById('bracket-view');
       container.innerHTML = '<div class="spinner" style="margin: 4rem auto;"></div>';
@@ -1598,113 +1784,14 @@ std::string buildDashboardHtml() {
       try {
         const res = await fetch('/api/games');
         const data = await res.json();
-        const matches = data.games || [];
-
-        const matchMap = {};
-        matches.forEach(m => {
-          matchMap[m.match_id] = m;
-        });
-
-        // 5 columns of matches ordered sequentially to align branch endpoints:
-        const rounds = [
-          {
-            name: "Round of 32",
-            matches: [74, 77, 73, 75, 83, 84, 81, 82, 76, 78, 79, 80, 86, 88, 85, 87]
-          },
-          {
-            name: "Round of 16",
-            matches: [89, 90, 93, 94, 91, 92, 95, 96]
-          },
-          {
-            name: "Quarterfinals",
-            matches: [97, 98, 99, 100]
-          },
-          {
-            name: "Semifinals",
-            matches: [101, 102]
-          },
-          {
-            name: "Final",
-            matches: [104]
-          }
-        ];
-
-        container.innerHTML = '';
-        const innerContainer = document.createElement('div');
-        innerContainer.className = 'bracket-inner';
-
-        const headersRow = document.createElement('div');
-        headersRow.className = 'bracket-headers';
-        rounds.forEach(round => {
-          const headerCol = document.createElement('div');
-          headerCol.className = 'bracket-header-col';
-          headerCol.innerText = round.name;
-          headersRow.appendChild(headerCol);
-        });
-        innerContainer.appendChild(headersRow);
-
-        const bracketContainer = document.createElement('div');
-        bracketContainer.className = 'bracket-container';
-
-        rounds.forEach((round, roundIdx) => {
-          const column = document.createElement('div');
-          column.className = 'bracket-column';
-
-          if (roundIdx < rounds.length - 1) {
-            for (let i = 0; i < round.matches.length; i += 2) {
-              const matchupDiv = document.createElement('div');
-              matchupDiv.className = 'bracket-matchup';
-
-              const matchId1 = round.matches[i];
-              const matchId2 = round.matches[i+1];
-
-              const match1 = matchMap[matchId1];
-              const match2 = matchMap[matchId2];
-
-              if (match1) matchupDiv.appendChild(createBracketCard(match1));
-              if (match2) matchupDiv.appendChild(createBracketCard(match2));
-
-              column.appendChild(matchupDiv);
-            }
-          } else {
-            const matchId = round.matches[0];
-            const match = matchMap[matchId];
-            if (match) {
-              const finalWrapper = document.createElement('div');
-              finalWrapper.style.display = 'flex';
-              finalWrapper.style.flexDirection = 'column';
-              finalWrapper.style.justifyContent = 'center';
-              finalWrapper.style.height = '100%';
-              finalWrapper.appendChild(createBracketCard(match));
-              column.appendChild(finalWrapper);
-            }
-          }
-
-          bracketContainer.appendChild(column);
-        });
-
-        innerContainer.appendChild(bracketContainer);
-        container.appendChild(innerContainer);
-
-        const thirdPlaceMatch = matchMap[103];
-        if (thirdPlaceMatch) {
-          const tpCard = createBracketCard(thirdPlaceMatch);
-          tpCard.style.margin = '0 auto';
-          tpCard.style.maxWidth = '250px';
-
-          const thirdPlaceContainer = document.createElement('div');
-          thirdPlaceContainer.className = 'third-place-container';
-
-          const tpHeader = document.createElement('div');
-          tpHeader.className = 'bracket-round-header';
-          tpHeader.style.margin = '0 auto 1.5rem auto';
-          tpHeader.style.maxWidth = '250px';
-          tpHeader.style.borderColor = 'var(--warning-color)';
-          tpHeader.innerText = 'Third Place Play-off';
-
-          thirdPlaceContainer.appendChild(tpHeader);
-          thirdPlaceContainer.appendChild(tpCard);
-          container.appendChild(thirdPlaceContainer);
+        bracketMatchesData = data.games || [];
+        if (bracketFilterMode === 'still_alive') {
+          setBracketFilterMode('still_alive');
+        } else if (bracketFilterMode === 'all') {
+          setBracketFilterMode('all');
+        } else {
+          updateBracketControlButtons();
+          renderEliminationBracket();
         }
       } catch (e) {
         container.innerHTML = `<div style="color:var(--danger-color); padding:2rem; text-align:center;">Failed to load bracket data: ${e.message}</div>`;
