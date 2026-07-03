@@ -1,0 +1,35 @@
+[project]
+name = "wpsync"
+version = "0.3.0"
+description = "Offline-first authoring and sync tool for the Gone2Look4America WordPress site"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "Markdown>=3.5",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "Flask>=3.0",
+]
+dev = [
+    "pytest>=8.0",
+    "requests-mock>=1.12",
+    "Flask>=3.0",
+]
+
+[project.scripts]
+wpsync = "wpsync.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["wpsync*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
