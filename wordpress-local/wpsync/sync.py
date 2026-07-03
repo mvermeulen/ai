@@ -78,7 +78,9 @@ class SyncEngine:
         existing_state = self.state.get(slug)
         if path.exists() and existing_state and not force:
             local_item = ContentItem.load(path)
-            local_hash = content_hash(local_item.render_html(self.offline_resolver(local_item)))
+            local_hash = content_hash(
+                local_item.render_html(self.offline_resolver(local_item), self._gpx_root())
+            )
             if local_hash != existing_state.content_hash:
                 return PullOutcome(slug=slug, action="skipped-local-changes", path=path)
 
@@ -97,7 +99,7 @@ class SyncEngine:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(item.dump(), encoding="utf-8")
 
-        canonical_hash = content_hash(item.render_html(self.offline_resolver(item)))
+        canonical_hash = content_hash(item.render_html(self.offline_resolver(item), self._gpx_root()))
         self.state.set(
             slug,
             ItemState(
@@ -115,6 +117,11 @@ class SyncEngine:
         sub = "posts" if kind == "post" else "pages"
         return self.config.content_dir / sub / f"{slug}.md"
 
+    def _gpx_root(self) -> Path:
+        """Base directory `{{route:...}}` marker paths are resolved against
+        (same convention as image references: relative to content_dir)."""
+        return self.config.content_dir
+
     # -------------------------------------------------------------- status
 
     def local_items(self) -> List[ContentItem]:
@@ -131,7 +138,7 @@ class SyncEngine:
         result = {}
         for item in self.local_items():
             st = self.state.get(item.slug)
-            rendered = item.render_html(self.offline_resolver(item))
+            rendered = item.render_html(self.offline_resolver(item), self._gpx_root())
             h = content_hash(rendered)
             if st is None:
                 result[item.slug] = "new"
@@ -157,7 +164,7 @@ class SyncEngine:
         item = self.find_local(slug)
         if item is None:
             raise ValueError(f"No local content found for slug '{slug}'")
-        new_html = item.render_html(self.offline_resolver(item))
+        new_html = item.render_html(self.offline_resolver(item), self._gpx_root())
         old_html = self.state.read_snapshot(slug) or ""
         return "\n".join(
             difflib.unified_diff(
@@ -200,7 +207,7 @@ class SyncEngine:
             entry = media_map.get(src)
             return entry["source_url"] if entry else src
 
-        new_html = item.render_html(resolve)
+        new_html = item.render_html(resolve, self._gpx_root())
         payload = {"title": item.title, "content": new_html, "status": item.status, "slug": item.slug}
         if item.excerpt:
             payload["excerpt"] = item.excerpt

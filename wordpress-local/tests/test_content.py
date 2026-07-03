@@ -108,6 +108,32 @@ def test_html_to_markdown_recognizes_strava_link():
     assert md.strip() == "{{strava:route:555}}"
 
 
+def test_render_route_marker_and_round_trip(tmp_path: Path):
+    gpx_dir = tmp_path / "media" / "routes"
+    gpx_dir.mkdir(parents=True)
+    gpx_path = gpx_dir / "day1.gpx"
+    gpx_path.write_text(
+        '<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">'
+        '<trk><trkseg>'
+        '<trkpt lat="30.0" lon="-97.0"><ele>100</ele></trkpt>'
+        '<trkpt lat="30.05" lon="-97.0"><ele>200</ele></trkpt>'
+        "</trkseg></trk></gpx>",
+        encoding="utf-8",
+    )
+    body = "{{route:media/routes/day1.gpx}}"
+    html_out = render_body(body, identity, gpx_root=tmp_path)
+    assert "Distance" in html_out
+    assert 'data-wpsync-route="media/routes/day1.gpx"' in html_out
+
+    md = html_to_markdown(html_out)
+    assert md.strip() == "{{route:media/routes/day1.gpx}}"
+
+
+def test_render_route_marker_missing_file_does_not_raise(tmp_path: Path):
+    html_out = render_body("{{route:media/routes/missing.gpx}}", identity, gpx_root=tmp_path)
+    assert "could not render route" in html_out
+
+
 def test_referenced_media_extraction():
     item = ContentItem(
         kind="post",

@@ -55,3 +55,68 @@ def test_upload_media_sends_content_disposition(requests_mock, client: WPClient)
     assert result["source_url"] == "https://example.test/img.jpg"
     sent_headers = requests_mock.last_request.headers
     assert "attachment" in sent_headers["Content-Disposition"]
+
+
+def test_list_media_all_paginates(requests_mock, client: WPClient):
+    requests_mock.get(
+        f"{API_ROOT}/media",
+        [
+            {"json": [{"id": 1}], "headers": {"X-WP-TotalPages": "2"}},
+            {"json": [{"id": 2}], "headers": {"X-WP-TotalPages": "2"}},
+        ],
+    )
+    result = client.list_media_all()
+    assert [r["id"] for r in result] == [1, 2]
+
+
+def test_update_media_posts_to_media_id(requests_mock, client: WPClient):
+    requests_mock.post(f"{API_ROOT}/media/5", json={"id": 5, "alt_text": "new alt"})
+    result = client.update_media(5, {"alt_text": "new alt"})
+    assert result["alt_text"] == "new alt"
+
+
+def test_list_comments_filters_by_post_and_status(requests_mock, client: WPClient):
+    requests_mock.get(f"{API_ROOT}/comments", json=[{"id": 1, "post": 10, "status": "hold"}])
+    result = client.list_comments(post_id=10, status="hold")
+    assert result[0]["id"] == 1
+    sent = requests_mock.last_request.qs
+    assert sent["post"] == ["10"]
+    assert sent["status"] == ["hold"]
+
+
+def test_update_comment_status(requests_mock, client: WPClient):
+    requests_mock.post(f"{API_ROOT}/comments/9", json={"id": 9, "status": "approve"})
+    result = client.update_comment_status(9, "approve")
+    assert result["status"] == "approve"
+
+
+def test_create_comment_reply_sets_parent(requests_mock, client: WPClient):
+    requests_mock.post(f"{API_ROOT}/comments", json={"id": 20, "parent": 9})
+    result = client.create_comment_reply(post_id=10, parent_id=9, content="Thanks!")
+    assert result["parent"] == 9
+    import json as _json
+
+    body = _json.loads(requests_mock.last_request.body)
+    assert body == {"post": 10, "parent": 9, "content": "Thanks!"}
+
+
+def test_list_terms_and_create_and_update(requests_mock, client: WPClient):
+    requests_mock.get(f"{API_ROOT}/categories", json=[{"id": 3, "name": "Texas", "slug": "texas"}])
+    assert client.list_terms("category")[0]["name"] == "Texas"
+
+    requests_mock.post(f"{API_ROOT}/categories", json={"id": 4, "name": "Trains"})
+    created = client.create_term("category", {"name": "Trains"})
+    assert created["id"] == 4
+
+    requests_mock.post(f"{API_ROOT}/categories/4", json={"id": 4, "description": "choo choo"})
+    updated = client.update_term("category", 4, {"description": "choo choo"})
+    assert updated["description"] == "choo choo"
+
+
+def test_get_and_update_settings(requests_mock, client: WPClient):
+    requests_mock.get(f"{API_ROOT}/settings", json={"title": "Old Title"})
+    assert client.get_settings()["title"] == "Old Title"
+
+    requests_mock.post(f"{API_ROOT}/settings", json={"title": "New Title"})
+    updated = client.update_settings({"title": "New Title"})
+    assert updated["title"] == "New Title"

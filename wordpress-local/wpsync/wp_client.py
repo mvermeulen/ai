@@ -141,6 +141,14 @@ class WPClient:
             params["search"] = search
         return list(self._paginated_get("/media", params))
 
+    def list_media_all(self) -> List[dict]:
+        """Full media library, paginated, for the offline media manifest."""
+        return list(self._paginated_get("/media", {"context": "edit"}))
+
+    def update_media(self, wp_id: int, data: dict) -> dict:
+        """Update editable media fields (alt_text, caption, title, description)."""
+        return self._request("POST", f"/media/{wp_id}", json=data).json()
+
     # -- taxonomy ---------------------------------------------------------
 
     def ensure_terms(self, taxonomy: str, names: List[str]) -> List[int]:
@@ -156,3 +164,38 @@ class WPClient:
                 created = self._request("POST", path, json={"name": name}).json()
                 ids.append(created["id"])
         return ids
+
+    def list_terms(self, taxonomy: str) -> List[dict]:
+        path = "/categories" if taxonomy == "category" else "/tags"
+        return list(self._paginated_get(path, {"context": "edit"}))
+
+    def create_term(self, taxonomy: str, data: dict) -> dict:
+        path = "/categories" if taxonomy == "category" else "/tags"
+        return self._request("POST", path, json=data).json()
+
+    def update_term(self, taxonomy: str, wp_id: int, data: dict) -> dict:
+        path = "/categories" if taxonomy == "category" else "/tags"
+        return self._request("POST", f"{path}/{wp_id}", json=data).json()
+
+    # -- comments -----------------------------------------------------------
+
+    def list_comments(self, post_id: Optional[int] = None, status: str = "any") -> List[dict]:
+        params: Dict[str, Any] = {"status": status, "context": "edit"}
+        if post_id is not None:
+            params["post"] = post_id
+        return list(self._paginated_get("/comments", params))
+
+    def update_comment_status(self, comment_id: int, status: str) -> dict:
+        return self._request("POST", f"/comments/{comment_id}", json={"status": status}).json()
+
+    def create_comment_reply(self, post_id: int, parent_id: int, content: str) -> dict:
+        payload = {"post": post_id, "parent": parent_id, "content": content}
+        return self._request("POST", "/comments", json=payload).json()
+
+    # -- site settings ------------------------------------------------------
+
+    def get_settings(self) -> dict:
+        return self._request("GET", "/settings").json()
+
+    def update_settings(self, data: dict) -> dict:
+        return self._request("POST", "/settings", json=data).json()

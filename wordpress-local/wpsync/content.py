@@ -27,11 +27,13 @@ from typing import Callable, List, Optional, Tuple
 import markdown
 import yaml
 
+from . import routes as _routes
+
 RAW_OPEN = "<!--raw-->"
 RAW_CLOSE = "<!--/raw-->"
 
 VALID_KINDS = ("post", "page")
-VALID_STATUSES = ("draft", "publish", "pending", "private")
+VALID_STATUSES = ("draft", "publish", "pending", "private", "future")
 
 
 # --------------------------------------------------------------------------
@@ -107,8 +109,8 @@ class ContentItem:
                 found.append(src)
         return found
 
-    def render_html(self, resolve_image: Callable[[str], str]) -> str:
-        return render_body(self.body, resolve_image)
+    def render_html(self, resolve_image: Callable[[str], str], gpx_root: Optional[Path] = None) -> str:
+        return render_body(self.body, resolve_image, gpx_root)
 
 
 def _is_remote(src: str) -> bool:
@@ -135,6 +137,7 @@ def _split_frontmatter(text: str) -> Tuple[dict, str]:
 
 _IMAGE_RE = re.compile(r'^!\[(?P<alt>.*?)\]\((?P<src>\S+?)(?:\s+"(?P<caption>.*?)")?\)$')
 _STRAVA_RE = re.compile(r"^\{\{strava:(?:(?P<kind>route|activity):)?(?P<id>\d+)\}\}$")
+_ROUTE_RE = re.compile(r"^\{\{route:(?P<path>\S+)\}\}$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _HR_RE = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
 _LIST_ITEM_RE = re.compile(r"^([-*+]|\d+\.)\s+")
@@ -175,11 +178,11 @@ def _split_markdown_blocks(text: str) -> List[str]:
     return blocks
 
 
-def render_body(body: str, resolve_image: Callable[[str], str]) -> str:
-    return "\n\n".join(_render_block(b, resolve_image) for b in _split_markdown_blocks(body))
+def render_body(body: str, resolve_image: Callable[[str], str], gpx_root: Optional[Path] = None) -> str:
+    return "\n\n".join(_render_block(b, resolve_image, gpx_root) for b in _split_markdown_blocks(body))
 
 
-def _render_block(block: str, resolve_image: Callable[[str], str]) -> str:
+def _render_block(block: str, resolve_image: Callable[[str], str], gpx_root: Optional[Path] = None) -> str:
     stripped = block.strip()
 
     if stripped.startswith(RAW_OPEN):
@@ -194,6 +197,12 @@ def _render_block(block: str, resolve_image: Callable[[str], str]) -> str:
         path = "routes" if kind == "route" else "activities"
         url = f"https://www.strava.com/{path}/{m.group('id')}"
         return f'<!-- wp:paragraph -->\n<p class="wp-block-paragraph">{url}</p>\n<!-- /wp:paragraph -->'
+
+    m = _ROUTE_RE.match(stripped)
+    if m:
+        marker_path = m.group("path")
+        base = gpx_root if gpx_root is not None else Path(".")
+        return _routes.render_route_html(base / marker_path, marker_path)
 
     if _HR_RE.match(stripped):
         return '<!-- wp:separator -->\n<hr class="wp-block-separator has-alpha-channel-opacity"/>\n<!-- /wp:separator -->'
@@ -407,6 +416,11 @@ def _block_to_markdown(raw: str) -> Optional[str]:
         inner = re.sub(r"</?p[^>]*>", "", inner).strip()
         text = _html_inline_to_md(inner)
         return "\n".join(f"> {line}" for line in text.splitlines()) if text else None
+
+    if tag == "div":
+        m = re.search(r'\bdata-wpsync-route="([^"]*)"', raw_stripped)
+        if m:
+            return f"{{{{route:{html.unescape(m.group(1))}}}}}"
 
     return _raw_or_strava(raw_stripped)
 

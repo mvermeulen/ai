@@ -8,7 +8,7 @@ import re
 import tempfile
 import webbrowser
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 from .content import ContentItem
 
@@ -42,7 +42,9 @@ Unsynced local images are shown as broken-image placeholders.</div>
 """
 
 
-def render_preview_html(item: ContentItem, resolve_image: Callable[[str], str]) -> str:
+def render_preview_html(
+    item: ContentItem, resolve_image: Callable[[str], str], gpx_root: Optional[Path] = None
+) -> str:
     meta_bits = [f"status: {item.status}"]
     if item.date:
         meta_bits.append(item.date)
@@ -50,13 +52,18 @@ def render_preview_html(item: ContentItem, resolve_image: Callable[[str], str]) 
         meta_bits.append("categories: " + ", ".join(item.categories))
     if item.tags:
         meta_bits.append("tags: " + ", ".join(item.tags))
-    body_html = item.render_html(resolve_image)
+    body_html = item.render_html(resolve_image, gpx_root)
     body_html = re.sub(r"<!--\s*/?wp:[^>]*-->\n?", "", body_html)
     return _TEMPLATE.format(title=item.title, meta=" &middot; ".join(meta_bits), body=body_html)
 
 
-def write_and_open(item: ContentItem, resolve_image: Callable[[str], str], open_browser: bool = True) -> Path:
-    html = render_preview_html(item, resolve_image)
+def write_and_open(
+    item: ContentItem,
+    resolve_image: Callable[[str], str],
+    gpx_root: Optional[Path] = None,
+    open_browser: bool = True,
+) -> Path:
+    html = render_preview_html(item, resolve_image, gpx_root)
     tmp_dir = Path(tempfile.gettempdir()) / "wpsync-preview"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     out_path = tmp_dir / f"{item.slug}.html"
