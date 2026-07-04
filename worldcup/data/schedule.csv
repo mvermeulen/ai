@@ -84,18 +84,18 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 83,knockout_r32,N/A,2026-07-02,POR,CRO,2,1,-1,-1,final,Toronto
 84,knockout_r32,N/A,2026-07-02,ESP,AUT,3,0,-1,-1,final,Los Angeles
 85,knockout_r32,N/A,2026-07-02,SUI,ALG,2,0,-1,-1,final,Vancouver
-86,knockout_r32,N/A,2026-07-03,ARG,CPV,-1,-1,-1,-1,scheduled,Miami
-87,knockout_r32,N/A,2026-07-03,COL,GHA,-1,-1,-1,-1,scheduled,Kansas City
+86,knockout_r32,N/A,2026-07-03,ARG,CPV,3,2,-1,-1,final,Miami
+87,knockout_r32,N/A,2026-07-03,COL,GHA,1,0,-1,-1,final,Kansas City
 88,knockout_r32,N/A,2026-07-03,AUS,EGY,1,1,2,4,final,Dallas
-89,knockout_r16,N/A,2026-07-04,PAR,FRA,-1,-1,-1,-1,scheduled,Philadelphia
-90,knockout_r16,N/A,2026-07-04,CAN,MAR,-1,-1,-1,-1,scheduled,Houston
+89,knockout_r16,N/A,2026-07-04,PAR,FRA,0,1,-1,-1,final,Philadelphia
+90,knockout_r16,N/A,2026-07-04,CAN,MAR,0,3,-1,-1,final,Houston
 91,knockout_r16,N/A,2026-07-05,BRA,NOR,-1,-1,-1,-1,scheduled,New York/New Jersey
 92,knockout_r16,N/A,2026-07-05,MEX,ENG,-1,-1,-1,-1,scheduled,Mexico City
 93,knockout_r16,N/A,2026-07-06,POR,ESP,-1,-1,-1,-1,scheduled,Dallas
 94,knockout_r16,N/A,2026-07-06,USA,BEL,-1,-1,-1,-1,scheduled,Seattle
-95,knockout_r16,N/A,2026-07-07,R32_WINNER_86,EGY,-1,-1,-1,-1,scheduled,Atlanta
-96,knockout_r16,N/A,2026-07-07,SUI,R32_WINNER_87,-1,-1,-1,-1,scheduled,Vancouver
-97,quarterfinals,N/A,2026-07-09,R16_WINNER_89,R16_WINNER_90,-1,-1,-1,-1,scheduled,Boston
+95,knockout_r16,N/A,2026-07-07,ARG,EGY,-1,-1,-1,-1,scheduled,Atlanta
+96,knockout_r16,N/A,2026-07-07,SUI,COL,-1,-1,-1,-1,scheduled,Vancouver
+97,quarterfinals,N/A,2026-07-09,FRA,MAR,-1,-1,-1,-1,scheduled,Boston
 98,quarterfinals,N/A,2026-07-10,R16_WINNER_93,R16_WINNER_94,-1,-1,-1,-1,scheduled,Los Angeles
 99,quarterfinals,N/A,2026-07-11,R16_WINNER_91,R16_WINNER_92,-1,-1,-1,-1,scheduled,Miami
 100,quarterfinals,N/A,2026-07-11,R16_WINNER_95,R16_WINNER_96,-1,-1,-1,-1,scheduled,Kansas City
