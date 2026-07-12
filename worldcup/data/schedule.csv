@@ -96,10 +96,10 @@ match_id,stage,group,date,home_team,away_team,home_score,away_score,home_penalty
 95,knockout_r16,N/A,2026-07-07,ARG,EGY,3,2,-1,-1,final,Atlanta
 96,knockout_r16,N/A,2026-07-07,SUI,COL,0,0,4,3,final,Vancouver
 97,quarterfinals,N/A,2026-07-09,FRA,MAR,2,0,-1,-1,final,Boston
-98,quarterfinals,N/A,2026-07-10,ESP,BEL,-1,-1,-1,-1,scheduled,Los Angeles
-99,quarterfinals,N/A,2026-07-11,NOR,ENG,-1,-1,-1,-1,scheduled,Miami
+98,quarterfinals,N/A,2026-07-10,ESP,BEL,2,1,-1,-1,final,Los Angeles
+99,quarterfinals,N/A,2026-07-11,NOR,ENG,1,2,-1,-1,final,Miami
 100,quarterfinals,N/A,2026-07-11,ARG,SUI,-1,-1,-1,-1,scheduled,Kansas City
-101,semifinals,N/A,2026-07-14,FRA,QUARTERFINAL_WINNER_98,-1,-1,-1,-1,scheduled,Dallas
-102,semifinals,N/A,2026-07-15,QUARTERFINAL_WINNER_99,QUARTERFINAL_WINNER_100,-1,-1,-1,-1,scheduled,Atlanta
+101,semifinals,N/A,2026-07-14,FRA,ESP,-1,-1,-1,-1,scheduled,Dallas
+102,semifinals,N/A,2026-07-15,ENG,QUARTERFINAL_WINNER_100,-1,-1,-1,-1,scheduled,Atlanta
 103,third_place,N/A,2026-07-18,TBD_103,TBD_103,-1,-1,-1,-1,scheduled,Miami
 104,final,N/A,2026-07-19,TBD_104,TBD_104,-1,-1,-1,-1,scheduled,New York/New Jersey
