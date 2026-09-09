@@ -29,6 +29,9 @@ hands it to a generic solver.
 
 ## Files
 
+- `puzzlemadness.py` - shared helpers: build a puzzle URL for a given
+  date/difficulty, fetch a page, and extract its embedded `puzzleData`
+  JSON. Used by both scripts below.
 - `solver.py` - the solver itself. Bitmask candidate propagation
   (naked singles cascade automatically) plus MRV-ordered backtracking
   over rows/columns/boxes/extra-regions. Not specific to size 16 or to
@@ -36,19 +39,22 @@ hands it to a generic solver.
 - `fetch_and_solve.py` - CLI: fetch a puzzle URL (or a saved HTML/JSON
   file), solve it, print the starting grid and solution, and sanity-check
   that the solution is unique.
-- `interactive_solver.html` - a self-contained, playable version of the
-  Wed 9 Sep 2026 medium puzzle: fill it in yourself (click/tap a cell,
-  type `1`-`9`/`A`-`G`, or use the on-screen keypad), and click **Hint**
-  for the next logical step, explained in human terms - naked single,
-  hidden single, pointing pair, box-line reduction, naked pair - falling
-  back to a direct reveal only when no simple pattern applies. A "Check
-  my grid" button flags entries that don't match the solution without
-  giving them away, and progress is saved to the browser's local storage.
-  Open the file directly in a browser (no server needed); it's also
-  published as a Claude Artifact for sharing. The starting/solution grids
-  are baked into the file from a specific solved puzzle - see
-  `fetch_and_solve.py --save-json` to generate the arrays for a different
-  date/difficulty.
+- `interactive_template.html` / `generate_interactive.py` - the
+  interactive board (see below) as a template with `__PLACEHOLDER__`
+  tokens for the date, difficulty, source URL, and the starting/solution
+  arrays; `generate_interactive.py` fills those in for whatever
+  date/difficulty you ask for and writes `interactive_solver.html`.
+- `interactive_solver.html` - a self-contained, playable board generated
+  from the template above (currently baked with the Wed 9 Sep 2026
+  medium puzzle): fill it in yourself (click/tap a cell, type
+  `1`-`9`/`A`-`G`, or use the on-screen keypad), and click **Hint** for
+  the next logical step, explained in human terms - naked single, hidden
+  single, pointing pair, box-line reduction, naked pair - falling back to
+  a direct reveal only when no simple pattern applies. A "Check my grid"
+  button flags entries that don't match the solution without giving them
+  away, and progress is saved to the browser's local storage. Open the
+  file directly in a browser (no server needed); it's also published as
+  a Claude Artifact for sharing.
 
 ## Usage
 
@@ -64,6 +70,31 @@ python3 fetch_and_solve.py https://puzzlemadness.co.uk/16by16giantsudoku/tough/2
 python3 fetch_and_solve.py --file page.html --save-json puzzle.json
 python3 fetch_and_solve.py --file puzzle.json
 ```
+
+### Updating the interactive board to a new date
+
+```bash
+# Today's medium puzzle (the defaults):
+python3 generate_interactive.py
+
+# A specific date and/or difficulty:
+python3 generate_interactive.py --date 2026-09-10
+python3 generate_interactive.py --date 2026-09-10 --difficulty tough
+
+# From a file you already have (uses the date embedded in its JSON):
+python3 generate_interactive.py --file page.html
+
+# Write somewhere other than interactive_solver.html:
+python3 generate_interactive.py --date 2026-09-10 --output sept10.html
+```
+
+This overwrites `interactive_solver.html` in place (unless `--output` says
+otherwise) with a fresh title, date/difficulty labels, source link,
+localStorage key, and starting/solution grids - re-publish that file as
+the Artifact to share the new puzzle. Sparser puzzles (tough/hard, fewer
+givens) can take longer to solve - a "hard" puzzle with 99 givens took
+about 13 seconds in testing, versus well under a second for a "medium"
+one with 115.
 
 Example output:
 
