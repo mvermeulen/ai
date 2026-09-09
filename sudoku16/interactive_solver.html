@@ -1,0 +1,815 @@
+<title>The September 9 Giant Sudoku</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --bg:#eef0f4;
+  --surface:#ffffff;
+  --ink:#1a2233;
+  --muted:#5b6478;
+  --line:#ccd1de;
+  --box-line:#7d879c;
+  --accent:#1f6f5c;
+  --accent-soft:#e4f1ec;
+  --user:#2d4b8e;
+  --user-soft:#e7edfa;
+  --danger:#a8281f;
+  --danger-soft:#fbe1df;
+  --warn:#8a5a12;
+  --warn-soft:#faedd6;
+  --chip-bg:#e2e6ee;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10131a;
+    --surface:#171b24;
+    --ink:#e7e9f0;
+    --muted:#8b93a7;
+    --line:#2b3140;
+    --box-line:#4c5468;
+    --accent:#59d4b6;
+    --accent-soft:#16352d;
+    --user:#8fb0ff;
+    --user-soft:#1b2540;
+    --danger:#ff8b82;
+    --danger-soft:#3a1b1b;
+    --warn:#e6b85c;
+    --warn-soft:#3a2f14;
+    --chip-bg:#1e2330;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10131a;
+  --surface:#171b24;
+  --ink:#e7e9f0;
+  --muted:#8b93a7;
+  --line:#2b3140;
+  --box-line:#4c5468;
+  --accent:#59d4b6;
+  --accent-soft:#16352d;
+  --user:#8fb0ff;
+  --user-soft:#1b2540;
+  --danger:#ff8b82;
+  --danger-soft:#3a1b1b;
+  --warn:#e6b85c;
+  --warn-soft:#3a2f14;
+  --chip-bg:#1e2330;
+}
+
+*{box-sizing:border-box;}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  padding:2.5rem 1.5rem 3.5rem;
+}
+
+.page{
+  max-width:1180px;
+  margin:0 auto;
+  display:flex;
+  flex-direction:column;
+  gap:2rem;
+}
+
+header{
+  display:flex;
+  flex-direction:column;
+  gap:.9rem;
+}
+.eyebrow{
+  font:600 .72rem/1 "IBM Plex Mono",monospace;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--accent);
+}
+h1{
+  font-family:"Fraunces",Georgia,serif;
+  font-weight:600;
+  font-size:clamp(1.9rem,4vw,2.7rem);
+  line-height:1.08;
+  margin:0;
+  text-wrap:balance;
+  max-width:22ch;
+}
+.dek{
+  color:var(--muted);
+  font-size:1rem;
+  line-height:1.55;
+  max-width:66ch;
+  margin:0;
+}
+.dek a{color:var(--accent);text-decoration-color:color-mix(in srgb, var(--accent) 40%, transparent);}
+
+.stats{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.6rem;
+  margin-top:.3rem;
+}
+.stat{
+  background:var(--chip-bg);
+  border-radius:999px;
+  padding:.4rem .9rem;
+  font:500 .82rem/1 "IBM Plex Sans",sans-serif;
+  color:var(--muted);
+  display:flex;
+  align-items:baseline;
+  gap:.4em;
+}
+.stat b{
+  font:600 .82rem/1 "IBM Plex Mono",monospace;
+  color:var(--ink);
+  font-variant-numeric:tabular-nums;
+}
+
+.layout{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 320px;
+  gap:1.75rem;
+  align-items:start;
+}
+@media (max-width:920px){
+  .layout{grid-template-columns:1fr;}
+}
+
+.board-card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:1.3rem;
+  display:flex;
+  flex-direction:column;
+  gap:1rem;
+}
+.board-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:.5rem;
+  flex-wrap:wrap;
+}
+.board-title{
+  font-family:"Fraunces",Georgia,serif;
+  font-weight:600;
+  font-size:1.15rem;
+}
+.board-note{
+  font:500 .74rem/1 "IBM Plex Mono",monospace;
+  color:var(--muted);
+  letter-spacing:.02em;
+}
+
+.grid16{
+  display:grid;
+  grid-template-columns:repeat(16,1fr);
+  grid-template-rows:repeat(16,1fr);
+  aspect-ratio:1/1;
+  width:100%;
+  background:var(--box-line);
+  gap:1px;
+  border:2px solid var(--box-line);
+  border-radius:6px;
+  overflow:hidden;
+  outline:none;
+  user-select:none;
+}
+.cell{
+  position:relative;
+  background:var(--surface);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-family:"IBM Plex Mono",monospace;
+  font-weight:600;
+  font-size:clamp(.6rem,1.7vw,1.15rem);
+  font-variant-numeric:tabular-nums;
+  color:var(--ink);
+  cursor:pointer;
+}
+.cell.given{font-weight:600;}
+.cell.user{color:var(--user);font-weight:600;}
+.cell.hinted{color:var(--accent);font-weight:600;}
+.cell.selected{box-shadow:inset 0 0 0 2px var(--accent);z-index:2;}
+.cell.conflict{background:var(--danger-soft);color:var(--danger);}
+.cell.flagged{box-shadow:inset 0 0 0 2px var(--warn);z-index:2;}
+.cell.candidates{
+  font-family:"IBM Plex Mono",monospace;
+  font-weight:500;
+  font-size:clamp(.34rem,.95vw,.62rem);
+  color:var(--muted);
+  letter-spacing:.02em;
+  line-height:1.15;
+  padding:1px;
+  text-align:center;
+  cursor:pointer;
+}
+
+/* thicker separators every 4th row/col to mark the 4x4 boxes */
+.cell[data-c="3"],.cell[data-c="7"],.cell[data-c="11"]{border-right:2px solid var(--box-line);}
+.cell[data-r="3"],.cell[data-r="7"],.cell[data-r="11"]{border-bottom:2px solid var(--box-line);}
+
+.legend{
+  display:flex;
+  gap:1.1rem;
+  flex-wrap:wrap;
+  font-size:.8rem;
+  color:var(--muted);
+}
+.legend span{display:inline-flex;align-items:center;gap:.45em;}
+.swatch{width:1.3em;height:1.3em;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--surface);font:600 .78em "IBM Plex Mono",monospace;}
+.swatch.given-sw{color:var(--ink);}
+.swatch.user-sw{background:var(--user-soft);border-color:var(--user);}
+.swatch.hint-sw{background:var(--accent-soft);border-color:var(--accent);}
+
+aside{
+  display:flex;
+  flex-direction:column;
+  gap:1.25rem;
+}
+.panel{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:1.1rem 1.2rem;
+  display:flex;
+  flex-direction:column;
+  gap:.8rem;
+}
+.panel h2{
+  font-family:"Fraunces",Georgia,serif;
+  font-size:1.02rem;
+  margin:0;
+  font-weight:600;
+}
+.controls{display:flex;flex-direction:column;gap:.6rem;}
+.btn-row{display:flex;gap:.5rem;flex-wrap:wrap;}
+button{
+  font:600 .85rem/1 "IBM Plex Sans",sans-serif;
+  border:1px solid var(--line);
+  background:var(--chip-bg);
+  color:var(--ink);
+  padding:.55rem .9rem;
+  border-radius:8px;
+  cursor:pointer;
+}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface);}
+button.ghost{background:transparent;}
+button:focus-visible,.grid16:focus-visible,.keypad button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+button:active{transform:translateY(1px);}
+label.toggle{
+  display:flex;align-items:center;gap:.55em;
+  font-size:.85rem;color:var(--muted);cursor:pointer;
+}
+
+.keypad{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:.4rem;
+}
+.keypad button{
+  font-family:"IBM Plex Mono",monospace;
+  padding:.5rem 0;
+  text-align:center;
+}
+.keypad button.erase{grid-column:span 4;background:transparent;}
+
+.status-line{
+  font-size:.85rem;
+  color:var(--muted);
+  min-height:1.2em;
+}
+.status-line.error{color:var(--danger);}
+.status-line.ok{color:var(--accent);}
+
+.hint-log{
+  max-height:340px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:.55rem;
+  padding-right:.2rem;
+}
+.hint-item{
+  border-left:3px solid var(--line);
+  padding:.15rem 0 .15rem .7rem;
+  font-size:.82rem;
+  line-height:1.45;
+  color:var(--muted);
+}
+.hint-item .tag{
+  display:inline-block;
+  font:600 .68rem/1 "IBM Plex Mono",monospace;
+  letter-spacing:.03em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:.2rem;
+}
+.hint-item.error-item{border-left-color:var(--warn);}
+.hint-item.error-item .tag{color:var(--warn);}
+.hint-item .step{color:var(--ink);font-weight:500;}
+.hint-empty{color:var(--muted);font-size:.85rem;font-style:italic;}
+
+footer{
+  font-size:.8rem;
+  color:var(--muted);
+  text-align:center;
+}
+footer a{color:var(--accent);}
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">Play &amp; get hints</div>
+    <h1>The September 9 Giant Sudoku</h1>
+    <p class="dek">A 16&times;16 "Giant Sudoku" (medium) from
+      <a href="https://puzzlemadness.co.uk/16by16giantsudoku/medium/2026/9/9" target="_blank" rel="noopener">puzzlemadness.co.uk</a>.
+      Fill it in yourself &mdash; click or tap a cell, then type <code>1</code>&ndash;<code>9</code>
+      or <code>A</code>&ndash;<code>G</code> (or use the keypad). Stuck? Hint explains the next
+      logical step and places it for you.</p>
+    <div class="stats">
+      <span class="stat">Wed <b>9 Sep 2026</b></span>
+      <span class="stat">Difficulty <b>Medium</b></span>
+      <span class="stat">Filled <b id="stat-filled">115 / 256</b></span>
+      <span class="stat">Hints used <b id="stat-hints">0</b></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="board-card">
+      <div class="board-head">
+        <span class="board-title">Your grid</span>
+        <span class="board-note" id="board-note">click a cell to start</span>
+      </div>
+      <div class="grid16" id="board" tabindex="0" role="grid" aria-label="16 by 16 sudoku grid"></div>
+      <div class="legend">
+        <span><span class="swatch given-sw">1</span>given clue</span>
+        <span><span class="swatch user-sw"></span>your entry</span>
+        <span><span class="swatch hint-sw"></span>placed via hint</span>
+      </div>
+      <div class="status-line" id="status-line"></div>
+    </div>
+
+    <aside>
+      <div class="panel">
+        <h2>Controls</h2>
+        <div class="controls">
+          <div class="btn-row">
+            <button class="primary" id="btn-hint">Hint</button>
+            <button id="btn-check">Check my grid</button>
+          </div>
+          <label class="toggle"><input type="checkbox" id="toggle-candidates"> Show remaining candidates in empty cells</label>
+          <div class="btn-row">
+            <button class="ghost" id="btn-reset">Reset to blank</button>
+            <button class="ghost" id="btn-reveal">Reveal full solution</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Keypad</h2>
+        <div class="keypad" id="keypad"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Hint log</h2>
+        <div class="hint-log" id="hint-log">
+          <div class="hint-empty">Your hints will show up here, most recent first.</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <footer>Progress is saved to this browser only (nothing is sent anywhere). Puzzle data read directly from the page's embedded JSON.</footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const N = 16;
+const SIZE = N*N;
+const LABEL = ["·","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","G"];
+const PUZZLE_KEY = "sudoku16-2026-09-09";
+
+const START = [0,1,10,16,6,0,9,3,14,0,13,11,15,0,7,12,11,0,0,0,5,0,15,10,1,0,0,0,0,0,0,14,0,0,0,0,4,0,0,14,0,8,0,5,0,2,0,0,0,8,0,6,0,0,0,0,0,16,7,3,0,9,0,0,0,14,0,0,15,0,0,0,0,1,0,0,16,5,0,8,0,16,0,15,12,0,8,0,0,0,0,7,0,0,0,0,10,12,11,1,0,3,16,0,15,2,14,0,4,6,0,0,0,7,0,9,0,0,1,2,0,0,16,0,14,12,0,0,0,11,6,8,0,0,4,9,0,5,0,0,0,14,0,2,0,0,14,0,0,13,0,8,0,6,10,16,0,0,0,0,0,0,13,0,0,0,0,6,11,14,0,12,0,3,5,0,16,10,3,0,11,0,14,0,0,0,8,0,1,0,6,15,0,5,0,14,0,1,0,0,0,0,0,13,0,4,12,10,0,0,0,0,7,0,11,12,3,0,0,6,0,1,0,0,7,6,2,0,14,0,0,0,12,0,0,0,0,0,0,0,12,15,0,10,3,9,2,0,8,11,0,14,0,0,0,0];
+const SOLUTION = [5,1,10,16,6,2,9,3,14,4,13,11,15,8,7,12,11,4,7,2,5,8,15,10,1,12,6,9,13,16,3,14,9,3,12,13,4,16,7,14,10,8,15,5,6,2,11,1,14,8,15,6,13,11,12,1,2,16,7,3,10,9,4,5,6,14,4,3,15,7,13,11,9,1,12,10,16,5,2,8,2,16,5,15,12,14,8,4,6,13,11,7,9,10,1,3,10,12,11,1,9,3,16,5,15,2,14,8,4,6,13,7,13,7,8,9,10,6,1,2,5,3,16,4,14,12,15,11,1,11,6,8,16,12,4,9,13,5,3,15,7,14,10,2,15,2,14,5,1,13,3,8,7,6,10,16,12,11,9,4,4,9,13,7,2,15,10,6,11,14,1,12,8,3,5,16,16,10,3,12,11,5,14,7,4,9,8,2,1,13,6,15,3,5,9,14,8,1,6,15,16,7,2,13,11,4,12,10,8,13,16,4,7,10,11,12,3,15,5,6,2,1,14,9,7,6,2,11,14,4,5,16,12,10,9,1,3,15,8,13,12,15,1,10,3,9,2,13,8,11,4,14,5,7,16,6];
+const GIVEN = START.map(v => v !== 0);
+
+// ---- regions: rows, columns, 4x4 boxes ----
+const ROWS = [], COLS = [], BOXES = [];
+for (let i = 0; i < N; i++) { ROWS.push([]); COLS.push([]); BOXES.push([]); }
+for (let r = 0; r < N; r++) {
+  for (let c = 0; c < N; c++) {
+    const cell = r*N + c;
+    const boxId = Math.floor(r/4)*4 + Math.floor(c/4);
+    ROWS[r].push(cell); COLS[c].push(cell); BOXES[boxId].push(cell);
+  }
+}
+const REGION_LIST = [
+  ...ROWS.map(cells => ({type:"row", cells})),
+  ...COLS.map(cells => ({type:"column", cells})),
+  ...BOXES.map(cells => ({type:"box", cells})),
+];
+const PEERS = Array.from({length: SIZE}, () => new Set());
+for (const region of REGION_LIST) {
+  for (const a of region.cells) for (const b of region.cells) if (a !== b) PEERS[a].add(b);
+}
+const BOX_OF = new Array(SIZE);
+BOXES.forEach((cells, id) => cells.forEach(c => BOX_OF[c] = id));
+
+const FULL_MASK = (1 << N) - 1;
+const bit = v => 1 << (v - 1);
+const popcount = m => { let c = 0; while (m) { c += m & 1; m >>>= 1; } return c; };
+const bitToValue = m => Math.round(Math.log2(m)) + 1;
+const valuesOfMask = m => { const vs = []; for (let v = 1; v <= N; v++) if (m & bit(v)) vs.push(v); return vs; };
+const addr = i => `R${Math.floor(i/N)+1}C${(i%N)+1}`;
+
+// ---- state ----
+let grid = START.slice();
+let hinted = new Array(SIZE).fill(false);
+let selected = null;
+let flagged = new Set();     // cells flagged by "Check my grid" as not matching the solution
+let hintCount = 0;
+const hintLogEntries = [];
+
+function loadProgress(){
+  try {
+    const raw = localStorage.getItem(PUZZLE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (Array.isArray(saved.grid) && saved.grid.length === SIZE) {
+      grid = saved.grid;
+      hinted = Array.isArray(saved.hinted) && saved.hinted.length === SIZE ? saved.hinted : hinted;
+      hintCount = saved.hintCount || 0;
+    }
+  } catch (e) { /* ignore corrupted/unavailable storage */ }
+}
+function saveProgress(){
+  try {
+    localStorage.setItem(PUZZLE_KEY, JSON.stringify({grid, hinted, hintCount}));
+  } catch (e) { /* private mode / storage unavailable: progress just won't persist */ }
+}
+
+// ---- candidates & solving techniques (used for hints only) ----
+function computeCandidates(g){
+  const cand = new Array(SIZE);
+  for (let i = 0; i < SIZE; i++) {
+    if (g[i] !== 0) { cand[i] = bit(g[i]); continue; }
+    let m = FULL_MASK;
+    for (const p of PEERS[i]) if (g[p] !== 0) m &= ~bit(g[p]);
+    cand[i] = m;
+  }
+  return cand;
+}
+
+function findNakedSingle(g, cand){
+  for (let i = 0; i < SIZE; i++) {
+    if (g[i] === 0 && popcount(cand[i]) === 1) {
+      const v = bitToValue(cand[i]);
+      return {cell:i, value:v, technique:"Naked single",
+        text:`Cell ${addr(i)} has only one candidate left: ${LABEL[v]}.`};
+    }
+  }
+  return null;
+}
+
+function findHiddenSingle(g, cand){
+  for (const region of REGION_LIST) {
+    for (let v = 1; v <= N; v++) {
+      const m = bit(v);
+      let found = -1, count = 0;
+      for (const c of region.cells) {
+        if (g[c] === 0 && (cand[c] & m)) { count++; found = c; if (count > 1) break; }
+      }
+      if (count === 1) {
+        return {cell:found, value:v, technique:`Hidden single (${region.type})`,
+          text:`In this ${region.type}, ${LABEL[v]} can only go in ${addr(found)}.`};
+      }
+    }
+  }
+  return null;
+}
+
+function findPointingElimination(g, cand){
+  for (const box of BOXES) {
+    for (let v = 1; v <= N; v++) {
+      const m = bit(v);
+      const cells = box.filter(c => g[c] === 0 && (cand[c] & m));
+      if (cells.length < 2) continue;
+      const rows = new Set(cells.map(c => Math.floor(c/N)));
+      if (rows.size === 1) {
+        const r = [...rows][0];
+        const targets = ROWS[r].filter(c => !box.includes(c) && g[c] === 0 && (cand[c] & m));
+        if (targets.length) { targets.forEach(c => cand[c] &= ~m);
+          return {text:`${LABEL[v]} is confined to row ${r+1} within one box, so it's removed from the rest of that row.`}; }
+      }
+      const cols = new Set(cells.map(c => c % N));
+      if (cols.size === 1) {
+        const cIdx = [...cols][0];
+        const targets = COLS[cIdx].filter(c => !box.includes(c) && g[c] === 0 && (cand[c] & m));
+        if (targets.length) { targets.forEach(c => cand[c] &= ~m);
+          return {text:`${LABEL[v]} is confined to column ${cIdx+1} within one box, so it's removed from the rest of that column.`}; }
+      }
+    }
+  }
+  return null;
+}
+
+function findBoxLineElimination(g, cand){
+  for (const [lineName, lines] of [["row", ROWS], ["column", COLS]]) {
+    for (const line of lines) {
+      for (let v = 1; v <= N; v++) {
+        const m = bit(v);
+        const cells = line.filter(c => g[c] === 0 && (cand[c] & m));
+        if (cells.length < 2) continue;
+        const boxIds = new Set(cells.map(c => BOX_OF[c]));
+        if (boxIds.size === 1) {
+          const boxCells = BOXES[[...boxIds][0]].filter(c => !line.includes(c) && g[c] === 0 && (cand[c] & m));
+          if (boxCells.length) {
+            boxCells.forEach(c => cand[c] &= ~m);
+            const label = lineName === "row" ? `row ${Math.floor(line[0]/N)+1}` : `column ${line[0]%N+1}`;
+            return {text:`${LABEL[v]} in ${label} is confined to a single box, so it's removed from the rest of that box.`};
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function findNakedPairElimination(g, cand){
+  for (const region of REGION_LIST) {
+    const empties = region.cells.filter(c => g[c] === 0);
+    for (let i = 0; i < empties.length; i++) {
+      const a = empties[i];
+      if (popcount(cand[a]) !== 2) continue;
+      for (let j = i+1; j < empties.length; j++) {
+        const b = empties[j];
+        if (cand[b] !== cand[a]) continue;
+        let changed = false;
+        for (const c of empties) {
+          if (c === a || c === b) continue;
+          if (cand[c] & cand[a]) { cand[c] &= ~cand[a]; changed = true; }
+        }
+        if (changed) {
+          const vals = valuesOfMask(cand[a]).map(v => LABEL[v]).join(" and ");
+          return {text:`${addr(a)} and ${addr(b)} in this ${region.type} can only be ${vals} between them, so ${vals} are removed from the rest of the ${region.type}.`};
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function getHint(g){
+  for (let i = 0; i < SIZE; i++) {
+    if (!GIVEN[i] && g[i] !== 0 && g[i] !== SOLUTION[i]) {
+      return {kind:"error", cell:i, technique:"Check first",
+        text:`${addr(i)} doesn't fit the unique solution. Fix or clear it before the next hint.`};
+    }
+  }
+  const cand = computeCandidates(g);
+  const chain = [];
+  let found = findNakedSingle(g, cand) || findHiddenSingle(g, cand);
+  if (found) return {kind:"place", chain, ...found};
+
+  for (let round = 0; round < 8; round++) {
+    const elim = findPointingElimination(g, cand) || findBoxLineElimination(g, cand) || findNakedPairElimination(g, cand);
+    if (!elim) break;
+    chain.push(elim.text);
+    found = findNakedSingle(g, cand) || findHiddenSingle(g, cand);
+    if (found) return {kind:"place", chain, ...found};
+  }
+
+  let best = -1, bestCount = N + 1;
+  for (let i = 0; i < SIZE; i++) {
+    if (g[i] === 0) {
+      const cnt = popcount(cand[i]);
+      if (cnt < bestCount) { bestCount = cnt; best = i; }
+    }
+  }
+  if (best === -1) return {kind:"done"};
+  return {kind:"reveal", chain, cell:best, value:SOLUTION[best], technique:"Deep search",
+    text:`No simple pattern applies yet, so this one's revealed directly from the full solve: ${addr(best)} = ${LABEL[SOLUTION[best]]}.`};
+}
+
+function liveConflicts(g){
+  const bad = new Set();
+  for (const region of REGION_LIST) {
+    const seen = new Map();
+    for (const c of region.cells) {
+      const v = g[c];
+      if (v === 0) continue;
+      if (seen.has(v)) { bad.add(c); bad.add(seen.get(v)); }
+      else seen.set(v, c);
+    }
+  }
+  return bad;
+}
+
+// ---- rendering ----
+const boardEl = document.getElementById("board");
+const cellEls = [];
+for (let r = 0; r < N; r++) {
+  for (let c = 0; c < N; c++) {
+    const i = r*N + c;
+    const el = document.createElement("div");
+    el.className = "cell";
+    el.dataset.r = r % 4;
+    el.dataset.c = c % 4;
+    el.dataset.i = i;
+    el.setAttribute("role", "gridcell");
+    el.addEventListener("click", () => selectCell(i));
+    boardEl.appendChild(el);
+    cellEls.push(el);
+  }
+}
+
+let showCandidates = false;
+
+function render(){
+  const conflicts = liveConflicts(grid);
+  const cand = showCandidates ? computeCandidates(grid) : null;
+  for (let i = 0; i < SIZE; i++) {
+    const el = cellEls[i];
+    const classes = ["cell"];
+    const v = grid[i];
+    if (v === 0 && showCandidates) {
+      classes.push("candidates");
+      el.textContent = valuesOfMask(cand[i]).map(x => LABEL[x]).join(" ");
+    } else {
+      el.textContent = v === 0 ? "" : LABEL[v];
+    }
+    if (GIVEN[i]) classes.push("given");
+    else if (v !== 0) classes.push(hinted[i] ? "hinted" : "user");
+    if (i === selected) classes.push("selected");
+    if (conflicts.has(i)) classes.push("conflict");
+    if (flagged.has(i)) classes.push("flagged");
+    el.dataset.r = (Math.floor(i/N)) % 4;
+    el.dataset.c = (i % N) % 4;
+    el.className = classes.join(" ");
+  }
+  const filled = grid.filter(v => v !== 0).length;
+  document.getElementById("stat-filled").textContent = `${filled} / ${SIZE}`;
+  document.getElementById("stat-hints").textContent = String(hintCount);
+  document.getElementById("board-note").textContent = selected === null ? "click a cell to start" : addr(selected);
+}
+
+function selectCell(i){
+  selected = i;
+  render();
+  boardEl.focus();
+}
+
+function setValue(i, v){
+  if (GIVEN[i]) return;
+  grid[i] = v;
+  if (v !== 0) hinted[i] = false;
+  flagged.delete(i);
+  setStatus("");
+  saveProgress();
+  render();
+}
+
+function setStatus(text, kind){
+  const el = document.getElementById("status-line");
+  el.textContent = text || "";
+  el.className = "status-line" + (kind ? " " + kind : "");
+}
+
+function addHintLogEntry(entry){
+  hintLogEntries.unshift(entry);
+  const log = document.getElementById("hint-log");
+  log.innerHTML = "";
+  if (hintLogEntries.length === 0) {
+    log.innerHTML = '<div class="hint-empty">Your hints will show up here, most recent first.</div>';
+    return;
+  }
+  for (const e of hintLogEntries) {
+    const div = document.createElement("div");
+    div.className = "hint-item" + (e.error ? " error-item" : "");
+    const chainHtml = (e.chain && e.chain.length)
+      ? e.chain.map(t => `<div>${escapeHtml(t)}</div>`).join("")
+      : "";
+    div.innerHTML = `<div class="tag">${escapeHtml(e.technique)}</div>${chainHtml}<div class="step">${escapeHtml(e.text)}</div>`;
+    log.appendChild(div);
+  }
+}
+function escapeHtml(s){
+  return s.replace(/[&<>]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]));
+}
+
+// ---- controls ----
+document.getElementById("btn-hint").addEventListener("click", () => {
+  const h = getHint(grid);
+  if (h.kind === "done") { setStatus("Puzzle complete — nice work.", "ok"); return; }
+  if (h.kind === "error") {
+    flagged.add(h.cell);
+    selected = h.cell;
+    addHintLogEntry({technique: h.technique, text: h.text, error: true});
+    setStatus(h.text, "error");
+    render();
+    return;
+  }
+  grid[h.cell] = h.value;
+  hinted[h.cell] = true;
+  selected = h.cell;
+  hintCount++;
+  addHintLogEntry({technique: h.technique, text: h.text, chain: h.chain});
+  setStatus(`Hint: ${h.text}`, "ok");
+  saveProgress();
+  render();
+});
+
+document.getElementById("btn-check").addEventListener("click", () => {
+  flagged = new Set();
+  for (let i = 0; i < SIZE; i++) {
+    if (!GIVEN[i] && grid[i] !== 0 && grid[i] !== SOLUTION[i]) flagged.add(i);
+  }
+  setStatus(flagged.size === 0
+    ? "No mismatches so far — everything you've entered fits the solution."
+    : `${flagged.size} cell${flagged.size === 1 ? "" : "s"} don't match the solution (outlined).`,
+    flagged.size === 0 ? "ok" : "error");
+  render();
+});
+
+document.getElementById("toggle-candidates").addEventListener("change", (e) => {
+  showCandidates = e.target.checked;
+  render();
+});
+
+function armConfirm(button, defaultLabel, confirmLabel, action){
+  let armed = false, timer = null;
+  button.textContent = defaultLabel;
+  button.addEventListener("click", () => {
+    if (!armed) {
+      armed = true;
+      button.textContent = confirmLabel;
+      timer = setTimeout(() => { armed = false; button.textContent = defaultLabel; }, 3000);
+      return;
+    }
+    clearTimeout(timer);
+    armed = false;
+    button.textContent = defaultLabel;
+    action();
+  });
+}
+
+armConfirm(document.getElementById("btn-reset"), "Reset to blank", "Click again to confirm", () => {
+  grid = START.slice();
+  hinted = new Array(SIZE).fill(false);
+  hintCount = 0;
+  flagged = new Set();
+  selected = null;
+  hintLogEntries.length = 0;
+  document.getElementById("hint-log").innerHTML = '<div class="hint-empty">Your hints will show up here, most recent first.</div>';
+  setStatus("Grid reset.", "ok");
+  saveProgress();
+  render();
+});
+
+armConfirm(document.getElementById("btn-reveal"), "Reveal full solution", "Click again to confirm", () => {
+  for (let i = 0; i < SIZE; i++) if (!GIVEN[i] && grid[i] === 0) hinted[i] = true;
+  grid = SOLUTION.slice();
+  setStatus("Full solution revealed.", "ok");
+  saveProgress();
+  render();
+});
+
+// ---- keyboard entry ----
+boardEl.addEventListener("keydown", (e) => {
+  if (selected === null) return;
+  const key = e.key;
+  if (/^[1-9]$/.test(key)) { setValue(selected, parseInt(key, 10)); e.preventDefault(); return; }
+  if (/^[a-gA-G]$/.test(key)) { setValue(selected, 10 + key.toUpperCase().charCodeAt(0) - 65); e.preventDefault(); return; }
+  if (key === "Backspace" || key === "Delete" || key === "0") { setValue(selected, 0); e.preventDefault(); return; }
+  const moves = {ArrowUp:-N, ArrowDown:N, ArrowLeft:-1, ArrowRight:1};
+  if (key in moves) {
+    let next = selected + moves[key];
+    if (key === "ArrowLeft" && selected % N === 0) next = selected;
+    if (key === "ArrowRight" && selected % N === N-1) next = selected;
+    if (next >= 0 && next < SIZE) selectCell(next);
+    e.preventDefault();
+  }
+});
+
+// ---- virtual keypad ----
+const keypad = document.getElementById("keypad");
+for (let v = 1; v <= N; v++) {
+  const b = document.createElement("button");
+  b.textContent = LABEL[v];
+  b.addEventListener("click", () => { if (selected !== null) setValue(selected, v); });
+  keypad.appendChild(b);
+}
+const eraseBtn = document.createElement("button");
+eraseBtn.textContent = "Erase";
+eraseBtn.className = "erase";
+eraseBtn.addEventListener("click", () => { if (selected !== null) setValue(selected, 0); });
+keypad.appendChild(eraseBtn);
+
+// ---- init ----
+loadProgress();
+render();
+})();
+</script>

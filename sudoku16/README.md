@@ -36,6 +36,19 @@ hands it to a generic solver.
 - `fetch_and_solve.py` - CLI: fetch a puzzle URL (or a saved HTML/JSON
   file), solve it, print the starting grid and solution, and sanity-check
   that the solution is unique.
+- `interactive_solver.html` - a self-contained, playable version of the
+  Wed 9 Sep 2026 medium puzzle: fill it in yourself (click/tap a cell,
+  type `1`-`9`/`A`-`G`, or use the on-screen keypad), and click **Hint**
+  for the next logical step, explained in human terms - naked single,
+  hidden single, pointing pair, box-line reduction, naked pair - falling
+  back to a direct reveal only when no simple pattern applies. A "Check
+  my grid" button flags entries that don't match the solution without
+  giving them away, and progress is saved to the browser's local storage.
+  Open the file directly in a browser (no server needed); it's also
+  published as a Claude Artifact for sharing. The starting/solution grids
+  are baked into the file from a specific solved puzzle - see
+  `fetch_and_solve.py --save-json` to generate the arrays for a different
+  date/difficulty.
 
 ## Usage
 
