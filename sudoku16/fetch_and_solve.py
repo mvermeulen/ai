@@ -22,35 +22,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
-import urllib.request
 
 import solver
-
-
-PUZZLE_DATA_RE = re.compile(r"let puzzleData\s*=\s*(\{.*?\});", re.DOTALL)
-
-USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-)
-
-
-def fetch_html(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return resp.read().decode("utf-8", errors="replace")
-
-
-def extract_puzzle_data(html_or_json: str) -> dict:
-    text = html_or_json.strip()
-    if text.startswith("{"):
-        return json.loads(text)
-    m = PUZZLE_DATA_RE.search(text)
-    if not m:
-        raise ValueError("Could not find `let puzzleData = {...};` in the page")
-    return json.loads(m.group(1))
+from puzzlemadness import fetch_html, extract_puzzle_data
 
 
 def solve_puzzle_data(data: dict, verify_unique: bool = True) -> solver.SolveResult:
